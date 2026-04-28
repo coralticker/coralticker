@@ -13,6 +13,7 @@
 | `.claude/branding-guide.md` | Voice principles + before/after copy examples |
 | `.claude/plans/tickets/index.md` | All CTK tickets — status, phase, gate |
 | `.claude/plans/tickets/CTK-XXX/{plan,results}.md` | Per-ticket plan + session log |
+| `.claude/coordination-invariants.md` | Cross-CTK constraints `/reef-lead` enforces (channel parity, shared-primitive rules) |
 | `.claude/commands/` + `.claude/commands-guide.md` | Slash commands and how to use them |
 | `.claude/journal/YYYY-MM-DD-*.md` | Session journals |
 | `.claude/research/*.md` | Vendor scans, market research, named-coral seed list |
