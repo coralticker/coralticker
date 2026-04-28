@@ -301,6 +301,13 @@ def build_favicons() -> None:
     f32.save(ico_path, format="ICO", sizes=[(16, 16), (32, 32)])
     print(f"  wrote {ico_path.name} ({ico_path.stat().st_size:,} bytes, multi-res 16+32)")
 
+    # 512×512 — social-profile avatar (Gmail / Instagram / TikTok / Threads).
+    # Square chip; the platforms circle-crop, so rounded corners would be wasted.
+    f512 = _build_favicon_chip(512, rounded_radius_pct=0.0, period_oversize_factor=1.0)
+    p512 = BRAND_DIR / "social-avatar-512.png"
+    f512.save(p512, format="PNG", optimize=True)
+    print(f"  wrote {p512.name} ({p512.stat().st_size:,} bytes, {f512.size[0]}x{f512.size[1]})")
+
 
 # ----------------------------------------------------------------------------
 # 7. og-image-template.png  (1200×630)
