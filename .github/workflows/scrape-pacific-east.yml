@@ -1,0 +1,68 @@
+# scrape-pacific-east — Phase 1 scraper #1 (CTK-024).
+#
+# Daily 03-05 ET cadence per arch §2.7 + vendors.cadence_label='daily'
+# (CTK-028 D3-(a) seed). Cron at '0 8 * * *' UTC = 04:00 EDT / 03:00 EST,
+# mid-window for the 03-05 ET tier.
+#
+# 10-min timeout per arch §2.7. `if: failure()` Slack step per §6.3 +
+# decision #39 (Slack webhook to private operator channel; direct curl POST
+# per §6.3 implementation pattern). `if: always()` cleanup step per arch
+# §2.4 timeout-cleanup choice (a) — flips any still-`running` scraper_runs
+# rows on hard-kill timeout.
+
+name: scrape-pacific-east
+
+on:
+  schedule:
+    - cron: '0 8 * * *'   # 04:00 EDT / 03:00 EST mid-window for 03-05 ET tier
+  workflow_dispatch: {}    # manual trigger for first-run validation + 7-day check
+
+permissions:
+  contents: read
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Run Pacific East scraper
+        id: scrape
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python -m scrapers.common.run pacific_east
+
+      - name: Cleanup stale running rows (if: always)
+        # Arch §2.4 timeout-cleanup choice (a). Runs on success AND failure;
+        # idempotent — on a clean run there are no still-`running` rows to
+        # flip, so this is a free safety net for the 10-min hard-kill case.
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python -m scrapers.common.run pacific_east --cleanup
+
+      - name: Slack alert on failure
+        # Arch §6.3 — direct curl POST to operator channel (no third-party
+        # action per boring-stack rule). Run-URL is the diagnostic anchor;
+        # ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        # gives the click-through to the failed step's logs.
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"pacific-east scraper failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"

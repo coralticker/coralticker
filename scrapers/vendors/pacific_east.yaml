@@ -1,0 +1,46 @@
+# Pacific East Aquaculture scraper config (CTK-024).
+#
+# Authoritative platform/method fields live on the vendors row (CTK-028 seed.sql,
+# vendor_id=1). YAML carries scrape-tuning per arch §2.3 — values that may change
+# without a code edit (delay, page size, max pages, hash anchor, originator prefix).
+# DB row wins on conflict.
+
+slug: pacific_east
+platform: shopify
+base_url: https://pacificeastaquaculture.com
+
+# D1 = (a) /products.json standard Shopify endpoint per CTK-024
+# pre-implementation review 2026-05-03 + curl smoke (HTTP 200, Content-Type:
+# application/json, powered-by: Shopify confirmed). Fallback to /collections
+# BS4 parsing was the (b) lean only on smoke-failure; smoke passed.
+products_path: /products.json
+
+# Page size at Shopify's max (250) — fewer round-trips for 500-2000 catalog.
+# Two pages cover steady-state; the parser short-circuits on the first
+# under-full page.
+page_size: 250
+
+# D2 = (b) request_delay_sec: 2 per CTK-024 pre-implementation review 2026-05-03.
+# Matches arch §2.3 example + §2.5 typical (2s). 8-page worst-case scrape =
+# ~16s well inside 10-min workflow timeout. Bump per arch §2.4 retry-policy
+# outcome only if 429s appear in 7-day validation window.
+request_delay_sec: 2
+
+# Belt-and-suspenders ceiling. PE's 500-2000 catalog at 250/page = 2-8 pages;
+# 30 is room for catalog growth without re-tuning.
+max_pages: 30
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object.
+# F5 verification at parse_shopify.py write — sorted() applied before SHA so
+# Shopify JSON-key emission-order changes don't flip the hash spuriously.
+# Empirical anchor (smoke 2026-05-03): 12 keys = body_html, created_at,
+# handle, id, images, options, product_type, published_at, tags, title,
+# updated_at, variants, vendor.
+hash_anchor: first_product_keys
+
+# D3 = (a) originator_prefix: null per CTK-024 pre-implementation review +
+# title-shape verification 2026-05-03. PE titles use "Coral Colony - <Genus>
+# - <description> WYSIWYG" pattern; no PE/Pacific East prefix to strip.
+# Stage 4 (Normalize) does no prefix work; matcher §3.4 stage 3 is a no-op
+# for this vendor.
+originator_prefix: null

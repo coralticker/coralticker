@@ -1,0 +1,24 @@
+# CoralTicker scraper runtime — Phase 1.
+#
+# Per architecture-v1.md §0.2 boring-stack rule: stdlib over heavy deps where
+# practical; no retry libraries (decision #12 plain `for attempt in range(3)`),
+# no APM SDKs (§6.4). Pins are minor-version locked; CI re-pins via dependabot
+# at a later CTK if the surface grows.
+#
+# Why each dep is here:
+#   requests        — HTTP fetcher per arch §2.3 / §2.5 polite-scraper hygiene.
+#   pyyaml          — per-vendor YAML config per arch §2.3.
+#   supabase        — official Postgres + Storage client; UPSERT + bucket
+#                     uploads in one SDK matches §0.2 boring-stack ("one
+#                     dashboard, one credential, one SDK"). Picked over
+#                     raw psycopg2 + boto3 because Phase 1 has no read-path
+#                     latency budget that justifies driver-level control.
+#   beautifulsoup4  — parse_html.py BS4 helpers per arch §2.3 (not used by
+#                     Pacific East — pure /products.json — but lands now so
+#                     the second consumer (Tidal Gardens, custom) inherits
+#                     without a deps PR landing first).
+
+requests==2.32.3
+pyyaml==6.0.2
+supabase==2.9.0
+beautifulsoup4==4.12.3
