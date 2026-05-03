@@ -77,6 +77,8 @@ The block exists so future-Jon at 11pm can scan to the end, copy-paste the direc
 - No AURA/STScI tools, subscriptions, or credentials anywhere.
 - COI gate: Phase 1+ engineering blocked until written COI clearance lands. (Phase 0 Track A in `.claude/reef-project-plan.md`.)
 
+**Agent vs. Jon-facing scope.** The first three rules (laptop / email / time / log-hours) are Jon-facing self-discipline — agents do **not** echo, cite, or remind Jon about these in outputs. Don't tack "Personal time only per CLAUDE.md hard rules" onto results.md entries, review trailers, commit-step bullets, or any other artifact; it adds zero information and reads as babysitting. The AURA/STScI and COI rules are real agent constraints: flag any plan that proposes AURA tooling, and treat the COI gate as a hard block on Phase 1+ work.
+
 ## When in doubt
 
 If a slash command fits the work, use it. If not, read the source-of-truth files and proceed in the project's voice. Don't invent state — the plan's checkboxes and the ticket index are authoritative.
