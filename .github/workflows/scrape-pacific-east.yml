@@ -15,7 +15,7 @@ name: scrape-pacific-east
 on:
   schedule:
     - cron: '0 8 * * *'   # 04:00 EDT / 03:00 EST mid-window for 03-05 ET tier
-  workflow_dispatch: {}    # manual trigger for first-run validation + 7-day check
+  workflow_dispatch:       # manual trigger for first-run validation + 7-day check
 
 permissions:
   contents: read
