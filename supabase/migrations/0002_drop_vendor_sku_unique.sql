@@ -1,0 +1,23 @@
+-- CTK-024 Session 4 — drop the partial-unique on (vendor_id, vendor_sku).
+--
+-- Pacific East's catalog (4933 items, 2026-05-04 first-run validation) carries
+-- multiple products sharing a vendor_sku value (e.g., "EE A2828"). The
+-- arch-v1 §1.4 + decision register #18 partial-unique assumed Shopify SKUs
+-- are unique within a vendor — empirically false for PE, likely false for
+-- other Phase 1 vendors as well.
+--
+-- Identity stays on (vendor_id, product_url) per arch §1.4; SKU stays as a
+-- metadata column without uniqueness enforcement. The partial-unique index
+-- is dropped entirely; no replacement non-unique index lands here because
+-- vendor_sku-keyed lookups aren't a Phase 1 read path. If they become one
+-- (e.g., admin curation UI in Phase 3), a non-unique CREATE INDEX lands then
+-- in its own migration.
+--
+-- The architectural commitment in arch-v1 §1.4 + decision register #18
+-- itself is amended via /lead-architect routing — surfaced as Outstanding
+-- Question at /log-results CTK-024 Session 4. This migration is the schema-
+-- side fix; the doc amendment lands on /architect's lane separately.
+--
+-- Idempotent re-application via `supabase db reset` per arch decision #35.
+
+DROP INDEX IF EXISTS idx_vl_sku_unique;
