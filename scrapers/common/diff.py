@@ -185,34 +185,31 @@ def persist_phase_a(
                 "_product_url": product_url,  # join key; stripped before INSERT
             })
 
-    # UPSERT vendor_listings in chunks. PostgREST upsert with on_conflict
+    # UPSERT vendor_listings in chunks + capture response data for the
+    # listing_id-by-product_url map. PostgREST upsert with on_conflict
     # respects the UNIQUE (vendor_id, product_url) index per arch §1.4.
+    #
+    # Session 5 fix: capture upsert response data inline rather than the
+    # post-upsert SELECT pattern. The original SELECT was chunked into
+    # ?product_url=in.(...) query strings of 500 entries each (~60K chars per
+    # request) — Cloudflare's edge proxy strips request headers above the
+    # ~8-16K URL ceiling, including the apikey header → PostgREST returns
+    # apikey-missing/invalid masquerading as an auth error. Eliminating the
+    # round-trip removes the failure mode entirely + cuts one DB call per
+    # chunk + scales without per-vendor catalog-size tuning of chunk size.
+    id_by_url: dict[str, int] = {}
     if upserts:
         for chunk in _chunks(upserts, 500):
-            client.table("vendor_listings").upsert(chunk, on_conflict="vendor_id,product_url").execute()
+            response = client.table("vendor_listings").upsert(
+                chunk, on_conflict="vendor_id,product_url"
+            ).execute()
+            for row in response.data or []:
+                id_by_url[row["product_url"]] = row["id"]
 
     # Touch unchanged rows (last_seen_at only). Cheap targeted UPDATEs.
     if touch_ids:
         for chunk in _chunks(touch_ids, 500):
             client.table("vendor_listings").update({"last_seen_at": now}).in_("id", chunk).execute()
-
-    # Resolve listing_id for history INSERTs + Phase B mirror queue entries
-    # whose listing_id wasn't known pre-upsert (NEW rows).
-    urls_needing_id = {h["_product_url"] for h in history}
-    urls_needing_id.update(t.product_url for t in mirror_queue if t.listing_id is None)
-    id_by_url: dict[str, int] = {}
-    if urls_needing_id:
-        for chunk in _chunks(list(urls_needing_id), 500):
-            rows = (
-                client.table("vendor_listings")
-                .select("id,product_url")
-                .eq("vendor_id", vendor_id)
-                .in_("product_url", chunk)
-                .execute()
-                .data
-                or []
-            )
-            id_by_url.update({r["product_url"]: r["id"] for r in rows})
 
     # Hand listing_ids back to the mirror queue.
     for t in mirror_queue:
