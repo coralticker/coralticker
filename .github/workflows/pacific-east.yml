@@ -11,7 +11,14 @@ permissions:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 60-min cap per CTK-024 Session 2 fix. First-run image-mirror loop on PE's
+    # 2500-3000 listings × ~500-600ms per mirror() = 21-30 min just for Phase B
+    # (Phase A data writes finish in 1-2 min). Steady-state daily runs (handful
+    # of new arrivals + Phase B catch-up for prior NULL image_url rows) finish
+    # in under 2 min. 60 absorbs first-run + future catalog growth without
+    # re-tuning. Arch §2.7's 10-min default stands as the typical-cadence
+    # ceiling; 60 is the CTK-024 first-scraper carve-out.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 

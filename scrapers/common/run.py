@@ -76,6 +76,8 @@ def run(slug: str) -> int:
     html_hash: str | None = None
     http_status_last: int | None = None
     counters = Counters()
+    status_finalized = False
+    mirror_queue: list = []
 
     try:
         # Stages 2-4 — Fetch + Parse + Normalize (parser yields normalized items)
@@ -99,8 +101,13 @@ def run(slug: str) -> int:
             counters.seen, counters.new, counters.price_changed, counters.restocked, counters.oos,
         )
 
-        # Stage 6 — Persist (image mirror inline)
-        diff.persist(client, vendor_row, decisions, run_id)
+        # Stage 6 Phase A — synchronous, fast. Bulk UPSERT vendor_listings +
+        # touch + price_history INSERT. Returns Phase B image-mirror queue.
+        # Per CTK-024 Session 2 fix: image-fetch I/O is no longer inline with
+        # the persist loop — Phase B handles it best-effort after status is
+        # finalized so a mirror-loop timeout no longer loses scrape data
+        # (CTK-019 #55: 'image-only failure does NOT fail the listing row').
+        mirror_queue = diff.persist_phase_a(client, vendor_row, decisions, existing_by_url, run_id)
 
         # Silent canary per arch §2.4. F4: no-op until day 8 (median=0 →
         # threshold collapses to floor of 5); floor-of-5 catches outright-empty
@@ -118,6 +125,18 @@ def run(slug: str) -> int:
             log.error(error_message)
         else:
             status = "success"
+
+        # Finalize scraper_runs row NOW — before Phase B starts. Phase B is
+        # best-effort; a workflow-timeout hard-kill mid-Phase-B leaves the run
+        # marked success (cleanup hook is a no-op for finished rows). The
+        # `if: always()` cleanup step still flips any other still-`running`
+        # rows that pre-date this run.
+        db.finish_scraper_run(
+            client, run_id, status, error_class, error_message,
+            counters, html_hash, http_status_last,
+        )
+        status_finalized = True
+        log.info("scraper_runs.id=%d finalized status=%s before Phase B", run_id, status)
 
     except parse_shopify.SchemaChangeError as e:
         # Best-effort partial: any items already persisted stay; mark partial
@@ -149,11 +168,27 @@ def run(slug: str) -> int:
         log.exception("unhandled exception")
 
     finally:
-        db.finish_scraper_run(
-            client, run_id, status, error_class, error_message,
-            counters, html_hash, http_status_last,
-        )
-        log.info("scraper_runs.id=%d finished status=%s error_class=%s", run_id, status, error_class)
+        if not status_finalized:
+            # Phase A didn't reach finalization — failure path. Close the row
+            # with whatever status the except-clause computed.
+            db.finish_scraper_run(
+                client, run_id, status, error_class, error_message,
+                counters, html_hash, http_status_last,
+            )
+            log.info("scraper_runs.id=%d finished status=%s error_class=%s", run_id, status, error_class)
+
+    # Phase B — best-effort image mirror loop, AFTER status finalized. Only
+    # runs on success (no point mirroring images for a blocked / partial run).
+    # Per-row failures are caught + logged inside persist_phase_b; never raise.
+    if status_finalized and status == "success" and mirror_queue:
+        try:
+            persist_phase_b_succeeded, persist_phase_b_failed = diff.persist_phase_b(client, vendor_row, mirror_queue)
+            log.info(
+                "Phase B summary: %d/%d mirrors succeeded for run_id=%d",
+                persist_phase_b_succeeded, persist_phase_b_succeeded + persist_phase_b_failed, run_id,
+            )
+        except Exception as e:  # noqa: BLE001 — Phase B never fails the run; log + return success
+            log.warning("Phase B aborted unexpectedly (non-fatal, status stays success): %s", e)
 
     return 0 if status == "success" else 1
 

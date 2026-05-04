@@ -46,10 +46,13 @@ def fetch_vendor(client: Client, slug: str) -> dict:
 
 def fetch_existing_listings(client: Client, vendor_id: int) -> dict[str, dict]:
     """Bulk-load all vendor_listings for vendor at stage 5 start. Returned as
-    dict keyed by product_url for O(1) per-item lookup in diff.classify."""
+    dict keyed by product_url for O(1) per-item lookup in diff.classify +
+    diff.persist_phase_a (the Phase B image-mirror queue check needs to know
+    which existing rows have image_url IS NULL for catch-up after a prior
+    partial-mirror run)."""
     rows = (
         client.table("vendor_listings")
-        .select("id,product_url,current_price,in_stock")
+        .select("id,product_url,current_price,in_stock,image_url")
         .eq("vendor_id", vendor_id)
         .execute()
         .data

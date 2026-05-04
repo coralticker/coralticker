@@ -73,13 +73,42 @@ def counters_from(decisions: list[ItemDecision]) -> Counters:
     return c
 
 
-def persist(client, vendor_row: dict, decisions: list[ItemDecision], run_id: int) -> None:
-    """Stage 6 — UPSERT vendor_listings; INSERT price_history on (price, stock)
-    change; mirror images per CTK-019 #55 inline. Per arch §3.2 + CTK-023 Call 2:
-    NO matcher call between stage 5 and stage 6 in CTK-024 — Pacific East ships
-    matcher-naive. Retro-fit when CTK-025 lands the inline scaffold."""
+@dataclass
+class MirrorTask:
+    """Phase B work item — a row whose image_url should be populated by a
+    mirror() round-trip after Phase A has committed scrape state. Built in
+    Phase A for both NEW rows (no existing image_url yet) and EXISTING rows
+    with image_url IS NULL (catch-up from prior partial-mirror runs)."""
+    product_url: str           # absolute URL (FK lookup key against vendor_listings)
+    vendor_image_url: str      # source URL to fetch
+    listing_id: int | None     # set when known (existing rows); None for NEW (resolved after Phase A upsert)
+
+
+def persist_phase_a(
+    client,
+    vendor_row: dict,
+    decisions: list[ItemDecision],
+    existing_by_url: dict[str, dict],
+    run_id: int,
+) -> list[MirrorTask]:
+    """Phase A — synchronous, fast, defines 'scrape success'. Bulk UPSERT
+    vendor_listings; touch unchanged rows; resolve listing_id; bulk INSERT
+    price_history on (price, stock) change. Returns the Phase B mirror queue
+    (mirror-strategy rows whose image_url is NULL after Phase A).
+
+    Per arch §3.2 + CTK-023 Call 2: NO matcher call between stage 5 and stage 6
+    in CTK-024 — Pacific East ships matcher-naive. Retro-fit when CTK-025
+    lands the inline scaffold (one method-call addition between Phase A
+    classify-and-build and Phase A upsert).
+
+    The phase split is forced by image-fetch latency: ~500ms per mirror() call
+    × first-run NEW listing count (PE ~2500-3000) = workflow timeout territory
+    if mirror runs inline. Phase A keeps DB-write latency bounded; Phase B
+    runs after status='success' so an image-mirror timeout no longer loses
+    the underlying scrape data per CTK-019 #55 ('image-only failure does NOT
+    fail the listing row').
+    """
     vendor_id = vendor_row["id"]
-    vendor_slug = vendor_row["slug"]
     base_url = vendor_row["base_url"].rstrip("/")
     image_strategy = vendor_row.get("image_strategy", "mirror")
 
@@ -88,30 +117,46 @@ def persist(client, vendor_row: dict, decisions: list[ItemDecision], run_id: int
     upserts: list[dict] = []
     history: list[dict] = []
     touch_ids: list[int] = []
+    mirror_queue: list[MirrorTask] = []
 
     for d in decisions:
         item = d.item
-        absolute_url = base_url + item["product_url"] if item["product_url"].startswith("/") else item["product_url"]
+        # item["product_url"] is now ABSOLUTE per parse_shopify._normalize_product
+        # (Session 2 fix — was relative in Session 1, which would have misclassified
+        # every existing listing as 'new' on the next-day scrape).
+        product_url = item["product_url"]
+
+        # Hotlink strategy is fast (no I/O) — set image_url in Phase A on NEW
+        # rows only (existing rows preserve their image_url; we don't refresh
+        # hotlinks on every scrape). Mirror strategy defers to Phase B for
+        # both NEW and EXISTING-with-NULL-image_url rows; image_url is OMITTED
+        # from the upsert payload so the column default (NULL) lands on NEW
+        # and existing image_url is preserved on UPDATE (PostgREST upsert
+        # only writes columns present in the payload).
+        hotlink_url: str | None = None
+        if image_strategy == "hotlink" and d.decision == "new" and item.get("vendor_image_url"):
+            hotlink_url = item["vendor_image_url"]
+
+        # Build the Phase B queue — mirror-strategy only, vendor_image_url present,
+        # AND (NEW row OR existing row with NULL image_url for catch-up).
+        if image_strategy != "hotlink" and item.get("vendor_image_url"):
+            existing = existing_by_url.get(product_url)
+            existing_image_url = existing.get("image_url") if existing else None
+            if d.decision == "new" or not existing_image_url:
+                mirror_queue.append(MirrorTask(
+                    product_url=product_url,
+                    vendor_image_url=item["vendor_image_url"],
+                    listing_id=d.existing_id,  # None for NEW; resolved after upsert
+                ))
 
         if d.decision == "unchanged":
             touch_ids.append(d.existing_id)  # type: ignore[arg-type]
             continue
 
-        # Image-pipeline integration per CTK-019 #55 — synchronous, 1-attempt.
-        # Mirror only fires on NEW listings (avoids re-fetching the same image
-        # every scrape for an unchanged listing). On hotlink strategy, store
-        # the vendor URL verbatim. On mirror failure, image_url stays NULL.
-        image_url: str | None = None
-        if d.decision == "new" and item.get("vendor_image_url"):
-            if image_strategy == "hotlink":
-                image_url = item["vendor_image_url"]
-            else:  # mirror (default per #52)
-                image_url = image_pipeline.mirror(client, vendor_slug, item["product_url"], item["vendor_image_url"])
-
         row = {
             "vendor_id": vendor_id,
             "vendor_sku": item.get("vendor_sku"),
-            "product_url": absolute_url,
+            "product_url": product_url,
             "raw_title": item["raw_title"],
             "normalized_title": item["normalized_title"],
             "current_price": _decimal_to_str(item.get("current_price")),
@@ -123,8 +168,8 @@ def persist(client, vendor_row: dict, decisions: list[ItemDecision], run_id: int
         }
         if d.decision == "new":
             row["first_seen_at"] = now
-            if image_url is not None:
-                row["image_url"] = image_url
+            if hotlink_url is not None:
+                row["image_url"] = hotlink_url
         if d.decision == "price_changed":
             row["last_price_changed_at"] = now
 
@@ -137,8 +182,7 @@ def persist(client, vendor_row: dict, decisions: list[ItemDecision], run_id: int
                 "price": _decimal_to_str(item.get("current_price")),
                 "in_stock": item["in_stock"],
                 "scraper_run_id": run_id,
-                # listing_id resolved post-upsert (see _link_history below)
-                "_product_url": absolute_url,  # join key; stripped before INSERT
+                "_product_url": product_url,  # join key; stripped before INSERT
             })
 
     # UPSERT vendor_listings in chunks. PostgREST upsert with on_conflict
@@ -148,17 +192,18 @@ def persist(client, vendor_row: dict, decisions: list[ItemDecision], run_id: int
             client.table("vendor_listings").upsert(chunk, on_conflict="vendor_id,product_url").execute()
 
     # Touch unchanged rows (last_seen_at only). Cheap targeted UPDATEs.
-    # Batched into one UPDATE WHERE id IN (...) chunks per round-trip.
     if touch_ids:
         for chunk in _chunks(touch_ids, 500):
             client.table("vendor_listings").update({"last_seen_at": now}).in_("id", chunk).execute()
 
-    # Resolve listing_id for the history rows — fetch ids by product_url.
-    if history:
-        urls = list({h["_product_url"] for h in history})
-        rows = []
-        for chunk in _chunks(urls, 500):
-            rows.extend(
+    # Resolve listing_id for history INSERTs + Phase B mirror queue entries
+    # whose listing_id wasn't known pre-upsert (NEW rows).
+    urls_needing_id = {h["_product_url"] for h in history}
+    urls_needing_id.update(t.product_url for t in mirror_queue if t.listing_id is None)
+    id_by_url: dict[str, int] = {}
+    if urls_needing_id:
+        for chunk in _chunks(list(urls_needing_id), 500):
+            rows = (
                 client.table("vendor_listings")
                 .select("id,product_url")
                 .eq("vendor_id", vendor_id)
@@ -167,7 +212,15 @@ def persist(client, vendor_row: dict, decisions: list[ItemDecision], run_id: int
                 .data
                 or []
             )
-        id_by_url = {r["product_url"]: r["id"] for r in rows}
+            id_by_url.update({r["product_url"]: r["id"] for r in rows})
+
+    # Hand listing_ids back to the mirror queue.
+    for t in mirror_queue:
+        if t.listing_id is None:
+            t.listing_id = id_by_url.get(t.product_url)
+
+    # Insert price_history.
+    if history:
         history_rows = []
         for h in history:
             lid = id_by_url.get(h["_product_url"])
@@ -183,6 +236,61 @@ def persist(client, vendor_row: dict, decisions: list[ItemDecision], run_id: int
         if history_rows:
             for chunk in _chunks(history_rows, 500):
                 client.table("price_history").insert(chunk).execute()
+
+    log.info(
+        "Phase A complete: %d upserts + %d touches + %d history rows; %d Phase B mirrors queued",
+        len(upserts), len(touch_ids), len(history), len(mirror_queue),
+    )
+    return mirror_queue
+
+
+def persist_phase_b(client, vendor_row: dict, mirror_queue: list[MirrorTask]) -> tuple[int, int]:
+    """Phase B — best-effort, per-row, fail-soft. Iterates the Phase A mirror
+    queue: for each entry, attempt mirror() + UPDATE vendor_listings.image_url.
+    Per-row exceptions log a WARNING and continue; no row fails the whole run.
+
+    Returns (succeeded, failed) counts for the orchestrator log.
+
+    Phase B is called AFTER scraper_runs.status has been finalized as 'success'.
+    A workflow-timeout hard-kill mid-Phase-B leaves successful mirrors landed
+    + remaining queue entries un-processed; subsequent runs catch them up via
+    the existing-row-with-NULL-image_url path (db.fetch_existing_listings now
+    returns image_url so the next Phase A can re-queue them).
+
+    Hotlink strategy never reaches Phase B — those rows have image_url set in
+    Phase A's upsert payload directly (no I/O latency cost).
+    """
+    if not mirror_queue:
+        return (0, 0)
+
+    vendor_slug = vendor_row["slug"]
+    succeeded = 0
+    failed = 0
+
+    for task in mirror_queue:
+        if task.listing_id is None:
+            # Couldn't resolve listing_id post-upsert — log and move on. Should
+            # be rare; signals an upsert that quietly didn't land or a stale
+            # vendor_listings index. Either way, the next scrape will re-queue.
+            log.warning("Phase B: no listing_id resolved for %s — skip", task.product_url)
+            failed += 1
+            continue
+        try:
+            url = image_pipeline.mirror(client, vendor_slug, task.product_url, task.vendor_image_url)
+            if url is None:
+                # mirror() already logged the failure cause (network / non-200 /
+                # upload error) per CTK-019 #55. Leave image_url as NULL; next
+                # scrape's Phase A re-queues this row.
+                failed += 1
+                continue
+            client.table("vendor_listings").update({"image_url": url}).eq("id", task.listing_id).execute()
+            succeeded += 1
+        except Exception as e:  # noqa: BLE001 — fail-soft per CTK-019 #55; image-only error never fails the run
+            log.warning("Phase B mirror failed for listing_id=%s (%s): %s", task.listing_id, task.product_url, e)
+            failed += 1
+
+    log.info("Phase B complete: %d mirrors succeeded, %d failed (queue size %d)", succeeded, failed, len(mirror_queue))
+    return (succeeded, failed)
 
 
 def _chunks(seq: list, size: int):

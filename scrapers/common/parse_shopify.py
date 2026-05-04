@@ -82,7 +82,7 @@ def fetch_and_parse(config: dict) -> ParseResult:
             keys = sorted(products[0].keys())
             html_hash = hashlib.sha256(",".join(keys).encode("utf-8")).hexdigest()
 
-        items.extend(_normalize_product(p, image_strategy, originator_prefix) for p in products)
+        items.extend(_normalize_product(p, base_url, image_strategy, originator_prefix) for p in products)
 
         if len(products) < page_size:
             # Short page = last page. Spares one wasted round-trip.
@@ -91,12 +91,20 @@ def fetch_and_parse(config: dict) -> ParseResult:
     return ParseResult(items=items, html_hash=html_hash, http_status_last=http_status_last)
 
 
-def _normalize_product(product: dict, image_strategy: str, originator_prefix: str | None) -> dict:
+def _normalize_product(product: dict, base_url: str, image_strategy: str, originator_prefix: str | None) -> dict:
     """Map a Shopify product dict to the diff.py + DB shape. Stage 4 (Normalize)
-    of the arch §2.1 lifecycle — title/category/price/stock coercion happens here."""
+    of the arch §2.1 lifecycle — title/category/price/stock coercion happens here.
+
+    product_url is built ABSOLUTE (base_url joined to /products/<handle>) so it
+    matches the canonical key shape stored in vendor_listings.product_url. The
+    diff.classify() lookup against existing_by_url + the persist_phase_a Phase B
+    mirror-queue check both depend on this being absolute — relative URLs would
+    miss the dict and force-classify every existing listing as 'new' on the
+    next-day scrape (price_history explosion + redundant re-mirroring).
+    """
     raw_title = product.get("title", "")
     handle = product.get("handle", "")
-    product_url = f"/products/{handle}" if handle else ""
+    product_url = f"{base_url.rstrip('/')}/products/{handle}" if handle else ""
 
     variants = product.get("variants") or []
     in_stock = any(v.get("available") for v in variants)
