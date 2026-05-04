@@ -13,6 +13,7 @@ from decimal import Decimal
 from typing import Iterable, Literal
 
 from scrapers.common import images as image_pipeline
+from scrapers.common.matcher import MatchResult
 
 log = logging.getLogger(__name__)
 
@@ -25,6 +26,13 @@ class ItemDecision:
     item: dict
     decision: Decision
     existing_id: int | None = None  # set on update paths; None for "new"
+    # CTK-025: matcher result attached by run.py stage 5.5. None = matcher
+    # didn't run (preserve existing match fields in UPSERT — payload omits
+    # match columns; PostgREST keeps existing values). Non-None = write all
+    # four match fields (named_coral_id, match_confidence, match_method,
+    # matched_at) on the UPSERT row, even if all four are null (stage 7
+    # no-match — explicit clear).
+    match_result: MatchResult | None = None
 
 
 @dataclass
@@ -172,6 +180,16 @@ def persist_phase_a(
                 row["image_url"] = hotlink_url
         if d.decision == "price_changed":
             row["last_price_changed_at"] = now
+
+        # CTK-025: write the four matcher fields when run.py attached a
+        # match_result. Always-explicit on 'new' rows (run.py invokes the
+        # matcher); omitted on update-path rows so PostgREST preserves the
+        # existing match fields (no clobber on price/stock-only changes).
+        if d.match_result is not None:
+            row["named_coral_id"] = d.match_result.named_coral_id
+            row["match_confidence"] = d.match_result.match_confidence
+            row["match_method"] = d.match_result.match_method
+            row["matched_at"] = d.match_result.matched_at
 
         upserts.append(row)
 

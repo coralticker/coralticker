@@ -1,0 +1,50 @@
+# World Wide Corals scraper config (CTK-025).
+#
+# Authoritative platform/method fields live on the vendors row (CTK-028 seed.sql,
+# vendor_id=2). YAML carries scrape-tuning per arch §2.3 — values that may change
+# without a code edit (delay, page size, max pages, hash anchor, originator prefix).
+# DB row wins on conflict.
+
+slug: wwc
+platform: shopify
+base_url: https://worldwidecorals.com
+
+# Standard Shopify endpoint; smoke-checked 2026-05-04 — HTTP 200,
+# Content-Type: application/json; charset=utf-8, 4615 products across 19
+# pages of 250 (page 20 returned 0 products, terminating pagination).
+products_path: /products.json
+
+# Page size at Shopify's max (250) — fewer round-trips for the empirical
+# 4615-product catalog. 19 pages cover the catalog; the parser short-
+# circuits on the first under-full page.
+page_size: 250
+
+# D1 (CTK-025 lead-review pre-impl 2026-05-04): inherits PE's empirical
+# request_delay_sec=2 lock. 4615 products / 250 per page = 19 pages × 2s =
+# ~38s total scrape time, well inside 60-min workflow timeout. Hourly cadence
+# absorbs delay easily. Bump per arch §2.4 retry-policy outcome only if
+# 429s appear in the 24-72hr observation window (framework inheritance test
+# point (b) in plan.md).
+request_delay_sec: 2
+
+# Belt-and-suspenders ceiling. WWC's 4615-product catalog at 250/page = 19
+# pages today; 30 leaves room for catalog growth without re-tuning.
+max_pages: 30
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object.
+# Same hash_anchor as PE per parse_shopify.py shape stability across CTK-024
+# Sessions 1-5. F5 fold (sort-before-hash) prevents Shopify JSON key
+# emission-order changes from spuriously flipping the sentinel.
+hash_anchor: first_product_keys
+
+# D3 (CTK-025 lead-review pre-impl 2026-05-04): originator_prefix='wwc'.
+# Title-shape spot-check 2026-05-04 inspected first 20 titles from
+# /products.json: 14 of 20 dropped the "WWC " prefix (e.g., "Hypnotic Aussie
+# Lord", "Dragon Soul Torch", "Maui Sunset Rhodactis Mushroom"); 6 of 20
+# carried it (e.g., "WWC Mango Tango Echinata", "WWC Soursop Goniopora").
+# Mixed shape is exactly the case where matcher §3.4 stage 3 (canonical-
+# implicit-prefix) earns its keep — synthesizes "wwc " + normalized_title
+# against canonical patterns 1-2 for the 70% that drop the prefix; the
+# prefix-bearing 30% match at stage 1 or 2 directly without synthesis.
+# Calibration of the cascade against real WWC titles is CTK-002.
+originator_prefix: wwc

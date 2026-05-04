@@ -1,0 +1,57 @@
+name: wwc
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # 60-min cap inherits PE Session 2 carve-out (CTK-024). First-run
+    # image-mirror loop on WWC's empirical 4615 listings × ~500-600ms per
+    # mirror() = 38-46 min just for Phase B (Phase A data writes finish in
+    # 1-2 min). Steady-state hourly runs (handful of new arrivals + Phase B
+    # catch-up for prior NULL image_url rows) finish in under 2 min.
+    # 60 absorbs first-run + future catalog growth without re-tuning.
+    # Arch §2.7's 10-min default stands as the typical-cadence ceiling;
+    # 60 is the Phase 1 Shopify-large-catalog carve-out shared with PE.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Run WWC scraper
+        id: scrape
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python -m scrapers.common.run wwc
+
+      - name: Cleanup stale running rows
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python -m scrapers.common.run wwc --cleanup
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"wwc scraper failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"
