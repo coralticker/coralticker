@@ -174,10 +174,12 @@ def persist_phase_a(
             "lineage_flag": item.get("lineage_flag", "unknown"),
             "last_seen_at": now,
         }
-        if d.decision == "new":
-            row["first_seen_at"] = now
-            if hotlink_url is not None:
-                row["image_url"] = hotlink_url
+        # first_seen_at is omitted from every payload: PostgREST batch upsert
+        # unions columns across rows + sends NULL via EXCLUDED for omitted
+        # cells on UPDATE-path. DB DEFAULT now() handles INSERT; trigger
+        # preserve_first_seen_at locks UPDATE.
+        if d.decision == "new" and hotlink_url is not None:
+            row["image_url"] = hotlink_url
         if d.decision == "price_changed":
             row["last_price_changed_at"] = now
 
