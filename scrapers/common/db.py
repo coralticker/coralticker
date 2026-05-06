@@ -56,15 +56,44 @@ def fetch_existing_listings(client: Client, vendor_id: int) -> dict[str, dict]:
     dict keyed by product_url for O(1) per-item lookup in diff.classify +
     diff.persist_phase_a (the Phase B image-mirror queue check needs to know
     which existing rows have image_url IS NULL for catch-up after a prior
-    partial-mirror run)."""
-    rows = (
-        client.table("vendor_listings")
-        .select("id,product_url,current_price,in_stock,image_url")
-        .eq("vendor_id", vendor_id)
-        .execute()
-        .data
-        or []
-    )
+    partial-mirror run).
+
+    Per CTK-033 D1: PostgREST default 1000-row response cap silently truncated
+    the prior single-call SELECT, building existing_by_url with at most 1000
+    of 4933+ stored rows and producing the 78-80% NEW% misclassification on
+    every populated-catalog scrape (CTK-032 anomaly (a)). Repair is a
+    range-loop over .range(start, end) chunks until the response is short
+    (< page_size) or empty. Loop terminates on first short page; 50-iteration
+    ceiling (50,000-row hard cap) bounds runaway pagination if PostgREST
+    misreports a short page. Loud-failure posture per arch §2.4 — chunk-SELECT
+    exceptions bubble up; no try/except.
+    """
+    page_size = 1000  # matches PostgREST default; tunes naturally as catalog grows
+    iteration_ceiling = 50
+    rows: list[dict] = []
+    iteration = 0
+    while iteration < iteration_ceiling:
+        start = iteration * page_size
+        end = start + page_size - 1
+        chunk = (
+            client.table("vendor_listings")
+            .select("id,product_url,current_price,in_stock,image_url")
+            .eq("vendor_id", vendor_id)
+            .range(start, end)
+            .execute()
+            .data
+            or []
+        )
+        rows.extend(chunk)
+        iteration += 1
+        if len(chunk) < page_size:
+            break
+    else:
+        log.warning(
+            "fetch_existing_listings hit %d-iteration ceiling for vendor_id=%d "
+            "(%d rows fetched); catalog may exceed %d-row hard cap",
+            iteration_ceiling, vendor_id, len(rows), iteration_ceiling * page_size,
+        )
     return {r["product_url"]: r for r in rows}
 
 
