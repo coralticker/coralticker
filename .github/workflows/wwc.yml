@@ -1,12 +1,8 @@
 name: wwc
 
 on:
-  # CTK-033 pause — un-comment at reactivation post-verify-pass. Slack-noise halt during
-  # the URL-extract repair cycle: every fast-fail vendor inactive run was firing the
-  # if: failure() Slack alert (~48 alerts/day across PE+WWC since 2026-05-05 14:33Z).
-  # Symmetric to the data-layer pause (active=false); both un-pause together at CTK-033 close.
-  # schedule:
-  #   - cron: '0 * * * *'
+  schedule:
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 permissions:
