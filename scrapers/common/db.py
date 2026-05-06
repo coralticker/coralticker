@@ -9,9 +9,16 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 
+from dotenv import load_dotenv
 from supabase import Client, create_client
 
 from scrapers.common.diff import Counters
+
+# Load SUPABASE_URL + SUPABASE_SERVICE_KEY from .env at repo root for local
+# scripts (tests, ad-hoc db queries). No-op if .env is absent — CI uses
+# GitHub Actions secrets via workflow YAML's env: block and never has a .env
+# on disk. See .env.example for the expected file shape.
+load_dotenv()
 
 log = logging.getLogger(__name__)
 

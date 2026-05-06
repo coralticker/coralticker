@@ -1,3 +1,4 @@
 .claude/
 bash.exe.stackdump
 __pycache__/
+.env
