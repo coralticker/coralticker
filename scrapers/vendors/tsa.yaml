@@ -1,0 +1,46 @@
+# Top Shelf Aquatics scraper config (CTK-026).
+#
+# Authoritative platform/method fields live on the vendors row (CTK-028 seed.sql,
+# vendor_id=3). YAML carries scrape-tuning per arch §2.3 — values that may change
+# without a code edit (delay, page size, max pages, hash anchor, originator prefix).
+# DB row wins on conflict.
+
+slug: tsa
+platform: shopify
+base_url: https://topshelfaquatics.com
+
+# Standard Shopify endpoint; smoke-checked 2026-05-07 — HTTP 200,
+# Content-Type: application/json; ~3000-product catalog (vendor-scan §3
+# "3,000 stunning corals"; first-page-at-250 returns 250 products with
+# 'products' array populated). Pagination terminates on first under-full
+# page per parse_shopify.py page loop.
+products_path: /products.json
+
+# Page size at Shopify's max (250) — fewer round-trips for the ~3000-product
+# catalog. ~12 pages cover the catalog steady-state; the parser short-
+# circuits on the first under-full page.
+page_size: 250
+
+# D1 (CTK-026 plan §Decision space + /lead-backend pre-impl review 2026-05-07):
+# inherits PE+WWC empirical request_delay_sec=2 lock. ~3000 products / 250 per
+# page = ~12 pages × 2s = ~24s total scrape time, well inside the 60-min
+# workflow timeout. Sat/Sun drop-window cadence at TSA-side traffic peak is
+# the unverified 429-surface; first-Sat+Sun-drop-window cron firing post-
+# cold-start is the empirical validation. Bump to 3-4s per arch §2.4 retry-
+# policy outcome only if 429s appear in the observation window.
+request_delay_sec: 2
+
+# Belt-and-suspenders ceiling. TSA's ~3000-product catalog at 250/page = ~12
+# pages today; 30 leaves room for catalog growth without re-tuning.
+max_pages: 30
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object.
+# Same hash_anchor as PE+WWC per parse_shopify.py shape stability across
+# CTK-024 Sessions 1-5 + CTK-025 framework inheritance test (c). F5 fold
+# (sort-before-hash) prevents Shopify JSON key emission-order changes from
+# spuriously flipping the sentinel. Empirical anchor (smoke 2026-05-07): 13
+# keys = body_html, created_at, handle, id, images, options, product_type,
+# published_at, tags, title, updated_at, variants, vendor (matches PE+WWC).
+hash_anchor: first_product_keys
+
+originator_prefix: tsa  # CTK-026 pre-impl spot-check: 89/250 (~36%) carry "TSA " prefix (page 1 limit=250); matches WWC ~30% pattern that locked CTK-025 to 'wwc'. First-20 sample at 5% was recency-skewed (fish-heavy) per /backend-engineer 2026-05-07. Aligns with arch §3.4 stage 3 + decision #23 (TSA absent from null-prefix vendor list).

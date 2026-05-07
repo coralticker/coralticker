@@ -1,0 +1,81 @@
+name: tsa
+
+on:
+  schedule:
+    # D3 lean (a) per CTK-026 plan §Decision space + /lead-backend pre-impl
+    # review 2026-05-07. Three cron lines covering the event-aware cadence
+    # locked at arch §2.7 decision #15 (TSA = "15-min Sat/Sun 11a-11p, hourly
+    # off-window"):
+    #
+    # 1. Hourly default (always fires).
+    # 2. 15-min Sat+Sun 15:00-23:59 UTC = Sat+Sun 11:00-19:59 EDT (first half
+    #    of the ET drop window).
+    # 3. 15-min Sun+Mon 00:00-03:59 UTC = Sat+Sun 20:00-23:59 EDT (UTC-spillover
+    #    tail of the ET drop window — Sat-night ET = Sun-early-AM UTC; cron-
+    #    day-of-week 0,1 = Sun+Mon UTC).
+    #
+    # EDT/EST seasonal note: cron is locked to UTC offsets that correspond to
+    # ET in EDT (May-Nov). EST (Nov-Mar) shifts the ET drop window 1 hour later
+    # in UTC; if drop-window absolute-UTC matters more than ET-local-window,
+    # revisit cron at first DST flip.
+    #
+    # Deviation note: hourly-always + 15-min-during-window vs. arch §2.7 spec
+    # 'hourly off-window' — accepted per CTK-026 D3 deviation paragraph;
+    # idempotent absorption (html_hash + UPSERT make duplicates a no-op
+    # data-side) + ~10% extra runs inside cost envelope.
+    - cron: '0 * * * *'
+    - cron: '*/15 15-23 * * 6,0'
+    - cron: '*/15 0-3 * * 0,1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # 60-min cap inherits PE Session 2 carve-out (CTK-024) + WWC carry
+    # (CTK-025). First-run image-mirror loop on TSA's ~3000 listings ×
+    # ~500-600ms per mirror() = 25-30 min just for Phase B (Phase A data
+    # writes finish in 1-2 min). Steady-state hourly + drop-window runs
+    # (handful of new arrivals + Phase B catch-up for prior NULL image_url
+    # rows) finish in under 2 min. 60 absorbs first-run + future catalog
+    # growth without re-tuning. Arch §2.7's 10-min default stands as the
+    # typical-cadence ceiling; 60 is the Phase 1 Shopify-large-catalog
+    # carve-out shared with PE + WWC.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Run TSA scraper
+        id: scrape
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python -m scrapers.common.run tsa
+
+      - name: Cleanup stale running rows
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python -m scrapers.common.run tsa --cleanup
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"tsa scraper failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"
