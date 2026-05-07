@@ -1,6 +1,6 @@
-"""scrapers/tests/test_fetch_existing_listings_pagination.py — CTK-033
-regression tests for db.fetch_existing_listings range-loop pagination per
-Tasks §6.
+"""scrapers/tests/test_fetch_existing_listings_pagination.py — CTK-033 +
+CTK-034 regression tests for db.fetch_existing_listings range-loop
+pagination.
 
 Hits the live hosted Supabase via service_role client (no local stub yet).
 Uses a dedicated test vendor (slug='_ctk033_test', active=false) for
@@ -14,11 +14,16 @@ Runnable as:
 Requires SUPABASE_URL + SUPABASE_SERVICE_KEY in env (same as production
 scraper).
 
-Coverage per CTK-033 plan §6:
-  test_pagination_returns_full_catalog          full-catalog pagination (2500 > 1000-cap)
-  test_pagination_under_page_size               under-page-size single-chunk path
-  test_pagination_empty_catalog                 empty-catalog zero-row path
-  test_pagination_dict_keys_unique              .range() boundary off-by-one regression
+Coverage:
+  CTK-033 Tasks §6 (range-loop pagination):
+    test_pagination_returns_full_catalog          full-catalog pagination (2500 > 1000-cap)
+    test_pagination_under_page_size               under-page-size single-chunk path
+    test_pagination_empty_catalog                 empty-catalog zero-row path
+    test_pagination_dict_keys_unique              .range() boundary off-by-one regression
+  CTK-034 Task §4 (chunk-ordering stability):
+    test_pagination_dict_size_matches_catalog_count  multi-iteration chunk-stability
+    test_pagination_returns_all_unique_keys          all-keys-present at scale
+    test_sanity_check_raises_on_count_mismatch       count-mismatch loud-failure (mocked)
 """
 
 from __future__ import annotations
@@ -159,6 +164,97 @@ def test_pagination_dict_keys_unique(client, vendor):
     )
 
 
+# ─── Test 5: chunk-stability across iterations (CTK-034) ─────────────────────
+def test_pagination_dict_size_matches_catalog_count(client, vendor):
+    """Insert 2500 listings; call fetch_existing_listings 5 times; assert each
+    iteration returns 2500 keys. Catches the CTK-034 chunk-ordering bug:
+    PostgREST .range() without .order() returns chunks in indeterminate scan
+    order, so successive fires can skip rows on some iterations and overlap
+    on others. With .order("id") in place, every iteration is deterministic.
+    """
+    _wipe_listings(client, vendor["id"])
+    _insert_listings_bulk(client, vendor["id"], 2500, "https://example.test/p/stable-")
+
+    for iteration in range(5):
+        result = db.fetch_existing_listings(client, vendor["id"])
+        assert len(result) == 2500, (
+            f"chunk-ordering instability: iteration {iteration} returned {len(result)} keys, "
+            f"expected 2500 (CTK-034 .order() regression)"
+        )
+
+
+# ─── Test 6: all expected URLs present at scale (CTK-034) ────────────────────
+def test_pagination_returns_all_unique_keys(client, vendor):
+    """Insert 2500 listings with zero-padded URLs; call fetch_existing_listings;
+    assert every expected URL appears in the returned dict. Catches the same
+    CTK-034 bug from the URL-key direction — chunk-skip surfaces as a missing
+    key in the result dict, not just a wrong row count.
+    """
+    _wipe_listings(client, vendor["id"])
+    _insert_listings_bulk(
+        client, vendor["id"], 2500, "https://test.example.com/products/test-"
+    )
+
+    result = db.fetch_existing_listings(client, vendor["id"])
+    expected_keys = {
+        f"https://test.example.com/products/test-{i}" for i in range(2500)
+    }
+    actual_keys = set(result.keys())
+    missing = expected_keys - actual_keys
+    assert not missing, (
+        f"chunk-skip dropped {len(missing)} keys; "
+        f"sample missing: {sorted(missing)[:5]}"
+    )
+
+
+# ─── Test 7: count-mismatch sanity-check raises (CTK-034) ────────────────────
+# Convention break: this test uses unittest.mock to force the count-mismatch
+# branch. Tests 1-6 use plain-assert + DB-live fixture (the _ctk033_test
+# vendor pattern). Forcing count-mismatch at the DB layer would require a
+# concurrent DELETE between the chunk SELECT and the count(*) call —
+# race-y and flakier than mocking. Mock is the cleaner shape for this single
+# test; deviation from the plain-assert/DB-live convention is intentional.
+def test_sanity_check_raises_on_count_mismatch(client, vendor):
+    """Mock the supabase client so the chunked SELECT returns 30 rows but the
+    count(*) query reports 50; assert RuntimeError raised. Validates the
+    CTK-034 loud-failure assertion at fetch_existing_listings loop exit.
+    """
+    from unittest.mock import MagicMock
+
+    chunk_data = [
+        {
+            "id": i,
+            "product_url": f"https://example.test/p/mock-{i}",
+            "current_price": None,
+            "in_stock": True,
+            "image_url": None,
+        }
+        for i in range(30)
+    ]
+    chunk_response = MagicMock(data=chunk_data)
+    count_response = MagicMock(count=50)
+
+    def select_dispatch(*args, **kwargs):
+        builder = MagicMock()
+        if kwargs.get("count") == "exact":
+            builder.eq.return_value.execute.return_value = count_response
+        else:
+            builder.eq.return_value.order.return_value.range.return_value.execute.return_value = chunk_response
+        return builder
+
+    mock_client = MagicMock()
+    mock_client.table.return_value.select.side_effect = select_dispatch
+
+    try:
+        db.fetch_existing_listings(mock_client, vendor_id=999)
+    except RuntimeError as e:
+        assert "coverage gap" in str(e), f"unexpected error message: {e}"
+        return
+    raise AssertionError(
+        "expected RuntimeError on count mismatch; none was raised"
+    )
+
+
 def main() -> int:
     client = db.get_client()
     vendor = _setup_test_vendor(client)
@@ -169,6 +265,9 @@ def main() -> int:
         test_pagination_under_page_size,
         test_pagination_empty_catalog,
         test_pagination_dict_keys_unique,
+        test_pagination_dict_size_matches_catalog_count,
+        test_pagination_returns_all_unique_keys,
+        test_sanity_check_raises_on_count_mismatch,
     ]
 
     failures: list[tuple[str, str]] = []

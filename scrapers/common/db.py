@@ -67,6 +67,14 @@ def fetch_existing_listings(client: Client, vendor_id: int) -> dict[str, dict]:
     ceiling (50,000-row hard cap) bounds runaway pagination if PostgREST
     misreports a short page. Loud-failure posture per arch §2.4 — chunk-SELECT
     exceptions bubble up; no try/except.
+
+    Per CTK-034: PostgREST returns rows in indeterminate order without an
+    ORDER BY clause; chunked .range() calls without .order() can skip or
+    overlap rows non-deterministically across fires. .order("id") locks
+    chunk membership to the primary-key index (free, stable across PostgREST
+    internal scan state, immune to URL-canonicalization edge cases). The
+    count-mismatch assertion at loop exit is the loud-failure hook for any
+    future regression of the same bug class.
     """
     page_size = 1000  # matches PostgREST default; tunes naturally as catalog grows
     iteration_ceiling = 50
@@ -79,6 +87,7 @@ def fetch_existing_listings(client: Client, vendor_id: int) -> dict[str, dict]:
             client.table("vendor_listings")
             .select("id,product_url,current_price,in_stock,image_url")
             .eq("vendor_id", vendor_id)
+            .order("id")
             .range(start, end)
             .execute()
             .data
@@ -93,6 +102,19 @@ def fetch_existing_listings(client: Client, vendor_id: int) -> dict[str, dict]:
             "fetch_existing_listings hit %d-iteration ceiling for vendor_id=%d "
             "(%d rows fetched); catalog may exceed %d-row hard cap",
             iteration_ceiling, vendor_id, len(rows), iteration_ceiling * page_size,
+        )
+    expected = (
+        client.table("vendor_listings")
+        .select("id", count="exact")
+        .eq("vendor_id", vendor_id)
+        .execute()
+        .count
+    )
+    if len(rows) != expected:
+        raise RuntimeError(
+            f"fetch_existing_listings coverage gap for vendor_id={vendor_id}: "
+            f"chunked SELECT returned {len(rows)} rows but catalog count={expected}; "
+            f"pagination dropped rows (CTK-034 chunk-ordering regression)"
         )
     return {r["product_url"]: r for r in rows}
 
