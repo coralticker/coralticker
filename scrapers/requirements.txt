@@ -17,9 +17,14 @@
 #                     Pacific East — pure /products.json — but lands now so
 #                     the second consumer (Tidal Gardens, custom) inherits
 #                     without a deps PR landing first).
+#   Pillow          — image-mirror compression per CTK-035 (resize 800px max
+#                     long edge + WebP q80 re-encode). Boring-stack default;
+#                     fail-soft per arch decision #55 (Pillow exception
+#                     falls through to raw-bytes upload path).
 
 requests==2.32.3
 pyyaml==6.0.2
 supabase==2.30.0
 python-dotenv==1.0.1
 beautifulsoup4==4.12.3
+Pillow==12.2.0
