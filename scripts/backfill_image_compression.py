@@ -37,7 +37,9 @@ Per-vendor wallclock budget: ~3 hours (plan.md acceptance line 103).
        source-baseline gates compress-vs-pay decision per Session 3 retune):
        python -m scripts.backfill_image_compression --vendor <slug> --phase 1 \
            --dry-run --limit 16 --save-samples-to /tmp/spot-check-<slug>/
-       Yields <handle>.source.<ext> + <handle>.compressed.webp pairs per object.
+       Yields <handle>.source.<ext> + <handle>.compressed.q{N}.webp pairs per
+       object — q-level auto-suffixed from images._WEBP_QUALITY so re-running
+       at a different q-level into the same dir doesn't overwrite prior pairs.
        Eyeball pairs side-by-side; ≤2 of 8 visibly degraded vs. source → q75/600px
        holds, proceed to step 3. ≥3 of 8 → bail to q70/600px (patch _WEBP_QUALITY
        in scrapers/common/images.py + re-run 2a) before step 3.
@@ -275,7 +277,7 @@ def run_phase1(
             if samples_dir is not None:
                 handle, src_ext = os.path.splitext(name)
                 source_path = Path(samples_dir) / f"{handle}.source{src_ext}"
-                compressed_path = Path(samples_dir) / f"{handle}.compressed.webp"
+                compressed_path = Path(samples_dir) / f"{handle}.compressed.q{images._WEBP_QUALITY}.webp"
                 source_path.write_bytes(body_old)
                 compressed_path.write_bytes(body_new)
                 log.info(
