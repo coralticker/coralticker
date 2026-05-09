@@ -32,6 +32,16 @@ Per-vendor wallclock budget: ~3 hours (plan.md acceptance line 103).
 2. (Optional) Smoke-run on first 50 objects to sanity-check before the full pass:
        python -m scripts.backfill_image_compression --vendor <slug> --phase 1 --dry-run --limit 50
 
+   2a. (Optional) Collect source-vs-compressed pairs to disk for visual-quality
+       spot-check against source-baseline (CTK-035 D-5 revised methodology —
+       source-baseline gates compress-vs-pay decision per Session 3 retune):
+       python -m scripts.backfill_image_compression --vendor <slug> --phase 1 \
+           --dry-run --limit 16 --save-samples-to /tmp/spot-check-<slug>/
+       Yields <handle>.source.<ext> + <handle>.compressed.webp pairs per object.
+       Eyeball pairs side-by-side; ≤2 of 8 visibly degraded vs. source → q75/600px
+       holds, proceed to step 3. ≥3 of 8 → bail to q70/600px (patch _WEBP_QUALITY
+       in scrapers/common/images.py + re-run 2a) before step 3.
+
 3. Run Phase 1 (compression + re-upload + progress capture):
        python -m scripts.backfill_image_compression --vendor <slug> --phase 1
 
@@ -42,10 +52,10 @@ Per-vendor wallclock budget: ~3 hours (plan.md acceptance line 103).
        python -m scripts.backfill_image_compression --vendor <slug> --phase 3
 
 6. 8-image visual-quality spot-check per plan.md acceptance line 105.
-       - ≤2 of 8 visibly soft/banded → q80 holds, proceed.
-       - ≥3 of 8 → bail to q85 (patch _WEBP_QUALITY in scrapers/common/images.py,
-         delete .backfill-progress-{slug}.json + .backfill-pre-rewrite-paths-{slug}.json,
-         re-run from step 3).
+       - ≤2 of 8 visibly soft/banded against source-baseline → q75/600px holds, proceed.
+       - ≥3 of 8 → bail to q70/600px (patch _WEBP_QUALITY in scrapers/common/images.py
+         from 75 to 70, delete .backfill-progress-{slug}.json + .backfill-pre-rewrite-paths-{slug}.json,
+         re-run from step 3). Old q85 fallback retired Session 3 — wrong direction.
 
 7. Re-enable cron for the vendor (Jon-side):
        supabase db query --linked "UPDATE vendors SET active=true WHERE slug='<slug>'"
@@ -190,6 +200,7 @@ def run_phase1(
     vendor: dict,
     dry_run: bool = False,
     limit: int | None = None,
+    samples_dir: str | None = None,
 ) -> Phase1Result:
     """Per-object loop: download → compress → upload → progress capture.
 
@@ -197,11 +208,20 @@ def run_phase1(
     (fail-soft semantics, arch decision #55). Failure rate >5% surfaces as
     a stdout WARN at summary time — operator escalates per plan.md
     acceptance line 104 before next vendor.
+
+    `samples_dir`: --save-samples-to flag wiring (Phase 1 + dry-run only,
+    enforced in `main`). When set, writes `<handle>.source.<ext>` +
+    `<handle>.compressed.webp` pairs into the dir per processed object so
+    Jon spot-checks q-level output against source-baseline (CTK-035 D-5
+    revised methodology — source-baseline gates compress-vs-pay decision).
     """
     vendor_slug = vendor["slug"]
     progress_path = _progress_path(vendor_slug)
     progress = _load_progress(progress_path)
     processed_old_names = {entry["old_name"] for entry in progress}
+
+    if samples_dir is not None:
+        Path(samples_dir).mkdir(parents=True, exist_ok=True)
 
     if not dry_run and not _meta_path(vendor_slug).exists():
         _atomic_write_json(
@@ -252,6 +272,16 @@ def run_phase1(
         new_full = _new_path_from_old(old_full)
 
         if dry_run:
+            if samples_dir is not None:
+                handle, src_ext = os.path.splitext(name)
+                source_path = Path(samples_dir) / f"{handle}.source{src_ext}"
+                compressed_path = Path(samples_dir) / f"{handle}.compressed.webp"
+                source_path.write_bytes(body_old)
+                compressed_path.write_bytes(body_new)
+                log.info(
+                    "wrote %s (%d) + %s (%d)",
+                    source_path, len(body_old), compressed_path, len(body_new),
+                )
             log.info(
                 "[dry-run] %s: %d bytes old -> %d bytes new (would upload to %s)",
                 old_full, len(body_old), len(body_new), new_full,
@@ -520,10 +550,25 @@ def main(argv: list[str] | None = None) -> int:
         "--limit", type=int, default=None,
         help="Phase 1 only: stop after N successful objects (smoke-run gate)",
     )
+    parser.add_argument(
+        "--save-samples-to", dest="save_samples_to", type=str, default=None,
+        help="Phase 1 + --dry-run only: write <handle>.source.<ext> + "
+             "<handle>.compressed.webp pairs to this directory per processed "
+             "object (D-5 source-baseline spot-check support; aborts if "
+             "invoked without --dry-run to avoid bucket-write contamination)",
+    )
     args = parser.parse_args(argv)
 
-    if args.phase != 1 and (args.dry_run or args.limit is not None):
-        log.error("--dry-run and --limit are Phase 1 flags only")
+    if args.phase != 1 and (args.dry_run or args.limit is not None or args.save_samples_to is not None):
+        log.error("--dry-run, --limit, and --save-samples-to are Phase 1 flags only")
+        return 1
+
+    if args.save_samples_to is not None and not args.dry_run:
+        log.error(
+            "--save-samples-to requires --dry-run (otherwise the sample-write "
+            "codepath would run alongside live bucket uploads, polluting the "
+            "real backfill pass with disk-write side effects)"
+        )
         return 1
 
     client = db.get_client()
@@ -540,7 +585,11 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if args.phase == 1:
-        result = run_phase1(client, vendor, dry_run=args.dry_run, limit=args.limit)
+        result = run_phase1(
+            client, vendor,
+            dry_run=args.dry_run, limit=args.limit,
+            samples_dir=args.save_samples_to,
+        )
         print_phase1_summary(result, vendor["slug"], dry_run=args.dry_run)
         return 2 if result.fail_rate_pct > _FAIL_RATE_CEILING_PCT else 0
 

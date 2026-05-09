@@ -76,13 +76,14 @@ def _make_rgba_png(size: tuple[int, int]) -> bytes:
 
 # ─── Test 1: large JPEG compresses under target ──────────────────────────────
 def test_compress_large_jpeg_under_target():
-    """1500x1500 vendor-source JPEG → WebP at max edge ≤ 800 px and ≤ 80 KB.
-    Acceptance criterion line 98: 'Forward-write images.py:mirror() produces
-    WebP bytes ≤80 KB on a representative 1500x1500 vendor JPEG.'"""
+    """1500x1500 vendor-source JPEG → WebP at max edge ≤ 600 px and ≤ 60 KB.
+    Acceptance criterion line 98 (CTK-035 Session 3 retune): 'Forward-write
+    images.py:mirror() produces WebP bytes ≤60 KB on a representative
+    1500x1500 vendor JPEG at q75/600px.'"""
     src = _make_jpeg((1500, 1500))
     out = images._compress(src)
-    assert len(out) <= 80 * 1024, (
-        f"compressed bytes exceeded 80 KB target: {len(out)} bytes "
+    assert len(out) <= 60 * 1024, (
+        f"compressed bytes exceeded 60 KB target: {len(out)} bytes "
         f"(source was {len(src)} bytes)"
     )
     decoded = Image.open(BytesIO(out))

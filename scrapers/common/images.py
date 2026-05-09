@@ -3,11 +3,18 @@ cutover. Mirrors a vendor's image to the listing-images Supabase Storage
 bucket; returns the public URL on success or None on failure. Synchronous,
 1-attempt, image-only failure does NOT fail the row scrape (CTK-019 #55).
 
-Forward-write per CTK-035 D-2 + D-3: compress to WebP @ 800px max long edge,
-q80, before upload; bucket path is `{vendor_slug}/{handle}.webp`. Pillow
+Forward-write per CTK-035 D-2 + D-3: compress to WebP @ 600px max long edge,
+q75, before upload; bucket path is `{vendor_slug}/{handle}.webp`. Pillow
 exception during compression falls through to raw-bytes upload at the
 vendor-source extension/content-type — fail-soft semantics per arch
 decision #55.
+
+Parameters re-tuned in CTK-035 Session 3 from q80/800px → q75/600px after
+PE Step 2 dry-run smoke surfaced an acceptance-ceiling miss: empirical
+retention at q80/800px projected ~1.74 GB end-state vs. plan.md ≤1,000 MB.
+q75/600px primary projects ~810 MB; q70/600px fallback (~630 MB) documented
+in plan.md D-5 if visual-quality spot-check finds ≥3 of 8 visibly soft
+against source-baseline.
 """
 
 from __future__ import annotations
@@ -27,12 +34,14 @@ log = logging.getLogger(__name__)
 
 _BUCKET = "listing-images"
 
-# CTK-035 compression knobs. 800px max long edge matches site.md /coral/[slug]
-# detail contract (~800px); listing thumbnails (~300-400px) downscale further
-# at the next/image layer (CTK-014 §3.5.1). q80 is the boring-stack default;
-# q85 fallback documented in plan.md if D-5 spot-check fails per vendor.
-_TARGET_MAX_EDGE = 800
-_WEBP_QUALITY = 80
+# CTK-035 compression knobs (re-tuned Session 3). 600px max long edge stays
+# above site.md /coral/[slug] detail contract floor at typical viewing zoom;
+# listing thumbnails (~300-400px) downscale further at the next/image layer
+# (CTK-014 §3.5.1). q75/600px primary; q70/600px fallback documented in
+# plan.md D-5 if visual-quality spot-check finds ≥3 of 8 visibly soft against
+# source-baseline (q85 fallback retired Session 3 — wrong direction).
+_TARGET_MAX_EDGE = 600
+_WEBP_QUALITY = 75
 
 # Filename hygiene — Supabase Storage object IDs allow most chars, but we
 # normalize to a tight set so the URL is predictable + collision-resistant.
@@ -81,7 +90,7 @@ def mirror(client, vendor_slug: str, product_url: str, vendor_image_url: str) ->
 
 
 def _compress(body: bytes) -> bytes:
-    """Resize to 800px max long edge + re-encode as WebP q80. Returns new
+    """Resize to 600px max long edge + re-encode as WebP q75. Returns new
     bytes. Raises on Pillow decode failure — caller is responsible for
     fail-soft fall-through per arch decision #55.
 
