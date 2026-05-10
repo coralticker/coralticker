@@ -44,3 +44,20 @@ max_pages: 30
 hash_anchor: first_product_keys
 
 originator_prefix: tsa  # CTK-026 pre-impl spot-check: 89/250 (~36%) carry "TSA " prefix (page 1 limit=250); matches WWC ~30% pattern that locked CTK-025 to 'wwc'. First-20 sample at 5% was recency-skewed (fish-heavy) per /backend-engineer 2026-05-07. Aligns with arch §3.4 stage 3 + decision #23 (TSA absent from null-prefix vendor list).
+
+# CTK-037 category-filter: Livestock product_type covers both coral + fish
+# (~96% coral / ~4% fish by tag at full-catalog 2026-05-10). tag_denylist
+# rejects fish within Livestock. Anemone tag (20 within Livestock) NOT in
+# denylist — per seed-list inclusion (ECC Sherman/Rainbow BTA, D1 lean (a)).
+# Equipment lives in Aquarium Supplies / Oversized / Drop shipped — denied
+# by allowlist default. D1 + D2 + D3 leans locked 2026-05-10 by Jon.
+category_filter:
+  product_type_allowlist:
+    - Livestock           # 2408 items; coral + fish + anemones (CTK-037 2026-05-10)
+  tag_denylist:
+    - Angelfish           # fish, 18 items in Livestock (CTK-037 2026-05-10)
+    - Beginner Fish       # fish, 31 items in Livestock (CTK-037 2026-05-10)
+    - Clownfish           # fish, 19 items in Livestock (CTK-037 2026-05-10)
+    - Nano Fish           # fish, 22 items in Livestock (CTK-037 2026-05-10)
+    - Tang                # fish, 33 items in Livestock (CTK-037 2026-05-10)
+    - WYSIWYG Fish        # fish, 48 items in Livestock (CTK-037 2026-05-10)

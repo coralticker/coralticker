@@ -1,0 +1,249 @@
+{
+  "products": [
+    {
+      "id": 8000000000001,
+      "title": "WWC Avocado Smasher Zoanthids",
+      "handle": "wwc-avocado-smasher-zoanthids",
+      "body_html": "<p>WWC house Zoanthids frag.</p>",
+      "published_at": "2026-05-01T10:00:00-04:00",
+      "created_at": "2026-04-15T09:00:00-04:00",
+      "updated_at": "2026-05-09T12:00:00-04:00",
+      "vendor": "World Wide Corals",
+      "product_type": "Frag",
+      "tags": ["Zoanthids", "WWC Signature"],
+      "variants": [
+        {
+          "id": 42000000000001,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "WWC-AVOSMASH",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "79.99",
+          "grams": 454,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 8000000000001,
+          "created_at": "2026-04-15T09:00:00-04:00",
+          "updated_at": "2026-05-09T12:00:00-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 32000000000001,
+          "created_at": "2026-04-15T09:00:30-04:00",
+          "position": 1,
+          "updated_at": "2026-04-15T09:01:00-04:00",
+          "product_id": 8000000000001,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/wwc/avocado-smasher.jpg?v=1",
+          "width": 1500,
+          "height": 1500
+        }
+      ],
+      "options": [
+        {"name": "Title", "position": 1, "values": ["Default Title"]}
+      ]
+    },
+    {
+      "id": 8000000000002,
+      "title": "JF Acid Reflux Zoanthids",
+      "handle": "jf-acid-reflux-zoanthids",
+      "body_html": "<p>VP-collection JF Zoanthids frag.</p>",
+      "published_at": "2026-05-02T10:00:00-04:00",
+      "created_at": "2026-04-20T09:00:00-04:00",
+      "updated_at": "2026-05-09T12:00:00-04:00",
+      "vendor": "World Wide Corals",
+      "product_type": "VP Frags",
+      "tags": ["Zoanthids", "JF"],
+      "variants": [
+        {
+          "id": 42000000000002,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "WWC-JF-ACID",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": false,
+          "price": "129.99",
+          "grams": 454,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 8000000000002,
+          "created_at": "2026-04-20T09:00:00-04:00",
+          "updated_at": "2026-05-09T12:00:00-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 32000000000002,
+          "created_at": "2026-04-20T09:00:30-04:00",
+          "position": 1,
+          "updated_at": "2026-04-20T09:01:00-04:00",
+          "product_id": 8000000000002,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/wwc/jf-acid-reflux.jpg?v=1",
+          "width": 1500,
+          "height": 1500
+        }
+      ],
+      "options": [
+        {"name": "Title", "position": 1, "values": ["Default Title"]}
+      ]
+    },
+    {
+      "id": 8000000000003,
+      "title": "WYSIWYG Acropora Frag Pack",
+      "handle": "wysiwyg-acropora-frag-pack",
+      "body_html": "<p>WYSIWYG Acropora frag.</p>",
+      "published_at": "2026-05-03T10:00:00-04:00",
+      "created_at": "2026-04-25T09:00:00-04:00",
+      "updated_at": "2026-05-09T12:00:00-04:00",
+      "vendor": "World Wide Corals",
+      "product_type": "WYSIWYG Frag",
+      "tags": ["Acropora", "WYSIWYG"],
+      "variants": [
+        {
+          "id": 42000000000003,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "WWC-WYSI-ACRO",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "199.99",
+          "grams": 454,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 8000000000003,
+          "created_at": "2026-04-25T09:00:00-04:00",
+          "updated_at": "2026-05-09T12:00:00-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 32000000000003,
+          "created_at": "2026-04-25T09:00:30-04:00",
+          "position": 1,
+          "updated_at": "2026-04-25T09:01:00-04:00",
+          "product_id": 8000000000003,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/wwc/wysi-acropora.jpg?v=1",
+          "width": 1500,
+          "height": 1500
+        }
+      ],
+      "options": [
+        {"name": "Title", "position": 1, "values": ["Default Title"]}
+      ]
+    },
+    {
+      "id": 8000000000004,
+      "title": "Yellow Tang Hawaii",
+      "handle": "yellow-tang-hawaii",
+      "body_html": "<p>Yellow Tang from Hawaii.</p>",
+      "published_at": "2026-05-04T10:00:00-04:00",
+      "created_at": "2026-04-28T09:00:00-04:00",
+      "updated_at": "2026-05-09T12:00:00-04:00",
+      "vendor": "World Wide Corals",
+      "product_type": "Fish",
+      "tags": ["Tang", "Hawaii"],
+      "variants": [
+        {
+          "id": 42000000000004,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "WWC-FISH-TANG",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "159.99",
+          "grams": 454,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 8000000000004,
+          "created_at": "2026-04-28T09:00:00-04:00",
+          "updated_at": "2026-05-09T12:00:00-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 32000000000004,
+          "created_at": "2026-04-28T09:00:30-04:00",
+          "position": 1,
+          "updated_at": "2026-04-28T09:01:00-04:00",
+          "product_id": 8000000000004,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/wwc/yellow-tang.jpg?v=1",
+          "width": 1500,
+          "height": 1500
+        }
+      ],
+      "options": [
+        {"name": "Title", "position": 1, "values": ["Default Title"]}
+      ]
+    },
+    {
+      "id": 8000000000005,
+      "title": "Red Sea Reefer 250 Aquarium",
+      "handle": "red-sea-reefer-250-aquarium",
+      "body_html": "<p>Red Sea Reefer 250 system.</p>",
+      "published_at": "2026-05-05T10:00:00-04:00",
+      "created_at": "2026-04-30T09:00:00-04:00",
+      "updated_at": "2026-05-09T12:00:00-04:00",
+      "vendor": "World Wide Corals",
+      "product_type": "Dry Goods",
+      "tags": ["Tank", "Red Sea"],
+      "variants": [
+        {
+          "id": 42000000000005,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "WWC-DG-REEFER250",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": false,
+          "price": "1799.99",
+          "grams": 90000,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 8000000000005,
+          "created_at": "2026-04-30T09:00:00-04:00",
+          "updated_at": "2026-05-09T12:00:00-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 32000000000005,
+          "created_at": "2026-04-30T09:00:30-04:00",
+          "position": 1,
+          "updated_at": "2026-04-30T09:01:00-04:00",
+          "product_id": 8000000000005,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/wwc/red-sea-reefer-250.jpg?v=1",
+          "width": 1500,
+          "height": 1500
+        }
+      ],
+      "options": [
+        {"name": "Title", "position": 1, "values": ["Default Title"]}
+      ]
+    }
+  ]
+}

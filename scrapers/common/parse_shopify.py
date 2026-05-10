@@ -43,8 +43,10 @@ def fetch_and_parse(config: dict) -> ParseResult:
     delay = float(config.get("request_delay_sec", 2.0))
     originator_prefix = config.get("originator_prefix")  # null or string per decision #23
     image_strategy = config.get("image_strategy", "mirror")
+    category_filter = config.get("category_filter")  # CTK-037: None or {} = no gate (permissive default)
 
     items: list[dict] = []
+    skipped = 0
     html_hash: str | None = None
     http_status_last: int | None = None
 
@@ -82,13 +84,43 @@ def fetch_and_parse(config: dict) -> ParseResult:
             keys = sorted(products[0].keys())
             html_hash = hashlib.sha256(",".join(keys).encode("utf-8")).hexdigest()
 
-        items.extend(_normalize_product(p, base_url, image_strategy, originator_prefix) for p in products)
+        # CTK-037: iteration-site category-filter pre-_normalize_product. Rejected
+        # products never enter parse → diff → Phase A → Phase B. Skip-count
+        # accumulated across pages and logged at parse-end below. Permissive
+        # default — config without category_filter block bypasses the gate.
+        for p in products:
+            if not _should_keep(p, category_filter):
+                skipped += 1
+                continue
+            items.append(_normalize_product(p, base_url, image_strategy, originator_prefix))
 
         if len(products) < page_size:
             # Short page = last page. Spares one wasted round-trip.
             break
 
+    if category_filter:
+        log.info("category_filter: kept %d, skipped %d products", len(items), skipped)
+
     return ParseResult(items=items, html_hash=html_hash, http_status_last=http_status_last)
+
+
+def _should_keep(product: dict, category_filter: dict | None) -> bool:
+    """CTK-037 category-filter gate. Returns True if product passes; False if
+    rejected by allowlist or tag-denylist. None or empty dict = no gate
+    (permissive default for Phase 2 vendor onboarding inheritance).
+
+    Allowlist primary + tag-denylist secondary per CTK-037 Q-B lock — allowlist
+    miss is short-circuit reject; tag-denylist evaluates only on allowlist hit.
+    """
+    if not category_filter:
+        return True
+    allowlist = category_filter.get("product_type_allowlist") or []
+    tag_denylist = category_filter.get("tag_denylist") or []
+    if allowlist and product.get("product_type") not in allowlist:
+        return False
+    if tag_denylist and any(t in tag_denylist for t in (product.get("tags") or [])):
+        return False
+    return True
 
 
 def _normalize_product(product: dict, base_url: str, image_strategy: str, originator_prefix: str | None) -> dict:

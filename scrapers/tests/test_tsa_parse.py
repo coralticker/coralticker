@@ -38,13 +38,26 @@ import sys
 import traceback
 from pathlib import Path
 
-from scrapers.common.parse_shopify import _normalize_product
+from scrapers.common.parse_shopify import _normalize_product, _should_keep
 
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "tsa" / "products.sample.json"
 BASE_URL = "https://topshelfaquatics.com"
 ORIGINATOR_PREFIX = "tsa"  # matches scrapers/vendors/tsa.yaml D3-equivalent lock
 IMAGE_STRATEGY = "mirror"
+
+# Mirrors scrapers/vendors/tsa.yaml category_filter block (CTK-037 2026-05-10).
+# Livestock product_type covers both coral + fish; tag-denylist rejects fish
+# tags within Livestock. Anemone tag NOT in denylist per D1 lean (a) seed-list
+# coverage. Equipment (Aquarium Supplies / Oversized / Drop shipped) denied
+# by allowlist default.
+TSA_CATEGORY_FILTER = {
+    "product_type_allowlist": ["Livestock"],
+    "tag_denylist": [
+        "Angelfish", "Beginner Fish", "Clownfish", "Nano Fish", "Tang",
+        "WYSIWYG Fish",
+    ],
+}
 
 
 def _load_fixture() -> list[dict]:
@@ -253,6 +266,63 @@ def test_category_inference(products):
     )
 
 
+# ─── Test 13 (CTK-037): filter keeps TSA-prefix coral (Livestock product_type) ─
+def test_filter_keeps_tsa_livestock_coral(products):
+    """TSA Livestock allowlist + no fish-tag denylist hit = KEEP. Anchor case
+    for the 96% of Livestock that's coral."""
+    p = _by_title(products, "TSA Deep Soul Favia Coral")
+    assert _should_keep(p, TSA_CATEGORY_FILTER) is True
+
+
+# ─── Test 14 (CTK-037): filter rejects Aquarium Supplies (equipment) ─────────
+def test_filter_rejects_tsa_aquarium_supplies_equipment(products):
+    """Equipment lives outside Livestock allowlist — rejected without
+    consulting tag_denylist. Hydros Duet is the empirical anchor case."""
+    p = _by_title(products, "Hydros Duet Dosing Pump & Aquarium Controller - Hydros")
+    assert _should_keep(p, TSA_CATEGORY_FILTER) is False
+
+
+# ─── Test 15 (CTK-037): filter rejects merch (T-shirt, Aquarium Supplies) ────
+def test_filter_rejects_tsa_merch_apparel(products):
+    """T-shirt product_type='Aquarium Supplies' — TSA's apparel + equipment
+    share this product_type, both denied by allowlist."""
+    p = _by_title(products, "TSA Coral Pattern Outline UV Reactive T-Shirt")
+    assert _should_keep(p, TSA_CATEGORY_FILTER) is False
+
+
+# ─── Test 16 (CTK-037): tag-denylist rejects fish within Livestock ────────────
+def test_filter_tsa_tag_denylist_rejects_tang(products):
+    """Powder Blue Tang is product_type='Livestock' (passes allowlist) but
+    carries tags ['Reef Safe', 'Tang', 'WYSIWYG Fish']. Tang + WYSIWYG Fish
+    both match tag_denylist — rejected. Load-bearing test for Q-B lock
+    (allowlist primary + tag-denylist secondary)."""
+    p = _by_title(products, "Powder Blue Tang")
+    assert _should_keep(p, TSA_CATEGORY_FILTER) is False
+    assert "Tang" in p["tags"]
+
+
+# ─── Test 17 (CTK-037): permissive default when no category_filter block ──────
+def test_filter_tsa_permissive_when_no_block(products):
+    """Phase 2 vendor onboarding inheritance — None or {} = no gate. Every
+    fixture product passes (including the fish + equipment that the real TSA
+    filter rejects)."""
+    for p in products:
+        assert _should_keep(p, None) is True
+        assert _should_keep(p, {}) is True
+
+
+# ─── Test 18 (CTK-037): skip-count across TSA fixture matches expected ────────
+def test_filter_tsa_skip_count_matches(products):
+    """TSA fixture composition: 4 Livestock coral (Deep Soul Favia, Berry Bash
+    Echinata, Beast Boy Favia, Krak God Zoanthids) + 1 Livestock fish (Powder
+    Blue Tang — tag-denylist hit) + 2 Aquarium Supplies (T-shirt + Hydros Duet
+    — allowlist miss). Expected filter skip = 3."""
+    kept = sum(1 for p in products if _should_keep(p, TSA_CATEGORY_FILTER))
+    skipped = sum(1 for p in products if not _should_keep(p, TSA_CATEGORY_FILTER))
+    assert kept == 4, f"expected 4 kept, got {kept}"
+    assert skipped == 3, f"expected 3 skipped, got {skipped}"
+
+
 def main() -> int:
     products = _load_fixture()
     print(f"loaded fixture: {len(products)} products from {FIXTURE_PATH}")
@@ -270,6 +340,12 @@ def main() -> int:
         test_currency_usd_default,
         test_lineage_flag_vendor_named_on_caps_prefix,
         test_category_inference,
+        test_filter_keeps_tsa_livestock_coral,
+        test_filter_rejects_tsa_aquarium_supplies_equipment,
+        test_filter_rejects_tsa_merch_apparel,
+        test_filter_tsa_tag_denylist_rejects_tang,
+        test_filter_tsa_permissive_when_no_block,
+        test_filter_tsa_skip_count_matches,
     ]
 
     failures: list[tuple[str, str]] = []

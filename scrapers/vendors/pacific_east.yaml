@@ -44,3 +44,25 @@ hash_anchor: first_product_keys
 # Stage 4 (Normalize) does no prefix work; matcher §3.4 stage 3 is a no-op
 # for this vendor.
 originator_prefix: null
+
+# CTK-037 category-filter: coral + anemones + clams (per D1 lean (a) locked
+# 2026-05-10 by Jon — keep named-anemone + named-clam seed-list coverage
+# intact; ECC Sherman/Rainbow BTA + ORA Maxima Clam Ultra Gold all match here).
+# Empirical 2026-05-10 full-catalog /products.json | jq walk; non-coral
+# product_types (TankRaised fish, Inverts, Live Rock, Saltwater Fish, Macro
+# Algae, Live Food, gift cards) denied by allowlist default. Tag-denylist
+# empty — product_type alone discriminates at PE.
+category_filter:
+  product_type_allowlist:
+    - Acropora            # SPS, 206 items (CTK-037 2026-05-10)
+    - Anemone             # 309 items; per seed-list ECC Sherman/Rainbow BTA (CTK-037 D1 2026-05-10)
+    - Blastomussa         # LPS, 122 items (CTK-037 2026-05-10)
+    - Colony              # coral colonies, 1304 items (CTK-037 2026-05-10)
+    - Euphyllia           # LPS, 476 items (CTK-037 2026-05-10)
+    - Gorgonian           # soft-coral lineage, 11 items (CTK-037 2026-05-10)
+    - Grow Out            # coral grow-out packs, 24 items (CTK-037 2026-05-10)
+    - Maxima Clam         # 458 items; per seed-list ORA Maxima Clam Ultra Gold (CTK-037 D1 2026-05-10)
+    - Under 25            # coral price-bucket label, 23 items (CTK-037 2026-05-10)
+    - WYSIWYG             # WYSIWYG-photographed coral, 1797 items (CTK-037 2026-05-10)
+    - WYSIWYG Frags       # 2-item typo variant, kept for coverage (CTK-037 2026-05-10)
+  tag_denylist: []  # PE not needed: product_type alone discriminates (CTK-037 2026-05-10)

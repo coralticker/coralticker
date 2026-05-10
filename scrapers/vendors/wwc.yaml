@@ -48,3 +48,22 @@ hash_anchor: first_product_keys
 # prefix-bearing 30% match at stage 1 or 2 directly without synthesis.
 # Calibration of the cascade against real WWC titles is CTK-002.
 originator_prefix: wwc
+
+# CTK-037 category-filter: coral product_types only (per D1 lean (a) — WWC
+# carries no anemone/clam product_types). Empirical 2026-05-10 full-catalog
+# /products.json | jq walk; Fish (444 items, ~23% of catalog) cleanly denied
+# by its own product_type. D3 lean (a) locked 2026-05-10 by Jon: Doorbuster +
+# Custom Bundle denied (~9-item loss, mixed-bag safety). Tag-denylist empty.
+category_filter:
+  product_type_allowlist:
+    - Featured Livestock  # WWC feature drops, 2 items (CTK-037 2026-05-10)
+    - Frag                # coral frags, 726 items (CTK-037 2026-05-10)
+    - Frag-PoS            # point-of-sale coral frags, 7 items (CTK-037 2026-05-10)
+    - Live Sale Coral     # 1 item (CTK-037 2026-05-10)
+    - Pack                # coral packs, 18 items (CTK-037 2026-05-10)
+    - VP Colonies         # VP-collection colonies, 3 items (CTK-037 2026-05-10)
+    - VP Frags            # VP-collection frags, 81 items (CTK-037 2026-05-10)
+    - Wholesale Frag      # wholesale coral frags, 66 items (CTK-037 2026-05-10)
+    - WWC Colony          # WWC-house colonies, 65 items (CTK-037 2026-05-10)
+    - WYSIWYG Frag        # WYSIWYG-photographed frags, 159 items (CTK-037 2026-05-10)
+  tag_denylist: []  # WWC not needed: Fish has its own product_type (CTK-037 2026-05-10)
