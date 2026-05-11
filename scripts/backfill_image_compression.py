@@ -26,8 +26,32 @@ Vendor slugs ∈ {pacific_east, wwc, tsa}; argparse rejects anything else.
 Per CTK-035 plan.md D-1 + D-4, one vendor at a time, PE → WWC → TSA.
 Per-vendor wallclock budget: ~3 hours (plan.md acceptance line 103).
 
+0. (Once at CTK-035 close-out, not per-vendor) Plan 3-vendor sequencing per D-4
+   simultaneous-fire blast-radius bound: each vendor's Step 7 cron-reactivate fires
+   simultaneously with the next vendor's Step 1 cron-disable, keeping 2/3 vendors
+   hourly-green at any moment across the PE → WWC → TSA window.
+
 1. Disable cron for the vendor (Jon-side):
        supabase db query --linked "UPDATE vendors SET active=false WHERE slug='<slug>'"
+
+1.5. Pre-flight collision SQL — re-run on every vendor before Phase 1, even if a
+     planning-time enumeration returned 0 rows. Asset rotation between then and
+     fire-time can introduce cross-extension collisions (PE pass surfaced one such
+     historical artifact: `pacific_east/nerites-snails.{jpg,png}`):
+
+       supabase db query --linked "SELECT regexp_replace(name, '\\.(jpg|jpeg|png|gif)$', '.webp') AS target,
+              COUNT(*) AS source_count, array_agg(name) AS source_paths
+       FROM storage.objects
+       WHERE bucket_id = 'listing-images' AND name LIKE '<slug>/%' AND name ~ '\\.(jpg|jpeg|png|gif)$'
+       GROUP BY target HAVING COUNT(*) > 1;"
+
+     0 rows → proceed to step 2. N rows → per-collision disposition matrix:
+     (i)   duplicates (asset rotation .jpg→.png on same handle) → accept-as-design;
+           last-write-wins .webp output is structurally fine (same product photo,
+           q75/600px re-encode converges to near-identical bytes regardless of source).
+     (ii)  orphan source paths (listing removed but bucket object persists) → safe to
+           ignore; Phase 3 bulk-delete cleans them via pre-rewrite-paths sidecar.
+     (iii) Neither (i) nor (ii) — escalate to /lead-backend before firing Phase 1.
 
 2. (Optional) Smoke-run on first 50 objects to sanity-check before the full pass:
        python -m scripts.backfill_image_compression --vendor <slug> --phase 1 --dry-run --limit 50
@@ -54,6 +78,14 @@ Per-vendor wallclock budget: ~3 hours (plan.md acceptance line 103).
        python -m scripts.backfill_image_compression --vendor <slug> --phase 3
 
 6. 8-image visual-quality spot-check per plan.md acceptance line 105.
+       - Sample-selection mechanic: SQL random sample from storage.objects filtered to
+         vendor folder + Jon-eyeball handle-text for 8 across visual-character axes.
+         Recommended default category filter for handle-text picking:
+         category IN ('zoa','sps','lps','chalice','mushroom','softie') — ensures
+         6-axis coverage per plan.md line 106. Expand to acros/tridacna/anemones/
+         inverts for vendor inventories that lean those categories. Operator-facing
+         recommendation, not validation gate (Step 2a --save-samples-to dir is
+         alphabetical-first, equipment-heavy on vendors with non-coral SKUs in bucket).
        - ≤2 of 8 visibly soft/banded against source-baseline → q75/600px holds, proceed.
        - ≥3 of 8 → bail to q70/600px (patch _WEBP_QUALITY in scrapers/common/images.py
          from 75 to 70, delete .backfill-progress-{slug}.json + .backfill-pre-rewrite-paths-{slug}.json,
