@@ -116,7 +116,8 @@ def _should_keep(product: dict, category_filter: dict | None) -> bool:
         return True
     allowlist = category_filter.get("product_type_allowlist") or []
     tag_denylist = category_filter.get("tag_denylist") or []
-    if allowlist and product.get("product_type") not in allowlist:
+    product_type = product.get("product_type") or ""  # CTK-037 Session 5.5: normalize None/absent to "" so allowlist entry "" matches both shapes
+    if allowlist and product_type not in allowlist:
         return False
     if tag_denylist and any(t in tag_denylist for t in (product.get("tags") or [])):
         return False

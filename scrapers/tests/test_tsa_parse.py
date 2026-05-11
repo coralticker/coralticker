@@ -325,6 +325,27 @@ def test_filter_tsa_skip_count_matches(products):
     assert skipped == 3, f"expected 3 skipped, got {skipped}"
 
 
+# ─── Test 19 (CTK-037 Session 5.5): predicate normalization keeps None/absent ─
+def test_filter_normalizes_none_product_type_to_empty_string(products):
+    """CTK-037 Session 5.5 — None or key-absent product_type normalizes to "" so
+    TSA empty-string allowlist entry matches both Shopify shape variants. Prevents
+    silent recall regression if Shopify shifts empty-bucket representation."""
+    product_none = {"product_type": None, "title": "Some coral", "tags": []}
+    product_missing = {"title": "Some coral", "tags": []}  # key absent
+    cf = TSA_CATEGORY_FILTER  # has "" in allowlist post-Session-5
+    assert _should_keep(product_none, cf) is True
+    assert _should_keep(product_missing, cf) is True
+
+
+# ─── Test 20 (CTK-037 Session 5.5): normalization is symmetric (rejects too) ──
+def test_filter_rejects_none_product_type_when_empty_not_in_allowlist(products):
+    """CTK-037 Session 5.5 — normalization is symmetric; None still rejects when
+    "" is not in the allowlist (e.g., PE / WWC / JF YAMLs)."""
+    product = {"product_type": None, "title": "Some coral", "tags": []}
+    cf = {"product_type_allowlist": ["Livestock"], "tag_denylist": []}
+    assert _should_keep(product, cf) is False
+
+
 def main() -> int:
     products = _load_fixture()
     print(f"loaded fixture: {len(products)} products from {FIXTURE_PATH}")
@@ -348,6 +369,8 @@ def main() -> int:
         test_filter_tsa_tag_denylist_rejects_tang,
         test_filter_tsa_permissive_when_no_block,
         test_filter_tsa_skip_count_matches,
+        test_filter_normalizes_none_product_type_to_empty_string,
+        test_filter_rejects_none_product_type_when_empty_not_in_allowlist,
     ]
 
     failures: list[tuple[str, str]] = []
