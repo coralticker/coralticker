@@ -56,6 +56,7 @@ originator_prefix: wwc
 # Custom Bundle denied (~9-item loss, mixed-bag safety). Tag-denylist empty.
 category_filter:
   product_type_allowlist:
+    - CTO Corals          # 1/1 real coral (LPS Chalice) per CTK-037 Session 4.5 2026-05-11
     - Featured Livestock  # WWC feature drops, 2 items (CTK-037 2026-05-10)
     - Frag                # coral frags, 726 items (CTK-037 2026-05-10)
     - Frag-PoS            # point-of-sale coral frags, 7 items (CTK-037 2026-05-10)

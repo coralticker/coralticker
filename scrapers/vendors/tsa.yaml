@@ -53,6 +53,7 @@ originator_prefix: tsa  # CTK-026 pre-impl spot-check: 89/250 (~36%) carry "TSA 
 # by allowlist default. D1 + D2 + D3 leans locked 2026-05-10 by Jon.
 category_filter:
   product_type_allowlist:
+    - Coral-POS           # 1/1 real coral (SPS Cap) per CTK-037 Session 4.5 2026-05-11
     - Livestock           # 2408 items; coral + fish + anemones (CTK-037 2026-05-10)
   tag_denylist:
     - Angelfish           # fish, 18 items in Livestock (CTK-037 2026-05-10)

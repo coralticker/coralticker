@@ -63,6 +63,7 @@ category_filter:
     - Grow Out            # coral grow-out packs, 24 items (CTK-037 2026-05-10)
     - Maxima Clam         # 458 items; per seed-list ORA Maxima Clam Ultra Gold (CTK-037 D1 2026-05-10)
     - Under 25            # coral price-bucket label, 23 items (CTK-037 2026-05-10)
+    - Weekly Special      # 6/6 real coral exhaustive sample + fresh-catalog tag dist 100% coral-typed (CTK-037 Session 4.5 2026-05-11)
     - WYSIWYG             # WYSIWYG-photographed coral, 1797 items (CTK-037 2026-05-10)
     - WYSIWYG Frags       # 2-item typo variant, kept for coverage (CTK-037 2026-05-10)
   tag_denylist: []  # PE not needed: product_type alone discriminates (CTK-037 2026-05-10)
