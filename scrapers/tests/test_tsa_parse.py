@@ -46,13 +46,15 @@ BASE_URL = "https://topshelfaquatics.com"
 ORIGINATOR_PREFIX = "tsa"  # matches scrapers/vendors/tsa.yaml D3-equivalent lock
 IMAGE_STRATEGY = "mirror"
 
-# Mirrors scrapers/vendors/tsa.yaml category_filter block (CTK-037 2026-05-10).
+# Mirrors scrapers/vendors/tsa.yaml category_filter block (CTK-037 2026-05-10;
+# Session 4.6 added Coral-POS; Session 5 added empty-string for ~62-row
+# real-coral recovery in the empty-product_type bucket — Q-8 path (a)).
 # Livestock product_type covers both coral + fish; tag-denylist rejects fish
 # tags within Livestock. Anemone tag NOT in denylist per D1 lean (a) seed-list
 # coverage. Equipment (Aquarium Supplies / Oversized / Drop shipped) denied
 # by allowlist default.
 TSA_CATEGORY_FILTER = {
-    "product_type_allowlist": ["Livestock"],
+    "product_type_allowlist": ["", "Coral-POS", "Livestock"],
     "tag_denylist": [
         "Angelfish", "Beginner Fish", "Clownfish", "Nano Fish", "Tang",
         "WYSIWYG Fish",
