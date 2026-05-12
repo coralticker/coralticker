@@ -240,15 +240,24 @@ def run(slug: str) -> int:
     # impossible with empty cache pre-seed-load; Phase 3 frequency materializing
     # is the revisit trigger). Per /lead-backend review-results CTK-025
     # 2026-05-04 Q3 disposition.
-    if status_finalized and status == "success" and mirror_queue:
-        try:
-            persist_phase_b_succeeded, persist_phase_b_failed = diff.persist_phase_b(client, vendor_row, mirror_queue)
-            log.info(
-                "Phase B summary: %d/%d mirrors succeeded for run_id=%d",
-                persist_phase_b_succeeded, persist_phase_b_succeeded + persist_phase_b_failed, run_id,
-            )
-        except Exception as e:  # noqa: BLE001 — Phase B never fails the run; log + return success
-            log.warning("Phase B aborted unexpectedly (non-fatal, status stays success): %s", e)
+    # CTK-038 structural refactor — parent `if status_finalized and status == "success":`
+    # block + nested `if mirror_queue:` guards persist_phase_b. db.finish_phase_b
+    # lifts to parent-block level AFTER the nested block (so zero-NEW steady-state
+    # rows with empty mirror_queue also get a non-NULL phase_b_finished_at) and
+    # BEFORE return 0. NULL strictly means pre-CTK-038 OR Phase-B-cancelled
+    # (hard-cancel at workflow timeout never reaches this call). Helper is
+    # fail-soft (logs warning + returns on exception per CTK-038 plan §Constraints).
+    if status_finalized and status == "success":
+        if mirror_queue:
+            try:
+                persist_phase_b_succeeded, persist_phase_b_failed = diff.persist_phase_b(client, vendor_row, mirror_queue)
+                log.info(
+                    "Phase B summary: %d/%d mirrors succeeded for run_id=%d",
+                    persist_phase_b_succeeded, persist_phase_b_succeeded + persist_phase_b_failed, run_id,
+                )
+            except Exception as e:  # noqa: BLE001 — Phase B never fails the run; log + return success
+                log.warning("Phase B aborted unexpectedly (non-fatal, status stays success): %s", e)
+        db.finish_phase_b(client, run_id)
 
     return 0 if status == "success" else 1
 

@@ -195,6 +195,29 @@ def finish_scraper_run(
     client.table("scraper_runs").update(payload).eq("id", run_id).execute()
 
 
+def finish_phase_b(client: Client, run_id: int) -> None:
+    """CTK-038 — write `phase_b_finished_at` after Phase B reaches its
+    post-mirror code path. Called from run.py AFTER the nested
+    `if mirror_queue:` block (so zero-NEW steady-state rows also get a
+    non-NULL timestamp) and BEFORE `return 0`. NULL strictly means
+    pre-CTK-038 OR Phase-B-cancelled (hard-cancel at workflow timeout
+    never reaches this call).
+
+    Fail-soft per CTK-038 plan §Constraints: Phase B has already completed
+    by the time we're writing the timestamp; failing the timestamp write
+    doesn't undo the mirror work, and re-raising would mask Phase B
+    success in the process exit code. Network blip / connection drop logs
+    a warning and returns; the row stays NULL and looks like a hard-cancel
+    in observability — acceptable trade-off vs. flipping a successful run
+    to failed on a cosmetic write."""
+    try:
+        client.table("scraper_runs").update(
+            {"phase_b_finished_at": datetime.now(timezone.utc).isoformat()}
+        ).eq("id", run_id).execute()
+    except Exception as e:  # noqa: BLE001 — fail-soft per CTK-038 plan
+        log.warning("finish_phase_b write failed for run_id=%d (non-fatal): %s", run_id, e)
+
+
 def cleanup_stale_runs(client: Client, vendor_id: int, git_sha: str) -> int:
     """Arch §2.4 timeout-cleanup choice (a) — `if: always()` post-step calls
     this to flip any still-`running` rows for this vendor + git_sha to
