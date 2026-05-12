@@ -1,0 +1,21 @@
+# CoralTicker scraper dev/test deps — Phase 1.
+#
+# Separate from scrapers/requirements.txt (prod runtime) per CTK-039
+# prod/dev split convention. GH Actions scraper cron workflows
+# (pacific-east.yml, wwc.yml, tsa.yml, jf.yml) install only requirements.txt
+# — no image bloat from dev tooling on the cron runners. tests.yml is the
+# only workflow that installs both.
+#
+# Why each dep is here:
+#   pytest          — test runner per CTK-039. Picked over unittest because
+#                     the existing 9 test modules in scrapers/tests/ use plain
+#                     `assert` + `if __name__ == "__main__":` driver blocks
+#                     that pytest collects without conversion. Marker-filter
+#                     semantics (-m "not requires_db") are pytest-native.
+#
+# Bumps require re-verification — see CTK-039 plan §Risks "pytest version
+# pin drift" note. Pytest periodically tightens discovery rules across major
+# versions; the --collect-only floor assertion in tests.yml is the trip
+# wire if a bump silently changes collection behavior.
+
+pytest==8.3.4

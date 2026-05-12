@@ -29,6 +29,16 @@ import traceback
 
 from scrapers.common import db
 
+# CTK-039 D1 marker — pytest-aware so CI filter `-m "not requires_db"` skips
+# this module's tests (live hosted Supabase). Script-mode invocation on a
+# lean venv without pytest installed continues to work via the identity
+# fallback.
+try:
+    import pytest
+    mark_requires_db = pytest.mark.requires_db
+except ImportError:
+    mark_requires_db = lambda f: f
+
 
 TEST_VENDOR_SLUG = "_ctk032_test"
 
@@ -95,6 +105,7 @@ def _select_row(client, listing_id: int, columns: str = "*") -> dict:
 
 
 # ─── Test 1: trigger preserves OLD on UPDATE when payload includes first_seen_at ──
+@mark_requires_db
 def test_first_seen_at_immutable_on_update(client, vendor):
     """(b2) coverage. INSERT a row with first_seen_at=T0, then UPSERT the
     same row with first_seen_at=T1 in the payload. Trigger must preserve T0.
@@ -125,6 +136,7 @@ def test_first_seen_at_immutable_on_update(client, vendor):
 
 
 # ─── Test 2: DB DEFAULT fires when payload omits first_seen_at on INSERT ──────
+@mark_requires_db
 def test_first_seen_at_default_on_insert_when_payload_omits(client, vendor):
     """(b1)-H1 coverage. UPSERT a row with first_seen_at OMITTED. Since this
     row does not pre-exist, INSERT-path fires. DB DEFAULT now() must populate
@@ -151,6 +163,7 @@ def test_first_seen_at_default_on_insert_when_payload_omits(client, vendor):
 
 
 # ─── Test 3: first_seen_at preserved on UPDATE when payload omits it ──────────
+@mark_requires_db
 def test_first_seen_at_preserved_on_update_when_payload_omits(client, vendor):
     """(b1)-H2 coverage — homogeneous-payload UPDATE-path. INSERT a row with
     first_seen_at=T0, then UPSERT a chunk where this row omits first_seen_at
@@ -183,6 +196,7 @@ def test_first_seen_at_preserved_on_update_when_payload_omits(client, vendor):
 
 
 # ─── Test 4: post-fix mixed-decision chunk — WWC 08:36 reproduction ───────────
+@mark_requires_db
 def test_classify_vs_reality_drift_smoke(client, vendor):
     """End-to-end reproduction of the WWC 08:36:23Z + 12:15:22Z failure shape
     against post-fix production code. Mixed-decision chunk (multiple new +
@@ -265,6 +279,7 @@ def test_classify_vs_reality_drift_smoke(client, vendor):
 
 
 # ─── Test 5: generalized column-omission cascade ─────────────────────────────
+@mark_requires_db
 def test_column_omission_preserves_existing_under_batch_upsert(client, vendor):
     """F3 cascade test. Verifies whether the diff.py:139-143 working assumption
     ('PostgREST upsert only writes columns present in the payload') holds for

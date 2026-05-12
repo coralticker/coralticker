@@ -1,0 +1,57 @@
+name: tests
+
+# CTK-039 Phase 1 CI test runs.
+#
+# Trigger shape (D3 lean a per plan): push to main + pull_request. No PR-
+# gating (solo-cadence workflow is push-to-main; PR trigger is forward-
+# compatible scaffolding only, not a merge gate).
+#
+# DB-touching test disposition (D1 lean a per plan): @pytest.mark.requires_db
+# marker filtered out via `-m "not requires_db"`. The 2 live-DB tests
+# (test_first_seen_at, test_fetch_existing_listings_pagination) skip in CI;
+# they remain runnable locally via script-mode invocation.
+#
+# Two-step pytest invocation (F3 fold per /lead-backend review-plan
+# 2026-05-12): discovery-floor assertion before the actual run guards the
+# false-green-on-zero-tests surface (misconfigured pytest.ini testpaths /
+# pytest version skew). --strict-markers hardens marker-filter semantics.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements*.txt
+
+      - name: Install dependencies (prod + dev)
+        run: |
+          pip install -r scrapers/requirements.txt
+          pip install -r scrapers/requirements-dev.txt
+
+      - name: Pytest discovery floor assertion
+        run: |
+          pytest --collect-only -q scrapers/tests/ 2>&1 | tee /tmp/pytest-collect.txt
+          count=$(grep -cE '::test_' /tmp/pytest-collect.txt) || count=0
+          echo "Collected test items: $count"
+          if [ "$count" -lt 7 ]; then
+            echo "FAIL: pytest discovery floor — collected $count tests, expected >=7"
+            echo "(misconfigured pytest.ini testpaths or pytest version skew)"
+            exit 1
+          fi
+
+      - name: Pytest run (no-DB suite)
+        run: pytest --strict-markers -m "not requires_db" scrapers/tests/

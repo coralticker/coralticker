@@ -33,6 +33,16 @@ import traceback
 
 from scrapers.common import db
 
+# CTK-039 D1 marker — pytest-aware so CI filter `-m "not requires_db"` skips
+# this module's tests (live hosted Supabase). Script-mode invocation on a
+# lean venv without pytest installed continues to work via the identity
+# fallback.
+try:
+    import pytest
+    mark_requires_db = pytest.mark.requires_db
+except ImportError:
+    mark_requires_db = lambda f: f
+
 
 TEST_VENDOR_SLUG = "_ctk033_test"
 
@@ -93,6 +103,7 @@ def _insert_listings_bulk(client, vendor_id: int, count: int, url_prefix: str) -
 
 
 # ─── Test 1: full-catalog pagination (2500 > PostgREST 1000-row default cap) ──
+@mark_requires_db
 def test_pagination_returns_full_catalog(client, vendor):
     """Insert 2500 listings (above PostgREST 1000-row default cap); call
     fetch_existing_listings; assert all 2500 land in the returned dict.
@@ -110,6 +121,7 @@ def test_pagination_returns_full_catalog(client, vendor):
 
 
 # ─── Test 2: under-page-size single-chunk path ────────────────────────────────
+@mark_requires_db
 def test_pagination_under_page_size(client, vendor):
     """Insert 50 listings (well below page_size=1000); first chunk is short
     so the loop terminates after one round-trip. Assert all 50 land.
@@ -124,6 +136,7 @@ def test_pagination_under_page_size(client, vendor):
 
 
 # ─── Test 3: empty-catalog zero-row path ──────────────────────────────────────
+@mark_requires_db
 def test_pagination_empty_catalog(client, vendor):
     """Wipe listings, do not insert any. fetch_existing_listings should return
     an empty dict cleanly without raising; loop terminates on first empty
@@ -139,6 +152,7 @@ def test_pagination_empty_catalog(client, vendor):
 
 
 # ─── Test 4: .range() boundary off-by-one regression ──────────────────────────
+@mark_requires_db
 def test_pagination_dict_keys_unique(client, vendor):
     """Insert 2500 listings with deterministic URLs; call fetch_existing_listings;
     assert no key collisions in returned dict (catches off-by-one in .range()
@@ -165,6 +179,7 @@ def test_pagination_dict_keys_unique(client, vendor):
 
 
 # ─── Test 5: chunk-stability across iterations (CTK-034) ─────────────────────
+@mark_requires_db
 def test_pagination_dict_size_matches_catalog_count(client, vendor):
     """Insert 2500 listings; call fetch_existing_listings 5 times; assert each
     iteration returns 2500 keys. Catches the CTK-034 chunk-ordering bug:
@@ -184,6 +199,7 @@ def test_pagination_dict_size_matches_catalog_count(client, vendor):
 
 
 # ─── Test 6: all expected URLs present at scale (CTK-034) ────────────────────
+@mark_requires_db
 def test_pagination_returns_all_unique_keys(client, vendor):
     """Insert 2500 listings with zero-padded URLs; call fetch_existing_listings;
     assert every expected URL appears in the returned dict. Catches the same
@@ -214,6 +230,7 @@ def test_pagination_returns_all_unique_keys(client, vendor):
 # concurrent DELETE between the chunk SELECT and the count(*) call —
 # race-y and flakier than mocking. Mock is the cleaner shape for this single
 # test; deviation from the plain-assert/DB-live convention is intentional.
+@mark_requires_db
 def test_sanity_check_raises_on_count_mismatch(client, vendor):
     """Mock the supabase client so the chunked SELECT returns 30 rows but the
     count(*) query reports 50; assert RuntimeError raised. Validates the

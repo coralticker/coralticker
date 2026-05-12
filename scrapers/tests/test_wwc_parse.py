@@ -47,6 +47,21 @@ def _load_fixture() -> list[dict]:
         return json.load(f)["products"]
 
 
+# CTK-039 pytest fixture wrapper — exposes the script-mode `_load_fixture()`
+# return value as a pytest fixture so collected `def test_X(products)` test
+# functions resolve cleanly under `pytest scrapers/tests/`. Script-mode
+# invocation (`python -m scrapers.tests.test_wwc_parse`) continues to work
+# via main()'s direct `_load_fixture()` call; the pytest decorator is
+# metadata-only in that path.
+try:
+    import pytest
+    @pytest.fixture(scope="module")
+    def products():
+        return _load_fixture()
+except ImportError:
+    pass
+
+
 def _by_title(products: list[dict], title: str) -> dict:
     for p in products:
         if p["title"] == title:
