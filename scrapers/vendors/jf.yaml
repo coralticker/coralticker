@@ -1,0 +1,88 @@
+# Jason Fox Signature Corals scraper config (CTK-027).
+#
+# Authoritative platform/method fields live on the vendors row (CTK-028 seed.sql,
+# vendor_id=4). YAML carries scrape-tuning per arch §2.3 — values that may change
+# without a code edit (delay, page size, max pages, hash anchor, originator prefix).
+# DB row wins on conflict.
+
+slug: jf
+platform: shopify
+base_url: https://jasonfoxsignaturecorals.com
+
+# Standard Shopify endpoint; smoke-checked 2026-05-11 — HTTP 200,
+# Content-Type: application/json; charset=utf-8; 452-product catalog (page 1
+# returns 250, page 2 returns 202, page 3 empty). Pagination terminates on
+# first under-full page per parse_shopify.py page loop. Smallest catalog
+# Phase 1 will see — closes the framework's no-pagination-trigger floor
+# validation (sub-1000-row, single-chunk db.fetch_existing_listings path).
+products_path: /products.json
+
+# Page size at Shopify's max (250) — fewer round-trips for the 452-product
+# catalog. 2 pages cover the catalog steady-state; the parser short-circuits
+# on the first under-full page.
+page_size: 250
+
+# D1 (CTK-027 plan §Decision space lean (b)): inherits PE+WWC+TSA empirical
+# request_delay_sec=2 lock. 452 products / 250 per page = 2 pages × 2s = ~4s
+# total scrape time, trivial vs. 60-min workflow timeout. Drop-day operator-
+# triggered fires arrive at JF-side traffic peak (anniversary/holiday surge);
+# polite-rate is never the bottleneck at JF's scale. Bump to 3-4s per arch
+# §2.4 retry-policy outcome only if 429s appear in observation window.
+request_delay_sec: 2
+
+# Belt-and-suspenders ceiling. JF's 452-product catalog at 250/page = 2 pages
+# today; 5 leaves room for drop-day spikes (vendor-scan §2 projects 100-500
+# range during anniversary/holiday drops). Well under PE/WWC/TSA's 30 ceiling
+# — JF's small-catalog inverse-load case carries a tighter belt.
+max_pages: 5
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object.
+# Same hash_anchor as PE+WWC+TSA per parse_shopify.py shape stability across
+# CTK-024 Sessions 1-5 + CTK-025/026 framework inheritance test (c). F5 fold
+# (sort-before-hash) prevents Shopify JSON key emission-order changes from
+# spuriously flipping the sentinel. Empirical anchor (smoke 2026-05-11): 13
+# keys = body_html, created_at, handle, id, images, options, product_type,
+# published_at, tags, title, updated_at, variants, vendor (matches PE+WWC+TSA).
+hash_anchor: first_product_keys
+
+# D4 (CTK-027 plan §Decision space lean (a) build-time confirm 2026-05-11):
+# originator_prefix='jf'. Title-shape spot-check 2026-05-11 inspected first
+# 20 titles from /products.json: 12 of 20 carry "JF " prefix (e.g., "JF
+# SUNTAN DIGI", "JF KAMIKAZE ACRO", "JF FIRE ECHINOPHORA"); 5 of 20 carry
+# collab prefixes (CC, ORA, HUGOS, TYREE, TCR); 1 longform "JASON FOX
+# FIREWATER HYDNOPHORA"; 2 no-prefix ("SPECIAL PORITES", "PEPPA PIG MONTI").
+# Partial match outcome per plan D4 (b) — confirms the 12/12 seed-list "JF "
+# prefix pattern (research/named-coral-seed-list.md) reflects current JF-site
+# title shape at 60% bearing rate. Matcher §3.4 stage 3 (canonical-implicit-
+# prefix) earns its keep on the 40% that drop or substitute the prefix —
+# synthesizes "jf " + normalized_title against canonical patterns 1-2.
+# Aligns with arch §3.4 stage 3 + decision #23 (JF named originator vendor).
+#
+# ALL-CAPS title shape note: JF titles are ALL-CAPS-throughout ("JF SUNTAN
+# DIGI", not "JF Suntan Digi"). normalize_title lowercases all input so the
+# matcher absorbs the shape cleanly. infer_lineage_flag's regex requires
+# ALL-CAPS-prefix then title-case — it WILL NOT fire on JF titles; rows land
+# lineage_flag='unknown' at parse time. Documented in jf.py docstring +
+# test_jf_parse.py test for /lead-architect awareness.
+originator_prefix: jf
+
+# CTK-037 category-filter: coral product_types only (per D1 lean (a) +
+# empirical 2026-05-11 full-catalog /products.json | jq walk). JF's 452-row
+# catalog distributes across 9 product_types: WYSIWYG (169) + SPS (141) +
+# LPS (96) + Zoanthids/Softies (36) + Chalices (2) + MYSTERY BOX (2) all
+# coral; "" empty bucket (4 rows: 1 real coral + 3 LS_APR_2022 test-data per
+# CTK-037 Session 5 directive); giftcard (1) + tshirt (1) merch/equipment
+# denied by allowlist default. Tag-denylist empty — product_type alone
+# discriminates at JF (distinct from TSA's Livestock+tag-denylist shape).
+# `_should_keep` predicate normalization (None / key-absent → "") inherited
+# verbatim from CTK-037 Session 5.5 `scrapers/common/parse_shopify.py:107-124`.
+category_filter:
+  product_type_allowlist:
+    - ""                  # empty product_type bucket; 1/4 real coral ("Jason Fox Deep Purple Stag"); remaining 3 LS_APR_2022 archived/test-data (frontend has_image filter excludes); per CTK-037 Session 5 Q-8 path (a) (2026-05-11)
+    - Chalices            # LPS chalices, 2 items (CTK-027 2026-05-11)
+    - LPS                 # LPS corals, 96 items (CTK-027 2026-05-11)
+    - MYSTERY BOX         # JF coral grab-bag, 2 items (CTK-027 2026-05-11)
+    - SPS                 # SPS corals, 141 items (CTK-027 2026-05-11)
+    - WYSIWYG             # WYSIWYG-photographed coral, 169 items (CTK-027 2026-05-11)
+    - Zoanthids/Softies   # zoa + softie corals, 36 items (CTK-027 2026-05-11)
+  tag_denylist: []  # JF not needed: product_type alone discriminates (CTK-027 2026-05-11)

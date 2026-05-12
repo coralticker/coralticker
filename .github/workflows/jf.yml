@@ -1,0 +1,99 @@
+name: jf
+
+on:
+  schedule:
+    # D3 lean (α) per CTK-027 plan §Decision space + /lead-backend pre-impl
+    # review 2026-05-11. Single workflow: hourly baseline + manual
+    # workflow_dispatch operator-trigger for announced JF drop-days.
+    #
+    # Drop-day operational discipline: 5-min cadence on announced drop-days
+    # deferred to Phase 2 (where R2R-thread polling or operator UI input
+    # mechanism would also land — both Phase 2 sub-minute-tier work per arch
+    # §2.7 + CTK-006). v1 operator-triggered shape relies on Jon's R2R
+    # subscription + newsletter awareness for drop-day fire timing.
+    #
+    # Deviation note from arch §2.7 decision #15 spec ("daily baseline + 5-min
+    # cadence on announced-drop days via a second workflow"): lean (α) defers
+    # 5-min cadence + second workflow to Phase 2; v1 ships hourly baseline +
+    # manual workflow_dispatch. Operational simplicity + v1 scope discipline
+    # (no announcement-detection mechanism in v1) justify the deviation.
+    # Establishes "drop-day-aware = baseline + operator-trigger" precedent
+    # for Phase 1 — distinct from TSA's "event-aware = multi-cron weekly
+    # window" shape.
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Concurrency: queue (don't cancel) per /lead-backend 2026-05-08 disposition.
+#
+# (a) Asymmetric-shape rationale — JF is the first Phase 1 workflow where cron
+#     + routine workflow_dispatch co-exist (PE/WWC/TSA are single-trigger; no
+#     collision can arise). The collision risk is operationally meaningful
+#     ONLY at JF given the drop-day operator-trigger pattern.
+# (b) cancel-in-progress: false rationale — operator-trigger landing during
+#     in-flight hourly fire queues behind the running fire (≤60-min latency
+#     given timeout-minutes: 60), aligning with D3 lean (α) v1 acceptance
+#     ("missed drop-days are recoverable on next hourly baseline fire" per
+#     plan §Risks). Cancelling would risk truncating a running Phase B mirror
+#     loop mid-write — vendor_listings / price_history / Supabase storage
+#     double-write avoidance. Block also resolves CTK-026 Session 2
+#     schedule-suppression observation (open-items.md L57): explicit group
+#     converts GH-Actions-default silent-drop behavior into queue-with-
+#     pending-replacement; queue depth never exceeds 1 at JF's ≤15-min
+#     combined Phase-A + Phase-B run length.
+# (c) Cross-ref to open-items.md "PE/WWC/TSA concurrency cascade-repair (cross-
+#     workflow hygiene)" for the latent gap on the three single-trigger
+#     workflows (no routine workflow_dispatch path today; repair-shape is
+#     uniform across the three vendors but trigger-driven, not CTK-shaped).
+concurrency:
+  group: jf-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # 60-min cap inherits PE Session 2 carve-out (CTK-024) + WWC + TSA carry.
+    # JF's <500-row catalog × ~1100ms Phase B per CTK-026 calibration baseline
+    # = ~9 min Phase B max — substantial headroom inside the 60-min ceiling;
+    # first-run image mirror absorbed cleanly inside a single fire (no 2-fire
+    # span needed at JF scale per CTK-027 plan §Risks F1; by-design pattern is
+    # safety net, not expected case). 60 absorbs first-run + future catalog
+    # growth (incl. drop-day spike 100-500 range per vendor-scan §2).
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Run JF scraper
+        id: scrape
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python -m scrapers.common.run jf
+
+      - name: Cleanup stale running rows
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python -m scrapers.common.run jf --cleanup
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"jf scraper failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"

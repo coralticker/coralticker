@@ -1,248 +1,1188 @@
 {
   "products": [
     {
-      "id": 9000000000001,
-      "title": "JF Pearl Bubble SPS Acropora",
-      "handle": "jf-pearl-bubble-sps-acropora",
-      "body_html": "<p>JF SPS Acropora frag.</p>",
-      "published_at": "2026-05-01T10:00:00-04:00",
-      "created_at": "2026-04-15T09:00:00-04:00",
-      "updated_at": "2026-05-09T12:00:00-04:00",
-      "vendor": "Jason Fox Signature Corals",
-      "product_type": "SPS",
-      "tags": ["Acropora", "JF Signature"],
+      "id": 6674550390850,
+      "title": "JASON FOX FIREWATER HYDNOPHORA",
+      "handle": "jason-fox-firewater-hydnophora",
+      "body_html": "<p>LIGHT: LOW</p>\n<p>FLOW: MEDIUM</p>\n<p>SIZE: 1/2-3/4 INCH</p>",
+      "published_at": "2026-05-10T16:44:14-04:00",
+      "created_at": "2021-11-04T11:34:55-04:00",
+      "updated_at": "2026-05-11T17:39:15-04:00",
+      "vendor": "jason fox signature corals",
+      "product_type": "LPS",
+      "tags": [
+        "lps"
+      ],
       "variants": [
         {
-          "id": 43000000000001,
+          "id": 39596429213762,
           "title": "Default Title",
           "option1": "Default Title",
           "option2": null,
           "option3": null,
-          "sku": "JF-SPS-PEARL",
+          "sku": "LPS-FWHN0",
           "requires_shipping": true,
           "taxable": true,
           "featured_image": null,
           "available": true,
-          "price": "249.99",
-          "grams": 454,
+          "price": "69.00",
+          "grams": 0,
           "compare_at_price": null,
           "position": 1,
-          "product_id": 9000000000001,
-          "created_at": "2026-04-15T09:00:00-04:00",
-          "updated_at": "2026-05-09T12:00:00-04:00"
+          "product_id": 6674550390850,
+          "created_at": "2021-11-04T11:34:56-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
         }
       ],
       "images": [
         {
-          "id": 33000000000001,
-          "created_at": "2026-04-15T09:00:30-04:00",
+          "id": 28559983050818,
+          "created_at": "2021-11-04T11:34:55-04:00",
           "position": 1,
-          "updated_at": "2026-04-15T09:01:00-04:00",
-          "product_id": 9000000000001,
+          "updated_at": "2021-11-04T11:34:57-04:00",
+          "product_id": 6674550390850,
           "variant_ids": [],
-          "src": "https://cdn.shopify.com/s/files/jf/pearl-bubble-acro.jpg?v=1",
-          "width": 1500,
-          "height": 1500
+          "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/MAF_3900.jpg?v=1636040097",
+          "width": 550,
+          "height": 388
         }
       ],
       "options": [
-        {"name": "Title", "position": 1, "values": ["Default Title"]}
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
       ]
     },
     {
-      "id": 9000000000002,
-      "title": "JF Acid Reflux Zoanthids",
-      "handle": "jf-acid-reflux-zoanthids",
-      "body_html": "<p>JF Zoanthids frag.</p>",
-      "published_at": "2026-05-02T10:00:00-04:00",
-      "created_at": "2026-04-20T09:00:00-04:00",
-      "updated_at": "2026-05-09T12:00:00-04:00",
+      "id": 8235368087618,
+      "title": "ORA PEARLBERRY ACRO",
+      "handle": "wys26-1554",
+      "body_html": "<p>AVAILABLE NOW</p>",
+      "published_at": "2026-05-07T20:26:00-04:00",
+      "created_at": "2026-05-07T20:26:01-04:00",
+      "updated_at": "2026-05-11T17:39:15-04:00",
       "vendor": "Jason Fox Signature Corals",
-      "product_type": "Zoanthids/Softies",
-      "tags": ["Zoanthids", "JF Signature"],
+      "product_type": "WYSIWYG",
+      "tags": [
+        "MAY",
+        "WYSIWYG"
+      ],
       "variants": [
         {
-          "id": 43000000000002,
+          "id": 43724480348226,
           "title": "Default Title",
           "option1": "Default Title",
           "option2": null,
           "option3": null,
-          "sku": "JF-ZOA-ACID",
+          "sku": "WYS26-1554",
           "requires_shipping": true,
           "taxable": true,
           "featured_image": null,
           "available": false,
-          "price": "129.99",
-          "grams": 454,
-          "compare_at_price": null,
+          "price": "29.00",
+          "grams": 0,
+          "compare_at_price": "99.00",
           "position": 1,
-          "product_id": 9000000000002,
-          "created_at": "2026-04-20T09:00:00-04:00",
-          "updated_at": "2026-05-09T12:00:00-04:00"
+          "product_id": 8235368087618,
+          "created_at": "2026-05-07T20:26:01-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
         }
       ],
       "images": [
         {
-          "id": 33000000000002,
-          "created_at": "2026-04-20T09:00:30-04:00",
+          "id": 36181297561666,
+          "created_at": "2026-05-07T20:54:08-04:00",
           "position": 1,
-          "updated_at": "2026-04-20T09:01:00-04:00",
-          "product_id": 9000000000002,
+          "updated_at": "2026-05-07T20:54:09-04:00",
+          "product_id": 8235368087618,
           "variant_ids": [],
-          "src": "https://cdn.shopify.com/s/files/jf/acid-reflux.jpg?v=1",
-          "width": 1500,
-          "height": 1500
+          "src": "https://cdn.shopify.com/s/files/1/2104/4149/files/WYS26-1554.jpg?v=1778201649",
+          "width": 500,
+          "height": 412
         }
       ],
       "options": [
-        {"name": "Title", "position": 1, "values": ["Default Title"]}
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
       ]
     },
     {
-      "id": 9000000000003,
-      "title": "JF Dragon Fire WYSIWYG Chalice",
-      "handle": "jf-dragon-fire-wysiwyg-chalice",
-      "body_html": "<p>JF WYSIWYG chalice.</p>",
-      "published_at": "2026-05-03T10:00:00-04:00",
-      "created_at": "2026-04-25T09:00:00-04:00",
-      "updated_at": "2026-05-09T12:00:00-04:00",
+      "id": 8235368022082,
+      "title": "JF AUTUMN BLAZE ACRO",
+      "handle": "wys26-1552",
+      "body_html": "<p>AVAILABLE NOW</p>",
+      "published_at": "2026-05-07T20:25:55-04:00",
+      "created_at": "2026-05-07T20:25:55-04:00",
+      "updated_at": "2026-05-11T17:39:15-04:00",
       "vendor": "Jason Fox Signature Corals",
       "product_type": "WYSIWYG",
-      "tags": ["Chalice", "WYSIWYG", "JF Signature"],
+      "tags": [
+        "MAY",
+        "WYSIWYG"
+      ],
       "variants": [
         {
-          "id": 43000000000003,
+          "id": 43724480217154,
           "title": "Default Title",
           "option1": "Default Title",
           "option2": null,
           "option3": null,
-          "sku": "JF-WYSI-DRAGON",
+          "sku": "WYS26-1552",
           "requires_shipping": true,
           "taxable": true,
           "featured_image": null,
-          "available": true,
-          "price": "399.99",
-          "grams": 454,
-          "compare_at_price": null,
+          "available": false,
+          "price": "29.00",
+          "grams": 0,
+          "compare_at_price": "59.00",
           "position": 1,
-          "product_id": 9000000000003,
-          "created_at": "2026-04-25T09:00:00-04:00",
-          "updated_at": "2026-05-09T12:00:00-04:00"
+          "product_id": 8235368022082,
+          "created_at": "2026-05-07T20:25:56-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
         }
       ],
       "images": [
         {
-          "id": 33000000000003,
-          "created_at": "2026-04-25T09:00:30-04:00",
+          "id": 36181298020418,
+          "created_at": "2026-05-07T20:54:08-04:00",
           "position": 1,
-          "updated_at": "2026-04-25T09:01:00-04:00",
-          "product_id": 9000000000003,
+          "updated_at": "2026-05-07T20:54:10-04:00",
+          "product_id": 8235368022082,
           "variant_ids": [],
-          "src": "https://cdn.shopify.com/s/files/jf/dragon-fire-chalice.jpg?v=1",
-          "width": 1500,
-          "height": 1500
+          "src": "https://cdn.shopify.com/s/files/1/2104/4149/files/WYS26-1552.jpg?v=1778201650",
+          "width": 500,
+          "height": 412
         }
       ],
       "options": [
-        {"name": "Title", "position": 1, "values": ["Default Title"]}
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
       ]
     },
     {
-      "id": 9000000000004,
-      "title": "JF MYSTERY BOX (6 mixed frags)",
-      "handle": "jf-mystery-box-6-mixed-frags",
-      "body_html": "<p>6 mixed coral frags mystery pack.</p>",
-      "published_at": "2026-05-04T10:00:00-04:00",
-      "created_at": "2026-04-28T09:00:00-04:00",
-      "updated_at": "2026-05-09T12:00:00-04:00",
+      "id": 8235367792706,
+      "title": "SPECIAL PORITES",
+      "handle": "wys26-1547",
+      "body_html": "<p>AVAILABLE NOW</p>",
+      "published_at": "2026-05-07T20:25:47-04:00",
+      "created_at": "2026-05-07T20:25:47-04:00",
+      "updated_at": "2026-05-11T17:39:15-04:00",
       "vendor": "Jason Fox Signature Corals",
-      "product_type": "MYSTERY BOX",
-      "tags": ["Mystery", "JF"],
+      "product_type": "WYSIWYG",
+      "tags": [
+        "MAY",
+        "WYSIWYG"
+      ],
       "variants": [
         {
-          "id": 43000000000004,
+          "id": 43724479889474,
           "title": "Default Title",
           "option1": "Default Title",
           "option2": null,
           "option3": null,
-          "sku": "JF-MB-6",
+          "sku": "WYS26-1547",
           "requires_shipping": true,
           "taxable": true,
           "featured_image": null,
           "available": true,
-          "price": "299.99",
-          "grams": 2722,
+          "price": "25.00",
+          "grams": 0,
           "compare_at_price": null,
           "position": 1,
-          "product_id": 9000000000004,
-          "created_at": "2026-04-28T09:00:00-04:00",
-          "updated_at": "2026-05-09T12:00:00-04:00"
+          "product_id": 8235367792706,
+          "created_at": "2026-05-07T20:25:47-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
         }
       ],
       "images": [
         {
-          "id": 33000000000004,
-          "created_at": "2026-04-28T09:00:30-04:00",
+          "id": 36181299593282,
+          "created_at": "2026-05-07T20:54:09-04:00",
           "position": 1,
-          "updated_at": "2026-04-28T09:01:00-04:00",
-          "product_id": 9000000000004,
+          "updated_at": "2026-05-07T20:54:10-04:00",
+          "product_id": 8235367792706,
           "variant_ids": [],
-          "src": "https://cdn.shopify.com/s/files/jf/mystery-box-6.jpg?v=1",
-          "width": 1500,
-          "height": 1500
+          "src": "https://cdn.shopify.com/s/files/1/2104/4149/files/WYS26-1547.jpg?v=1778201650",
+          "width": 500,
+          "height": 412
         }
       ],
       "options": [
-        {"name": "Title", "position": 1, "values": ["Default Title"]}
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
       ]
     },
     {
-      "id": 9000000000005,
-      "title": "JF Logo Tee",
-      "handle": "jf-logo-tee",
-      "body_html": "<p>Jason Fox Signature Corals branded tee.</p>",
-      "published_at": "2026-05-05T10:00:00-04:00",
-      "created_at": "2026-04-30T09:00:00-04:00",
-      "updated_at": "2026-05-09T12:00:00-04:00",
+      "id": 7344674504770,
+      "title": "JF BLOODY SUNRISE MONTIPORA",
+      "handle": "jf-bloody-sunrise-montipora",
+      "body_html": "<p>LIGHT: MEDIUM</p>\n<p>FLOW: MEDIUM</p>\n<p>SIZE: 1/2 - 3/4 INCH</p>",
+      "published_at": "2024-09-06T09:44:24-04:00",
+      "created_at": "2024-09-06T09:44:24-04:00",
+      "updated_at": "2026-05-11T17:39:15-04:00",
+      "vendor": "Jason Fox Signature Corals",
+      "product_type": "SPS",
+      "tags": [
+        "SPS"
+      ],
+      "variants": [
+        {
+          "id": 41635362570306,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "SPS",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "79.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 2,
+          "product_id": 7344674504770,
+          "created_at": "2024-09-06T09:44:26-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 32198961168450,
+          "created_at": "2024-09-06T09:42:48-04:00",
+          "position": 1,
+          "updated_at": "2024-09-06T09:42:49-04:00",
+          "product_id": 7344674504770,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/2104/4149/files/MAF_7018.jpg?v=1725630169",
+          "width": 500,
+          "height": 348
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 815063335019,
+      "title": "Jason Fox Deep Purple Stag",
+      "handle": "jason-fox-deep-purple-stag",
+      "body_html": "<p>LIGHT: HIGH</p>\n<p>FLOW: HIGH</p>\n<p>SIZE: 1/2 - 3/4 INCH</p>",
+      "published_at": "2022-12-29T08:11:19-05:00",
+      "created_at": "2018-05-17T15:47:47-04:00",
+      "updated_at": "2026-05-11T17:39:15-04:00",
+      "vendor": "Jason Fox Signature Corals",
+      "product_type": "",
+      "tags": [],
+      "variants": [
+        {
+          "id": 8758057697387,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "SPS-YU2B",
+          "requires_shipping": false,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "59.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 815063335019,
+          "created_at": "2018-05-17T15:47:47-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 2793211461739,
+          "created_at": "2018-05-17T15:47:50-04:00",
+          "position": 1,
+          "updated_at": "2018-05-17T15:47:50-04:00",
+          "product_id": 815063335019,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/DEEP_PURPLE_STAG.jpg?v=1526586470",
+          "width": 500,
+          "height": 366
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 4490380771394,
+      "title": "T Shirt",
+      "handle": "t-shirt",
+      "body_html": "<p>Jason Fox T Shirt</p>\r<p>Select Size.</p>\r<meta charset=\"utf-8\">\r<p><span>FREE shipping on this product.</span></p>",
+      "published_at": "2022-10-08T13:13:51-04:00",
+      "created_at": "2020-03-26T00:02:27-04:00",
+      "updated_at": "2026-05-11T17:39:15-04:00",
       "vendor": "Jason Fox Signature Corals",
       "product_type": "tshirt",
-      "tags": ["Apparel"],
+      "tags": [],
       "variants": [
         {
-          "id": 43000000000005,
-          "title": "Large",
-          "option1": "Large",
-          "option2": null,
+          "id": 31752099463234,
+          "title": "Grey / Small",
+          "option1": "Grey",
+          "option2": "Small",
           "option3": null,
-          "sku": "JF-TEE-L",
+          "sku": "tshirt-s",
           "requires_shipping": true,
           "taxable": true,
-          "featured_image": null,
+          "featured_image": {
+            "id": 13999877095490,
+            "product_id": 4490380771394,
+            "position": 1,
+            "created_at": "2020-03-26T00:02:27-04:00",
+            "updated_at": "2020-03-26T00:02:27-04:00",
+            "alt": "Grey",
+            "width": 800,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/fox_shirt.png?v=1585195347",
+            "variant_ids": [
+              31752099463234,
+              31752099561538,
+              41025038090306,
+              41025039040578
+            ]
+          },
           "available": true,
-          "price": "24.99",
-          "grams": 200,
+          "price": "25.00",
+          "grams": 0,
           "compare_at_price": null,
           "position": 1,
-          "product_id": 9000000000005,
-          "created_at": "2026-04-30T09:00:00-04:00",
-          "updated_at": "2026-05-09T12:00:00-04:00"
+          "product_id": 4490380771394,
+          "created_at": "2020-03-26T00:02:29-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 41025038090306,
+          "title": "Grey / Medium",
+          "option1": "Grey",
+          "option2": "Medium",
+          "option3": null,
+          "sku": "tshirt-m",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 13999877095490,
+            "product_id": 4490380771394,
+            "position": 1,
+            "created_at": "2020-03-26T00:02:27-04:00",
+            "updated_at": "2020-03-26T00:02:27-04:00",
+            "alt": "Grey",
+            "width": 800,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/fox_shirt.png?v=1585195347",
+            "variant_ids": [
+              31752099463234,
+              31752099561538,
+              41025038090306,
+              41025039040578
+            ]
+          },
+          "available": true,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 2,
+          "product_id": 4490380771394,
+          "created_at": "2024-04-12T19:21:50-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 41025039040578,
+          "title": "Grey / Large",
+          "option1": "Grey",
+          "option2": "Large",
+          "option3": null,
+          "sku": "tshirt-l",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 13999877095490,
+            "product_id": 4490380771394,
+            "position": 1,
+            "created_at": "2020-03-26T00:02:27-04:00",
+            "updated_at": "2020-03-26T00:02:27-04:00",
+            "alt": "Grey",
+            "width": 800,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/fox_shirt.png?v=1585195347",
+            "variant_ids": [
+              31752099463234,
+              31752099561538,
+              41025038090306,
+              41025039040578
+            ]
+          },
+          "available": false,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 3,
+          "product_id": 4490380771394,
+          "created_at": "2024-04-12T19:22:51-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 31752099561538,
+          "title": "Grey / X-Large",
+          "option1": "Grey",
+          "option2": "X-Large",
+          "option3": null,
+          "sku": "tshirt-xl",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 13999877095490,
+            "product_id": 4490380771394,
+            "position": 1,
+            "created_at": "2020-03-26T00:02:27-04:00",
+            "updated_at": "2020-03-26T00:02:27-04:00",
+            "alt": "Grey",
+            "width": 800,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/fox_shirt.png?v=1585195347",
+            "variant_ids": [
+              31752099463234,
+              31752099561538,
+              41025038090306,
+              41025039040578
+            ]
+          },
+          "available": false,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 4,
+          "product_id": 4490380771394,
+          "created_at": "2020-03-26T00:02:29-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 31752100249666,
+          "title": "Yellow / Small",
+          "option1": "Yellow",
+          "option2": "Small",
+          "option3": null,
+          "sku": "tshirt-s",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 13999877259330,
+            "product_id": 4490380771394,
+            "position": 5,
+            "created_at": "2020-03-26T00:02:28-04:00",
+            "updated_at": "2020-03-26T00:02:28-04:00",
+            "alt": "Yellow",
+            "width": 1000,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/yellow.png?v=1585195348",
+            "variant_ids": [
+              31752100249666,
+              31752100282434,
+              31752100315202
+            ]
+          },
+          "available": false,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 5,
+          "product_id": 4490380771394,
+          "created_at": "2020-03-26T00:02:29-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 31752100282434,
+          "title": "Yellow / Medium",
+          "option1": "Yellow",
+          "option2": "Medium",
+          "option3": null,
+          "sku": "tshirt-m",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 13999877259330,
+            "product_id": 4490380771394,
+            "position": 5,
+            "created_at": "2020-03-26T00:02:28-04:00",
+            "updated_at": "2020-03-26T00:02:28-04:00",
+            "alt": "Yellow",
+            "width": 1000,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/yellow.png?v=1585195348",
+            "variant_ids": [
+              31752100249666,
+              31752100282434,
+              31752100315202
+            ]
+          },
+          "available": false,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 6,
+          "product_id": 4490380771394,
+          "created_at": "2020-03-26T00:02:29-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 31752100315202,
+          "title": "Yellow / Large",
+          "option1": "Yellow",
+          "option2": "Large",
+          "option3": null,
+          "sku": "tshirt-l",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 13999877259330,
+            "product_id": 4490380771394,
+            "position": 5,
+            "created_at": "2020-03-26T00:02:28-04:00",
+            "updated_at": "2020-03-26T00:02:28-04:00",
+            "alt": "Yellow",
+            "width": 1000,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/yellow.png?v=1585195348",
+            "variant_ids": [
+              31752100249666,
+              31752100282434,
+              31752100315202
+            ]
+          },
+          "available": false,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 7,
+          "product_id": 4490380771394,
+          "created_at": "2020-03-26T00:02:29-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 31752099790914,
+          "title": "Orange / Small",
+          "option1": "Orange",
+          "option2": "Small",
+          "option3": null,
+          "sku": "tshirt-s",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 13999877161026,
+            "product_id": 4490380771394,
+            "position": 3,
+            "created_at": "2020-03-26T00:02:27-04:00",
+            "updated_at": "2020-03-26T00:02:27-04:00",
+            "alt": "Orange",
+            "width": 1000,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/orange_shirt.png?v=1585195347",
+            "variant_ids": [
+              31752099790914,
+              31752099823682
+            ]
+          },
+          "available": false,
+          "price": "26.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 8,
+          "product_id": 4490380771394,
+          "created_at": "2020-03-26T00:02:29-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 31752099823682,
+          "title": "Orange / Medium",
+          "option1": "Orange",
+          "option2": "Medium",
+          "option3": null,
+          "sku": "tshirt-m",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 13999877161026,
+            "product_id": 4490380771394,
+            "position": 3,
+            "created_at": "2020-03-26T00:02:27-04:00",
+            "updated_at": "2020-03-26T00:02:27-04:00",
+            "alt": "Orange",
+            "width": 1000,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/orange_shirt.png?v=1585195347",
+            "variant_ids": [
+              31752099790914,
+              31752099823682
+            ]
+          },
+          "available": false,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 9,
+          "product_id": 4490380771394,
+          "created_at": "2020-03-26T00:02:29-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 31752099627074,
+          "title": "Blue / Small",
+          "option1": "Blue",
+          "option2": "Small",
+          "option3": null,
+          "sku": "tshirt-s",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 13999877128258,
+            "product_id": 4490380771394,
+            "position": 2,
+            "created_at": "2020-03-26T00:02:27-04:00",
+            "updated_at": "2020-03-26T00:02:27-04:00",
+            "alt": "Blue",
+            "width": 1000,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/blue_shirt.png?v=1585195347",
+            "variant_ids": [
+              31752099627074,
+              31752099692610
+            ]
+          },
+          "available": false,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 10,
+          "product_id": 4490380771394,
+          "created_at": "2020-03-26T00:02:29-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 31752099692610,
+          "title": "Blue / Large",
+          "option1": "Blue",
+          "option2": "Large",
+          "option3": null,
+          "sku": "tshirt-l",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 13999877128258,
+            "product_id": 4490380771394,
+            "position": 2,
+            "created_at": "2020-03-26T00:02:27-04:00",
+            "updated_at": "2020-03-26T00:02:27-04:00",
+            "alt": "Blue",
+            "width": 1000,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/blue_shirt.png?v=1585195347",
+            "variant_ids": [
+              31752099627074,
+              31752099692610
+            ]
+          },
+          "available": false,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 11,
+          "product_id": 4490380771394,
+          "created_at": "2020-03-26T00:02:29-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 39591219232834,
+          "title": "Red / Small",
+          "option1": "Red",
+          "option2": "Small",
+          "option3": null,
+          "sku": "tshirt-s",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 28547346726978,
+            "product_id": 4490380771394,
+            "position": 7,
+            "created_at": "2021-10-29T15:02:47-04:00",
+            "updated_at": "2021-10-29T15:02:47-04:00",
+            "alt": null,
+            "width": 1000,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/red_bf2eb028-6183-4129-84da-b6c3ac4887c1.png?v=1635534167",
+            "variant_ids": [
+              39591219200066,
+              39591219232834
+            ]
+          },
+          "available": false,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 12,
+          "product_id": 4490380771394,
+          "created_at": "2021-10-29T14:56:32-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 39591219200066,
+          "title": "Red / Medium",
+          "option1": "Red",
+          "option2": "Medium",
+          "option3": null,
+          "sku": "tshirt-m",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 28547346726978,
+            "product_id": 4490380771394,
+            "position": 7,
+            "created_at": "2021-10-29T15:02:47-04:00",
+            "updated_at": "2021-10-29T15:02:47-04:00",
+            "alt": null,
+            "width": 1000,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/red_bf2eb028-6183-4129-84da-b6c3ac4887c1.png?v=1635534167",
+            "variant_ids": [
+              39591219200066,
+              39591219232834
+            ]
+          },
+          "available": false,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 13,
+          "product_id": 4490380771394,
+          "created_at": "2021-10-29T14:56:32-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 39591219167298,
+          "title": "Red / Large",
+          "option1": "Red",
+          "option2": "Large",
+          "option3": null,
+          "sku": "tshirt-l",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 28547346202690,
+            "product_id": 4490380771394,
+            "position": 6,
+            "created_at": "2021-10-29T15:02:25-04:00",
+            "updated_at": "2021-10-29T15:02:25-04:00",
+            "alt": null,
+            "width": 1000,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/red.png?v=1635534145",
+            "variant_ids": [
+              39591219167298
+            ]
+          },
+          "available": false,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 14,
+          "product_id": 4490380771394,
+          "created_at": "2021-10-29T14:56:32-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 31752100118594,
+          "title": "Purple / Medium",
+          "option1": "Purple",
+          "option2": "Medium",
+          "option3": null,
+          "sku": "tshirt-m",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 13999877226562,
+            "product_id": 4490380771394,
+            "position": 4,
+            "created_at": "2020-03-26T00:02:27-04:00",
+            "updated_at": "2020-03-26T00:02:27-04:00",
+            "alt": "Purple",
+            "width": 1000,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/purple_shirt.png?v=1585195347",
+            "variant_ids": [
+              31752100118594,
+              31752100151362
+            ]
+          },
+          "available": false,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 15,
+          "product_id": 4490380771394,
+          "created_at": "2020-03-26T00:02:29-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 31752100151362,
+          "title": "Purple / Large",
+          "option1": "Purple",
+          "option2": "Large",
+          "option3": null,
+          "sku": "tshirt-l",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 13999877226562,
+            "product_id": 4490380771394,
+            "position": 4,
+            "created_at": "2020-03-26T00:02:27-04:00",
+            "updated_at": "2020-03-26T00:02:27-04:00",
+            "alt": "Purple",
+            "width": 1000,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/purple_shirt.png?v=1585195347",
+            "variant_ids": [
+              31752100118594,
+              31752100151362
+            ]
+          },
+          "available": false,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 16,
+          "product_id": 4490380771394,
+          "created_at": "2020-03-26T00:02:29-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 31752099954754,
+          "title": "Pink / Small",
+          "option1": "Pink",
+          "option2": "Small",
+          "option3": null,
+          "sku": "tshirt-s",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 29537327579202,
+            "product_id": 4490380771394,
+            "position": 8,
+            "created_at": "2022-09-28T21:55:08-04:00",
+            "updated_at": "2022-09-28T21:55:08-04:00",
+            "alt": null,
+            "width": 1000,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/pink_shirt_2ff2c179-d00f-4d30-8347-38ff168f5146.png?v=1664416508",
+            "variant_ids": [
+              31752099954754,
+              31752099987522,
+              31752100020290
+            ]
+          },
+          "available": false,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 17,
+          "product_id": 4490380771394,
+          "created_at": "2020-03-26T00:02:29-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 31752099987522,
+          "title": "Pink / Medium",
+          "option1": "Pink",
+          "option2": "Medium",
+          "option3": null,
+          "sku": "tshirt-m",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 29537327579202,
+            "product_id": 4490380771394,
+            "position": 8,
+            "created_at": "2022-09-28T21:55:08-04:00",
+            "updated_at": "2022-09-28T21:55:08-04:00",
+            "alt": null,
+            "width": 1000,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/pink_shirt_2ff2c179-d00f-4d30-8347-38ff168f5146.png?v=1664416508",
+            "variant_ids": [
+              31752099954754,
+              31752099987522,
+              31752100020290
+            ]
+          },
+          "available": false,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 18,
+          "product_id": 4490380771394,
+          "created_at": "2020-03-26T00:02:29-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
+        },
+        {
+          "id": 31752100020290,
+          "title": "Pink / Large",
+          "option1": "Pink",
+          "option2": "Large",
+          "option3": null,
+          "sku": "tshirt-l",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": {
+            "id": 29537327579202,
+            "product_id": 4490380771394,
+            "position": 8,
+            "created_at": "2022-09-28T21:55:08-04:00",
+            "updated_at": "2022-09-28T21:55:08-04:00",
+            "alt": null,
+            "width": 1000,
+            "height": 1000,
+            "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/pink_shirt_2ff2c179-d00f-4d30-8347-38ff168f5146.png?v=1664416508",
+            "variant_ids": [
+              31752099954754,
+              31752099987522,
+              31752100020290
+            ]
+          },
+          "available": false,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 19,
+          "product_id": 4490380771394,
+          "created_at": "2020-03-26T00:02:29-04:00",
+          "updated_at": "2026-05-11T17:39:15-04:00"
         }
       ],
       "images": [
         {
-          "id": 33000000000005,
-          "created_at": "2026-04-30T09:00:30-04:00",
+          "id": 13999877095490,
+          "created_at": "2020-03-26T00:02:27-04:00",
           "position": 1,
-          "updated_at": "2026-04-30T09:01:00-04:00",
-          "product_id": 9000000000005,
-          "variant_ids": [],
-          "src": "https://cdn.shopify.com/s/files/jf/logo-tee.jpg?v=1",
-          "width": 1500,
-          "height": 1500
+          "updated_at": "2020-03-26T00:02:27-04:00",
+          "product_id": 4490380771394,
+          "variant_ids": [
+            31752099463234,
+            31752099561538,
+            41025038090306,
+            41025039040578
+          ],
+          "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/fox_shirt.png?v=1585195347",
+          "width": 800,
+          "height": 1000
+        },
+        {
+          "id": 13999877128258,
+          "created_at": "2020-03-26T00:02:27-04:00",
+          "position": 2,
+          "updated_at": "2020-03-26T00:02:27-04:00",
+          "product_id": 4490380771394,
+          "variant_ids": [
+            31752099627074,
+            31752099692610
+          ],
+          "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/blue_shirt.png?v=1585195347",
+          "width": 1000,
+          "height": 1000
+        },
+        {
+          "id": 13999877161026,
+          "created_at": "2020-03-26T00:02:27-04:00",
+          "position": 3,
+          "updated_at": "2020-03-26T00:02:27-04:00",
+          "product_id": 4490380771394,
+          "variant_ids": [
+            31752099790914,
+            31752099823682
+          ],
+          "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/orange_shirt.png?v=1585195347",
+          "width": 1000,
+          "height": 1000
+        },
+        {
+          "id": 13999877226562,
+          "created_at": "2020-03-26T00:02:27-04:00",
+          "position": 4,
+          "updated_at": "2020-03-26T00:02:27-04:00",
+          "product_id": 4490380771394,
+          "variant_ids": [
+            31752100118594,
+            31752100151362
+          ],
+          "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/purple_shirt.png?v=1585195347",
+          "width": 1000,
+          "height": 1000
+        },
+        {
+          "id": 13999877259330,
+          "created_at": "2020-03-26T00:02:28-04:00",
+          "position": 5,
+          "updated_at": "2020-03-26T00:02:28-04:00",
+          "product_id": 4490380771394,
+          "variant_ids": [
+            31752100249666,
+            31752100282434,
+            31752100315202
+          ],
+          "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/yellow.png?v=1585195348",
+          "width": 1000,
+          "height": 1000
+        },
+        {
+          "id": 28547346202690,
+          "created_at": "2021-10-29T15:02:25-04:00",
+          "position": 6,
+          "updated_at": "2021-10-29T15:02:25-04:00",
+          "product_id": 4490380771394,
+          "variant_ids": [
+            39591219167298
+          ],
+          "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/red.png?v=1635534145",
+          "width": 1000,
+          "height": 1000
+        },
+        {
+          "id": 28547346726978,
+          "created_at": "2021-10-29T15:02:47-04:00",
+          "position": 7,
+          "updated_at": "2021-10-29T15:02:47-04:00",
+          "product_id": 4490380771394,
+          "variant_ids": [
+            39591219200066,
+            39591219232834
+          ],
+          "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/red_bf2eb028-6183-4129-84da-b6c3ac4887c1.png?v=1635534167",
+          "width": 1000,
+          "height": 1000
+        },
+        {
+          "id": 29537327579202,
+          "created_at": "2022-09-28T21:55:08-04:00",
+          "position": 8,
+          "updated_at": "2022-09-28T21:55:08-04:00",
+          "product_id": 4490380771394,
+          "variant_ids": [
+            31752099954754,
+            31752099987522,
+            31752100020290
+          ],
+          "src": "https://cdn.shopify.com/s/files/1/2104/4149/products/pink_shirt_2ff2c179-d00f-4d30-8347-38ff168f5146.png?v=1664416508",
+          "width": 1000,
+          "height": 1000
         }
       ],
       "options": [
-        {"name": "Title", "position": 1, "values": ["Large"]}
+        {
+          "name": "Color",
+          "position": 1,
+          "values": [
+            "Grey",
+            "Yellow",
+            "Orange",
+            "Blue",
+            "Red",
+            "Purple",
+            "Pink"
+          ]
+        },
+        {
+          "name": "Size",
+          "position": 2,
+          "values": [
+            "Small",
+            "Medium",
+            "Large",
+            "X-Large"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 6732742131778,
+      "title": "gregg is great",
+      "handle": "gregg-is-great",
+      "body_html": "",
+      "published_at": "2022-03-31T22:46:24-04:00",
+      "created_at": "2022-03-31T22:46:24-04:00",
+      "updated_at": "2026-05-11T17:39:26-04:00",
+      "vendor": "gregg",
+      "product_type": "",
+      "tags": [
+        "limit_warning_ON",
+        "LS_APR_2022"
+      ],
+      "variants": [
+        {
+          "id": 39748743790658,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "greggisgreat",
+          "requires_shipping": false,
+          "taxable": true,
+          "featured_image": null,
+          "available": false,
+          "price": "6.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 6732742131778,
+          "created_at": "2022-03-31T22:46:24-04:00",
+          "updated_at": "2026-05-11T17:39:26-04:00"
+        }
+      ],
+      "images": [],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
       ]
     }
   ]
