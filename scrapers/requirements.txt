@@ -8,11 +8,21 @@
 # Why each dep is here:
 #   requests        — HTTP fetcher per arch §2.3 / §2.5 polite-scraper hygiene.
 #   pyyaml          — per-vendor YAML config per arch §2.3.
-#   supabase        — official Postgres + Storage client; UPSERT + bucket
-#                     uploads in one SDK matches §0.2 boring-stack ("one
-#                     dashboard, one credential, one SDK"). Picked over
-#                     raw psycopg2 + boto3 because Phase 1 has no read-path
-#                     latency budget that justifies driver-level control.
+#   psycopg[binary] — Neon Postgres driver per CTK-043 cut-1 (replaced
+#                     supabase-py 2026-05-16 after the 2026-05-15 Supabase
+#                     org-level 402 forced the data-plane move to Neon).
+#                     Active path: scrapers/common/db.py + diff.py +
+#                     matcher.py + the canary test.
+#   supabase        — RESIDUAL only, pending Q-1 ancillary-migration deferral
+#                     per CTK-043 cut-1 disposition 2026-05-16. Three scripts
+#                     + one non-canary test still import `from supabase import`:
+#                     scripts/backfill_image_compression.py,
+#                     scripts/backfill_supabase_to_r2.py,
+#                     scrapers/tools/ctk037_eval_filter_drift.py,
+#                     scrapers/tests/test_first_seen_at.py. All are one-shot /
+#                     research / eval-only — not in any CI cron path. Removal
+#                     blocked on consumer migration; remove from this file the
+#                     moment the last consumer migrates.
 #   beautifulsoup4  — parse_html.py BS4 helpers per arch §2.3 (not used by
 #                     Pacific East — pure /products.json — but lands now so
 #                     the second consumer (Tidal Gardens, custom) inherits
@@ -21,10 +31,19 @@
 #                     long edge + WebP q80 re-encode). Boring-stack default;
 #                     fail-soft per arch decision #55 (Pillow exception
 #                     falls through to raw-bytes upload path).
+#   boto3           — S3-compatible client for Cloudflare R2 image mirroring
+#                     per CTK-036 cut-2 (Q-C minimal SDK swap). R2 honors the
+#                     S3 PUT/GET/HEAD verbs at endpoint
+#                     https://<account-id>.r2.cloudflarestorage.com; no R2-
+#                     specific SDK exists. Used by scrapers/common/images.py
+#                     for forward-write and scripts/backfill_supabase_to_r2.py
+#                     for cut-3 bulk re-upload. supabase SDK retained for DB.
 
 requests==2.32.3
 pyyaml==6.0.2
+psycopg[binary]==3.3.4
 supabase==2.30.0
 python-dotenv==1.0.1
 beautifulsoup4==4.12.3
 Pillow==12.2.0
+boto3==1.35.99

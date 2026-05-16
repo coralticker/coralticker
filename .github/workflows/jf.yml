@@ -77,15 +77,13 @@ jobs:
       - name: Run JF scraper
         id: scrape
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
         run: python -m scrapers.common.run jf
 
       - name: Cleanup stale running rows
         if: always()
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
         run: python -m scrapers.common.run jf --cleanup
 
       - name: Slack alert on failure

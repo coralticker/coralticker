@@ -93,7 +93,7 @@ class MirrorTask:
 
 
 def persist_phase_a(
-    client,
+    conn,
     vendor_row: dict,
     decisions: list[ItemDecision],
     existing_by_url: dict[str, dict],
@@ -205,38 +205,40 @@ def persist_phase_a(
                 "_product_url": product_url,  # join key; stripped before INSERT
             })
 
-    # UPSERT vendor_listings in chunks + capture response data for the
-    # listing_id-by-product_url map. PostgREST upsert with on_conflict
-    # respects the UNIQUE (vendor_id, product_url) index per arch §1.4.
-    #
-    # Session 5 fix: capture upsert response data inline rather than the
-    # post-upsert SELECT pattern. The original SELECT was chunked into
-    # ?product_url=in.(...) query strings of 500 entries each (~60K chars per
-    # request) — Cloudflare's edge proxy strips request headers above the
-    # ~8-16K URL ceiling, including the apikey header → PostgREST returns
-    # apikey-missing/invalid masquerading as an auth error. Eliminating the
-    # round-trip removes the failure mode entirely + cuts one DB call per
-    # chunk + scales without per-vendor catalog-size tuning of chunk size.
+    # UPSERT vendor_listings per-row with dynamic column list — replicates
+    # PostgREST upsert's "columns absent from payload preserve existing on
+    # UPDATE" semantics by including only the row's actual keys in both the
+    # INSERT column list and the ON CONFLICT DO UPDATE SET clause. Per-row
+    # execute keeps the heterogeneous-column path clean (CTK-025 match-field
+    # preservation rule + CTK-024 image_url-on-NEW-only rule both ride on
+    # this); RETURNING id, product_url builds the listing_id-by-url map
+    # inline (CTK-024 Session 5 — replaces the post-upsert SELECT round-trip).
     id_by_url: dict[str, int] = {}
     if upserts:
-        for chunk in _chunks(upserts, 500):
-            response = client.table("vendor_listings").upsert(
-                chunk, on_conflict="vendor_id,product_url"
-            ).execute()
-            for row in response.data or []:
-                id_by_url[row["product_url"]] = row["id"]
+        with conn.cursor() as cur:
+            for row in upserts:
+                lid, purl = _upsert_listing_row(cur, row)
+                id_by_url[purl] = lid
 
-    # Touch unchanged rows (last_seen_at only). Cheap targeted UPDATEs.
+    # Touch unchanged rows (last_seen_at only). Single chunked UPDATE per
+    # 1000-row batch via ANY(%s); psycopg parameterizes the array as a single
+    # bind — no URL-length pressure (the chunk-of-500 cap under supabase-py
+    # was a PostgREST URL-length workaround, not a SQL constraint).
     if touch_ids:
-        for chunk in _chunks(touch_ids, 500):
-            client.table("vendor_listings").update({"last_seen_at": now}).in_("id", chunk).execute()
+        with conn.cursor() as cur:
+            for chunk in _chunks(touch_ids, 1000):
+                cur.execute(
+                    "UPDATE vendor_listings SET last_seen_at = %s WHERE id = ANY(%s)",
+                    (now, chunk),
+                )
 
     # Hand listing_ids back to the mirror queue.
     for t in mirror_queue:
         if t.listing_id is None:
             t.listing_id = id_by_url.get(t.product_url)
 
-    # Insert price_history.
+    # Insert price_history. Homogeneous columns — executemany pipelines the
+    # batch cleanly.
     if history:
         history_rows = []
         for h in history:
@@ -244,15 +246,14 @@ def persist_phase_a(
             if lid is None:
                 log.warning("price_history: no listing_id for %s — skip", h["_product_url"])
                 continue
-            history_rows.append({
-                "listing_id": lid,
-                "price": h["price"],
-                "in_stock": h["in_stock"],
-                "scraper_run_id": h["scraper_run_id"],
-            })
+            history_rows.append((lid, h["price"], h["in_stock"], h["scraper_run_id"]))
         if history_rows:
-            for chunk in _chunks(history_rows, 500):
-                client.table("price_history").insert(chunk).execute()
+            with conn.cursor() as cur:
+                cur.executemany(
+                    "INSERT INTO price_history (listing_id, price, in_stock, scraper_run_id) "
+                    "VALUES (%s, %s, %s, %s)",
+                    history_rows,
+                )
 
     log.info(
         "Phase A complete: %d upserts + %d touches + %d history rows; %d Phase B mirrors queued",
@@ -261,7 +262,7 @@ def persist_phase_a(
     return mirror_queue
 
 
-def persist_phase_b(client, vendor_row: dict, mirror_queue: list[MirrorTask]) -> tuple[int, int]:
+def persist_phase_b(conn, vendor_row: dict, mirror_queue: list[MirrorTask]) -> tuple[int, int]:
     """Phase B — best-effort, per-row, fail-soft. Iterates the Phase A mirror
     queue: for each entry, attempt mirror() + UPDATE vendor_listings.image_url.
     Per-row exceptions log a WARNING and continue; no row fails the whole run.
@@ -293,14 +294,18 @@ def persist_phase_b(client, vendor_row: dict, mirror_queue: list[MirrorTask]) ->
             failed += 1
             continue
         try:
-            url = image_pipeline.mirror(client, vendor_slug, task.product_url, task.vendor_image_url)
+            url = image_pipeline.mirror(vendor_slug, task.product_url, task.vendor_image_url)
             if url is None:
                 # mirror() already logged the failure cause (network / non-200 /
                 # upload error) per CTK-019 #55. Leave image_url as NULL; next
                 # scrape's Phase A re-queues this row.
                 failed += 1
                 continue
-            client.table("vendor_listings").update({"image_url": url}).eq("id", task.listing_id).execute()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE vendor_listings SET image_url = %s WHERE id = %s",
+                    (url, task.listing_id),
+                )
             succeeded += 1
         except Exception as e:  # noqa: BLE001 — fail-soft per CTK-019 #55; image-only error never fails the run
             log.warning("Phase B mirror failed for listing_id=%s (%s): %s", task.listing_id, task.product_url, e)
@@ -333,3 +338,56 @@ def _decimal_to_str(v) -> str | None:
     if d is None:
         return None
     return f"{d:.2f}"
+
+
+# CTK-043 cut-1: column allowlist for the dynamic per-row UPSERT below.
+# Pinned to the union of columns persist_phase_a may emit per the diff-rule
+# bucketing above (base 11 + image_url + last_price_changed_at + the four
+# CTK-025 match fields). Defense-in-depth against accidental SQL-shape drift
+# if a future caller passes a stray key in the row dict.
+_UPSERT_ALLOWED_COLS = frozenset({
+    "vendor_id",
+    "vendor_sku",
+    "product_url",
+    "raw_title",
+    "normalized_title",
+    "current_price",
+    "currency",
+    "in_stock",
+    "category",
+    "lineage_flag",
+    "last_seen_at",
+    "image_url",
+    "last_price_changed_at",
+    "named_coral_id",
+    "match_confidence",
+    "match_method",
+    "matched_at",
+})
+
+
+def _upsert_listing_row(cur, row: dict) -> tuple[int, str]:
+    """Single-row UPSERT into vendor_listings. Column list driven by the
+    row's actual keys so the ON CONFLICT DO UPDATE SET clause touches only
+    columns the payload provided — preserves PostgREST upsert's "absent =
+    keep existing" semantics that CTK-025 (match-field preservation on
+    price/stock-only changes) and CTK-024 (image_url-on-NEW-only) both
+    depend on. Returns (id, product_url) from RETURNING.
+    """
+    cols = [c for c in row.keys() if c in _UPSERT_ALLOWED_COLS]
+    if len(cols) != len(row):
+        unknown = set(row.keys()) - _UPSERT_ALLOWED_COLS
+        raise RuntimeError(f"_upsert_listing_row: unknown column(s) in row: {sorted(unknown)}")
+    placeholders = ", ".join(["%s"] * len(cols))
+    col_list = ", ".join(cols)
+    update_set = ", ".join(
+        f"{c} = EXCLUDED.{c}" for c in cols if c not in ("vendor_id", "product_url")
+    )
+    sql = (
+        f"INSERT INTO vendor_listings ({col_list}) VALUES ({placeholders}) "
+        f"ON CONFLICT (vendor_id, product_url) DO UPDATE SET {update_set} "
+        f"RETURNING id, product_url"
+    )
+    cur.execute(sql, [row[c] for c in cols])
+    result = cur.fetchone()
+    return (result["id"], result["product_url"])

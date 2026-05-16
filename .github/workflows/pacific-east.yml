@@ -34,15 +34,13 @@ jobs:
       - name: Run Pacific East scraper
         id: scrape
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
         run: python -m scrapers.common.run pacific_east
 
       - name: Cleanup stale running rows
         if: always()
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
         run: python -m scrapers.common.run pacific_east --cleanup
 
       - name: Slack alert on failure

@@ -127,7 +127,7 @@ class MatchResult:
 _NULL_RESULT = MatchResult(None, None, None, None)
 
 
-def load_match_cache(client) -> MatchCache:
+def load_match_cache(conn) -> MatchCache:
     """Load active named_corals + aliases once at scrape start.
 
     Empty cache is the Phase 1 expected state (seed loads at Phase 3 per
@@ -135,14 +135,12 @@ def load_match_cache(client) -> MatchCache:
     code path as on a populated cache — every cascade stage misses and
     stage 7 returns null fields.
     """
-    nc_rows = (
-        client.table("named_corals")
-        .select("id,canonical_name,normalized_name,requires_vendor_prefix,category")
-        .eq("active", True)
-        .execute()
-        .data
-        or []
-    )
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, canonical_name, normalized_name, requires_vendor_prefix, category "
+            "FROM named_corals WHERE active = TRUE"
+        )
+        nc_rows = cur.fetchall()
     nc_list = [
         NamedCoral(
             id=int(r["id"]),
@@ -156,13 +154,11 @@ def load_match_cache(client) -> MatchCache:
     canonical_index = {nc.normalized_name: nc for nc in nc_list}
     nc_by_id = {nc.id: nc for nc in nc_list}
 
-    al_rows = (
-        client.table("aliases")
-        .select("alias_text,named_coral_id,cluster_label,match_behavior")
-        .execute()
-        .data
-        or []
-    )
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT alias_text, named_coral_id, cluster_label, match_behavior FROM aliases"
+        )
+        al_rows = cur.fetchall()
     auto_link: list[Alias] = []
     flag_review: list[Alias] = []
     for r in al_rows:

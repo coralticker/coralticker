@@ -67,14 +67,14 @@ def run(slug: str) -> int:
     fires on non-zero exit."""
     _setup_logging()
     git_sha = os.getenv("GITHUB_SHA", "local")
-    client = db.get_client()
+    conn = db.get_conn()
 
     # Stage 1 — Config
-    vendor_row = db.fetch_vendor(client, slug)
+    vendor_row = db.fetch_vendor(conn, slug)
     yaml_config = _load_yaml(slug)
     config = {**vendor_row, **yaml_config}  # YAML overrides DB per arch §2.3
 
-    run_id = db.start_scraper_run(client, vendor_row["id"], git_sha)
+    run_id = db.start_scraper_run(conn, vendor_row["id"], git_sha)
     log.info("scraper_runs.id=%d started for vendor=%s sha=%s", run_id, slug, git_sha)
 
     # Stage 1b — Match cache (per CTK-025 F4 contract documented in matcher.py).
@@ -83,7 +83,7 @@ def run(slug: str) -> int:
     # clean stage-2-prerequisite error; not wrapped in fail-soft because a
     # match-cache load failure is a connectivity issue, not a per-listing
     # exception.
-    match_cache = matcher.load_match_cache(client)
+    match_cache = matcher.load_match_cache(conn)
     originator_prefix = config.get("originator_prefix")
 
     status = "failed"
@@ -111,7 +111,7 @@ def run(slug: str) -> int:
         log.info("parsed %d items; html_hash=%s", len(items), html_hash)
 
         # Stage 5 — Diff
-        existing_by_url = db.fetch_existing_listings(client, vendor_row["id"])
+        existing_by_url = db.fetch_existing_listings(conn, vendor_row["id"])
         decisions = diff.classify(items, existing_by_url)
         counters = diff.counters_from(decisions)
         log.info(
@@ -157,13 +157,13 @@ def run(slug: str) -> int:
         # the persist loop — Phase B handles it best-effort after status is
         # finalized so a mirror-loop timeout no longer loses scrape data
         # (CTK-019 #55: 'image-only failure does NOT fail the listing row').
-        mirror_queue = diff.persist_phase_a(client, vendor_row, decisions, existing_by_url, run_id)
+        mirror_queue = diff.persist_phase_a(conn, vendor_row, decisions, existing_by_url, run_id)
 
         # Silent canary per arch §2.4. F4: no-op until day 8 (median=0 →
         # threshold collapses to floor of 5); floor-of-5 catches outright-empty
         # blocks but week-1 partial failures (5 ≤ seen < eventual 0.2 × median)
         # slip past — Slack `if: failure()` is the load-bearing alert there.
-        median_7d = db.get_7d_median_seen(client, vendor_row["id"])
+        median_7d = db.get_7d_median_seen(conn, vendor_row["id"])
         threshold = max(5.0, 0.2 * median_7d)
         if counters.seen < threshold:
             status = "failed"
@@ -186,7 +186,7 @@ def run(slug: str) -> int:
         # `if: always()` cleanup step still flips any other still-`running`
         # rows that pre-date this run.
         db.finish_scraper_run(
-            client, run_id, status, error_class, error_message,
+            conn, run_id, status, error_class, error_message,
             counters, html_hash, http_status_last,
         )
         status_finalized = True
@@ -226,7 +226,7 @@ def run(slug: str) -> int:
             # Phase A didn't reach finalization — failure path. Close the row
             # with whatever status the except-clause computed.
             db.finish_scraper_run(
-                client, run_id, status, error_class, error_message,
+                conn, run_id, status, error_class, error_message,
                 counters, html_hash, http_status_last,
             )
             log.info("scraper_runs.id=%d finished status=%s error_class=%s", run_id, status, error_class)
@@ -250,14 +250,14 @@ def run(slug: str) -> int:
     if status_finalized and status == "success":
         if mirror_queue:
             try:
-                persist_phase_b_succeeded, persist_phase_b_failed = diff.persist_phase_b(client, vendor_row, mirror_queue)
+                persist_phase_b_succeeded, persist_phase_b_failed = diff.persist_phase_b(conn, vendor_row, mirror_queue)
                 log.info(
                     "Phase B summary: %d/%d mirrors succeeded for run_id=%d",
                     persist_phase_b_succeeded, persist_phase_b_succeeded + persist_phase_b_failed, run_id,
                 )
             except Exception as e:  # noqa: BLE001 — Phase B never fails the run; log + return success
                 log.warning("Phase B aborted unexpectedly (non-fatal, status stays success): %s", e)
-        db.finish_phase_b(client, run_id)
+        db.finish_phase_b(conn, run_id)
 
     return 0 if status == "success" else 1
 
@@ -270,13 +270,13 @@ def cleanup(slug: str) -> int:
     """
     _setup_logging()
     git_sha = os.getenv("GITHUB_SHA", "local")
-    client = db.get_client()
+    conn = db.get_conn()
     try:
-        vendor_row = db.fetch_vendor(client, slug)
+        vendor_row = db.fetch_vendor(conn, slug)
     except RuntimeError as e:
         log.warning("cleanup skipped: %s", e)
         return 0
-    flipped = db.cleanup_stale_runs(client, vendor_row["id"], git_sha)
+    flipped = db.cleanup_stale_runs(conn, vendor_row["id"], git_sha)
     if flipped:
         log.warning("cleanup flipped %d still-running rows to failed/timeout", flipped)
     return 0
