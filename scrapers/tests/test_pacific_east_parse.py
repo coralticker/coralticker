@@ -31,14 +31,19 @@ BASE_URL = "https://pacificeastaquaculture.com"
 ORIGINATOR_PREFIX = None  # CTK-024 D3 lock — PE titles use bare "Coral Colony - <Genus>" pattern
 IMAGE_STRATEGY = "mirror"
 
-# Mirrors scrapers/vendors/pacific_east.yaml category_filter block (CTK-037 2026-05-10).
+# Mirrors scrapers/vendors/pacific_east.yaml category_filter block. Allowlist
+# locked CTK-037 2026-05-10; tag_denylist 6-tag list locked CTK-041 Session 1
+# 2026-05-18 (Weekly Special bucket rotation — Trochus / Crab / Snail / Astrea
+# / Algae Muncher / Inverts).
 PE_CATEGORY_FILTER = {
     "product_type_allowlist": [
         "Acropora", "Anemone", "Blastomussa", "Colony", "Euphyllia",
-        "Gorgonian", "Grow Out", "Maxima Clam", "Under 25", "WYSIWYG",
-        "WYSIWYG Frags",
+        "Gorgonian", "Grow Out", "Maxima Clam", "Under 25", "Weekly Special",
+        "WYSIWYG", "WYSIWYG Frags",
     ],
-    "tag_denylist": [],
+    "tag_denylist": [
+        "Algae Muncher", "Astrea Snails", "Crab", "Inverts", "Snail", "Trochus",
+    ],
 }
 
 
@@ -138,14 +143,54 @@ def test_filter_pe_permissive_when_no_block(products):
         assert _should_keep(p, {}) is True, f"empty filter rejected {p['title']!r}"
 
 
-# Test 8: skip-count across PE fixture matches expected (2 of 5 denied)
+# Test 8: skip-count across PE fixture matches expected (5 of 8 denied)
 def test_filter_pe_skip_count_matches(products):
     """PE fixture composition: 3 coral (Acropora, Euphyllia, Maxima Clam) +
-    2 non-coral (TankRaised fish, Live Rock). Expected filter skip = 2."""
+    2 non-coral by product_type (TankRaised fish, Live Rock) + 3 invert-rows
+    by tag_denylist (Banded Trochus, Pom Pom Crab, Astrea Algae Mowers; all
+    under Weekly Special product_type — CTK-041 rotating-bucket leak).
+    Expected: 3 kept, 5 skipped."""
     kept = sum(1 for p in products if _should_keep(p, PE_CATEGORY_FILTER))
     skipped = sum(1 for p in products if not _should_keep(p, PE_CATEGORY_FILTER))
     assert kept == 3, f"expected 3 kept, got {kept}"
-    assert skipped == 2, f"expected 2 skipped, got {skipped}"
+    assert skipped == 5, f"expected 5 skipped, got {skipped}"
+
+
+# CTK-041 Test 13: tag_denylist rejects Banded Trochus under Weekly Special
+def test_filter_rejects_pe_weekly_special_trochus(products):
+    """CTK-041 D-2 lock — Weekly Special allowlist entry passes product_type
+    gate; tag_denylist's Trochus / Snail / Inverts entries reject at the
+    secondary gate. Validates the global-tag-denylist shape (D-3 lock)."""
+    p = _by_title(products, "Banded Trochus")
+    assert _should_keep(p, PE_CATEGORY_FILTER) is False
+
+
+# CTK-041 Test 14: tag_denylist rejects Pom Pom Crab under Weekly Special
+def test_filter_rejects_pe_weekly_special_pom_pom_crab(products):
+    p = _by_title(products, "Pom Pom Crab")
+    assert _should_keep(p, PE_CATEGORY_FILTER) is False
+
+
+# CTK-041 Test 15: tag_denylist rejects Astrea Algae Mowers under Weekly Special
+def test_filter_rejects_pe_weekly_special_astrea(products):
+    """Multi-tag invert row (Astrea Snails + Algae Muncher + Inverts) — any
+    single tag-denylist match short-circuits reject."""
+    p = _by_title(products, "Astrea Algae Mowers")
+    assert _should_keep(p, PE_CATEGORY_FILTER) is False
+
+
+# CTK-041 Test 16: Weekly Special allowlist still passes when no tag overlap
+def test_filter_pe_weekly_special_passes_when_no_invert_tags(products):
+    """Synthetic case — Weekly Special product_type alone passes; tag_denylist
+    rejects only when invert tags are present. Ensures the allowlist entry
+    isn't silently broken by the 6-tag denylist for legitimate Weekly Special
+    coral listings (D-3 false-deny risk-check)."""
+    synthetic = {
+        "title": "Weekly Special - Legitimate Coral",
+        "product_type": "Weekly Special",
+        "tags": ["WYSIWYG", "SPS"],
+    }
+    assert _should_keep(synthetic, PE_CATEGORY_FILTER) is True
 
 
 # Test 9: product_url absolute per CTK-033 D1 anchor
@@ -201,6 +246,10 @@ def main() -> int:
         test_pe_currency_usd_default,
         test_pe_normalize_no_prefix_synthesis,
         test_pe_in_stock_semantics,
+        test_filter_rejects_pe_weekly_special_trochus,
+        test_filter_rejects_pe_weekly_special_pom_pom_crab,
+        test_filter_rejects_pe_weekly_special_astrea,
+        test_filter_pe_weekly_special_passes_when_no_invert_tags,
     ]
 
     failures: list[tuple[str, str]] = []

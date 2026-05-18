@@ -44,6 +44,7 @@ def fetch_and_parse(config: dict) -> ParseResult:
     originator_prefix = config.get("originator_prefix")  # null or string per decision #23
     image_strategy = config.get("image_strategy", "mirror")
     category_filter = config.get("category_filter")  # CTK-037: None or {} = no gate (permissive default)
+    auction_detection = config.get("auction_detection")  # CTK-041: None = no-op (permissive default; WWC only at ship)
 
     items: list[dict] = []
     skipped = 0
@@ -92,7 +93,7 @@ def fetch_and_parse(config: dict) -> ParseResult:
             if not _should_keep(p, category_filter):
                 skipped += 1
                 continue
-            items.append(_normalize_product(p, base_url, image_strategy, originator_prefix))
+            items.append(_normalize_product(p, base_url, image_strategy, originator_prefix, auction_detection))
 
         if len(products) < page_size:
             # Short page = last page. Spares one wasted round-trip.
@@ -124,7 +125,34 @@ def _should_keep(product: dict, category_filter: dict | None) -> bool:
     return True
 
 
-def _normalize_product(product: dict, base_url: str, image_strategy: str, originator_prefix: str | None) -> dict:
+def _is_auction(product: dict, auction_detection: dict) -> bool:
+    """CTK-041 auction detection. Tag-set match is primary; slug_suffix is a
+    sanity log-warning to catch tag-shape drift (vendor drops the auction tag
+    but keeps the URL pattern) without false-deny. Returns True iff tag-match
+    fires; suffix-only matches log a warning and return False so a tag-shape
+    regression surfaces in observability without silently re-pricing auctions.
+    """
+    auction_tags = set(auction_detection.get("tags") or [])
+    slug_suffix = auction_detection.get("slug_suffix")
+    product_tags = product.get("tags") or []
+    tag_match = bool(auction_tags & set(product_tags))
+    handle = product.get("handle", "")
+    suffix_match = bool(slug_suffix and handle.endswith(slug_suffix))
+    if suffix_match and not tag_match:
+        log.warning(
+            "auction slug_suffix=%s matched but no tag match (tag-shape drift?); handle=%s tags=%s",
+            slug_suffix, handle, product_tags,
+        )
+    return tag_match
+
+
+def _normalize_product(
+    product: dict,
+    base_url: str,
+    image_strategy: str,
+    originator_prefix: str | None,
+    auction_detection: dict | None = None,
+) -> dict:
     """Map a Shopify product dict to the diff.py + DB shape. Stage 4 (Normalize)
     of the arch §2.1 lifecycle — title/category/price/stock coercion happens here.
 
@@ -134,6 +162,11 @@ def _normalize_product(product: dict, base_url: str, image_strategy: str, origin
     mirror-queue check both depend on this being absolute — relative URLs would
     miss the dict and force-classify every existing listing as 'new' on the
     next-day scrape (price_history explosion + redundant re-mirroring).
+
+    CTK-041: when auction_detection config block is present and the product
+    matches, current_price is null-out'd so the frontend renders "price on
+    request" via formatPrice(null) instead of the Shopify variant placeholder.
+    Permissive default — None = no-op (matches the category_filter shape).
     """
     raw_title = product.get("title", "")
     handle = product.get("handle", "")
@@ -143,6 +176,10 @@ def _normalize_product(product: dict, base_url: str, image_strategy: str, origin
     in_stock = any(v.get("available") for v in variants)
     current_price = normalize.coerce_price(variants)
     sku = next((v.get("sku") for v in variants if v.get("sku")), None)
+
+    if auction_detection and _is_auction(product, auction_detection):
+        log.info("auction detected: %s — null-out current_price", handle)
+        current_price = None
 
     images = product.get("images") or []
     vendor_image_url = images[0].get("src") if images else None

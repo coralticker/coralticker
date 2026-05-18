@@ -68,3 +68,16 @@ category_filter:
     - WWC Colony          # WWC-house colonies, 65 items (CTK-037 2026-05-10)
     - WYSIWYG Frag        # WYSIWYG-photographed frags, 159 items (CTK-037 2026-05-10)
   tag_denylist: []  # WWC not needed: Fish has its own product_type (CTK-037 2026-05-10)
+
+# CTK-041 auction_detection: null-out current_price on auction listings per
+# Jon 2026-05-14 directive. Auctions stay visible in /new (rendered as
+# "price on request" via formatPrice(null) at components/listing-card.tsx:39-42).
+# Distinct rendering (auction-marker, current-bid display, lead-verb shift)
+# is Phase 2 work — graduated to CTK-042 DRAFT 2026-05-14.
+# Tag detection is primary signal; slug_suffix is sanity log-warning.
+auction_detection:
+  tags:
+    - Auction
+    - active_bidding
+    - on_auction
+  slug_suffix: "-auc"  # belt-and-suspenders sanity log-warning when tag detection fires

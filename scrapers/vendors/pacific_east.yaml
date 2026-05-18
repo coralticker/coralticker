@@ -66,4 +66,18 @@ category_filter:
     - Weekly Special      # 6/6 real coral exhaustive sample + fresh-catalog tag dist 100% coral-typed (CTK-037 Session 4.5 2026-05-11)
     - WYSIWYG             # WYSIWYG-photographed coral, 1797 items (CTK-037 2026-05-10)
     - WYSIWYG Frags       # 2-item typo variant, kept for coverage (CTK-037 2026-05-10)
-  tag_denylist: []  # PE not needed: product_type alone discriminates (CTK-037 2026-05-10)
+  # CTK-041 tag_denylist: invert-shape tags catching Weekly Special bucket
+  # rotation. Allowlist entry locked CTK-037 Session 4.5 2026-05-11 on a
+  # snapshot 100%-coral sample; vendor rotated bucket to inverts within 3
+  # days (Banded Trochus / Pom Pom Crab / Sea Hare / Astrea Algae Mowers /
+  # Nerites / Nassarius / Strawberry Conch). Sales-bucket discipline per
+  # open-items.md Open + memory feedback_rotating_bucket_allowlist.md.
+  # v1 list from /lead-backend investigation 2026-05-14; Session 2
+  # validation scrape extends if additional invert tags surface.
+  tag_denylist:
+    - Algae Muncher       # Astrea Algae Mowers (CTK-041 2026-05-14)
+    - Astrea Snails       # snail (CTK-041 2026-05-14)
+    - Crab                # Pom Pom Crab (CTK-041 2026-05-14)
+    - Inverts             # umbrella tag (CTK-041 2026-05-14)
+    - Snail               # Nerites/Nassarius/Strawberry Conch (CTK-041 2026-05-14)
+    - Trochus             # Banded Trochus (CTK-041 2026-05-14)

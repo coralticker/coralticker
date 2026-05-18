@@ -24,6 +24,8 @@ import sys
 import traceback
 from pathlib import Path
 
+from decimal import Decimal
+
 from scrapers.common.parse_shopify import _normalize_product, _should_keep
 
 
@@ -35,10 +37,19 @@ IMAGE_STRATEGY = "mirror"
 # Mirrors scrapers/vendors/wwc.yaml category_filter block (CTK-037 2026-05-10).
 WWC_CATEGORY_FILTER = {
     "product_type_allowlist": [
-        "Featured Livestock", "Frag", "Frag-PoS", "Live Sale Coral", "Pack",
-        "VP Colonies", "VP Frags", "Wholesale Frag", "WWC Colony", "WYSIWYG Frag",
+        "CTO Corals", "Featured Livestock", "Frag", "Frag-PoS", "Live Sale Coral",
+        "Pack", "VP Colonies", "VP Frags", "Wholesale Frag", "WWC Colony",
+        "WYSIWYG Frag",
     ],
     "tag_denylist": [],
+}
+
+# Mirrors scrapers/vendors/wwc.yaml auction_detection block (CTK-041 D-1 lean
+# (b), Session 1 2026-05-18). Tag match is primary; slug_suffix is sanity
+# log-warning when suffix-only matches surface tag-shape drift.
+WWC_AUCTION_DETECTION = {
+    "tags": ["Auction", "active_bidding", "on_auction"],
+    "slug_suffix": "-auc",
 }
 
 
@@ -69,8 +80,8 @@ def _by_title(products: list[dict], title: str) -> dict:
     raise KeyError(f"fixture missing product titled {title!r}")
 
 
-def _normalize(p: dict) -> dict:
-    return _normalize_product(p, BASE_URL, IMAGE_STRATEGY, ORIGINATOR_PREFIX)
+def _normalize(p: dict, auction_detection: dict | None = None) -> dict:
+    return _normalize_product(p, BASE_URL, IMAGE_STRATEGY, ORIGINATOR_PREFIX, auction_detection)
 
 
 # Test 1: html_hash sentinel
@@ -129,13 +140,15 @@ def test_filter_wwc_permissive_when_no_block(products):
         assert _should_keep(p, {}) is True
 
 
-# Test 8: skip-count across WWC fixture matches expected (2 of 5 denied)
+# Test 8: skip-count across WWC fixture matches expected (2 of 8 denied)
 def test_filter_wwc_skip_count_matches(products):
     """WWC fixture composition: 3 coral (Frag, VP Frags, WYSIWYG Frag) +
-    2 non-coral (Fish, Dry Goods). Expected filter skip = 2."""
+    2 non-coral (Fish, Dry Goods) + 3 CTK-041 auction rows (kept; auctions
+    are in scope for /new per Jon 2026-05-14 directive; null-out happens at
+    _normalize_product, not _should_keep). Expected: 6 kept, 2 skipped."""
     kept = sum(1 for p in products if _should_keep(p, WWC_CATEGORY_FILTER))
     skipped = sum(1 for p in products if not _should_keep(p, WWC_CATEGORY_FILTER))
-    assert kept == 3, f"expected 3 kept, got {kept}"
+    assert kept == 6, f"expected 6 kept, got {kept}"
     assert skipped == 2, f"expected 2 skipped, got {skipped}"
 
 
@@ -169,6 +182,81 @@ def test_wwc_in_stock_semantics(products):
     assert _normalize(p_oos)["in_stock"] is False
 
 
+# CTK-041 Test 13: auction with `Auction` tag → current_price null-out
+def test_auction_tag_nulls_price(products):
+    """D-1 lean (b) — auction_detection block in YAML threads through
+    fetch_and_parse into _normalize_product; tag-set match is primary signal.
+    Variant placeholder price ($249) coerced to None so frontend renders
+    "price on request" via formatPrice(null) per Jon 2026-05-14 directive."""
+    p = _by_title(products, "Raspberry Pie Bowerbanki Auction 7916")
+    out = _normalize(p, WWC_AUCTION_DETECTION)
+    assert out["current_price"] is None
+
+
+# CTK-041 Test 14: auction with `active_bidding` tag → current_price null-out
+def test_auction_active_bidding_tag_nulls_price(products):
+    """Tag-set match against any single auction tag fires; multi-tag set
+    membership is union not intersection."""
+    p = _by_title(products, "Active Bidding Acan 8021")
+    out = _normalize(p, WWC_AUCTION_DETECTION)
+    assert out["current_price"] is None
+
+
+# CTK-041 Test 15: suffix-only match logs warning, does NOT null-out price
+def test_auction_suffix_only_logs_warning_preserves_price(products):
+    """Tag-shape drift case — slug ends with -auc but no auction tag present.
+    _is_auction returns False (tag-match is primary) but emits a warning so
+    the regression surfaces in observability. Price preserved to avoid
+    silently re-pricing a non-auction listing on tag-set drift.
+
+    Uses a custom logging.Handler so the assertion works under both pytest
+    collection and script-mode `python -m scrapers.tests.test_wwc_parse`."""
+    import logging
+    parse_log = logging.getLogger("scrapers.common.parse_shopify")
+    records: list[logging.LogRecord] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    handler = _Capture(level=logging.WARNING)
+    parse_log.addHandler(handler)
+    prev_level = parse_log.level
+    parse_log.setLevel(logging.WARNING)
+    try:
+        p = _by_title(products, "Tag-Drift Suffix-Only Auction")
+        out = _normalize(p, WWC_AUCTION_DETECTION)
+    finally:
+        parse_log.removeHandler(handler)
+        parse_log.setLevel(prev_level)
+
+    assert out["current_price"] == Decimal("99.00"), f"expected price preserved, got {out['current_price']!r}"
+    messages = [rec.getMessage() for rec in records]
+    assert any("slug_suffix=-auc" in m for m in messages), (
+        f"expected slug_suffix warning, got: {messages}"
+    )
+
+
+# CTK-041 Test 16: non-auction listings preserve price under auction_detection
+def test_non_auction_preserves_price(products):
+    """Permissive baseline — listings without auction tag or -auc suffix get
+    coerce_price'd to a real float; the auction_detection block is a no-op
+    for them."""
+    p = _by_title(products, "WWC Avocado Smasher Zoanthids")
+    out = _normalize(p, WWC_AUCTION_DETECTION)
+    assert out["current_price"] == Decimal("79.99"), f"expected 79.99, got {out['current_price']!r}"
+
+
+# CTK-041 Test 17: auction_detection=None is no-op (permissive default)
+def test_auction_detection_none_is_noop(products):
+    """Per-vendor opt-in shape — vendors without auction_detection block in
+    YAML get the None default; _normalize_product skips the null-out branch
+    even when an auction-tagged product appears."""
+    p = _by_title(products, "Raspberry Pie Bowerbanki Auction 7916")
+    out = _normalize(p, None)
+    assert out["current_price"] == Decimal("249.00"), f"expected 249.00 preserved, got {out['current_price']!r}"
+
+
 def main() -> int:
     products = _load_fixture()
     print(f"loaded fixture: {len(products)} products from {FIXTURE_PATH}")
@@ -186,6 +274,11 @@ def main() -> int:
         test_wwc_currency_usd_default,
         test_wwc_vendor_image_url_first_image,
         test_wwc_in_stock_semantics,
+        test_auction_tag_nulls_price,
+        test_auction_active_bidding_tag_nulls_price,
+        test_auction_suffix_only_logs_warning_preserves_price,
+        test_non_auction_preserves_price,
+        test_auction_detection_none_is_noop,
     ]
 
     failures: list[tuple[str, str]] = []

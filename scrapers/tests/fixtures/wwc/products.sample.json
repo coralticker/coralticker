@@ -244,6 +244,153 @@
       "options": [
         {"name": "Title", "position": 1, "values": ["Default Title"]}
       ]
+    },
+    {
+      "id": 8000000000006,
+      "title": "Raspberry Pie Bowerbanki Auction 7916",
+      "handle": "raspberry-pie-bowerbanki-7916-auc",
+      "body_html": "<p>WWC auction — bid-only listing.</p>",
+      "published_at": "2026-05-08T10:00:00-04:00",
+      "created_at": "2026-05-08T09:00:00-04:00",
+      "updated_at": "2026-05-09T12:00:00-04:00",
+      "vendor": "World Wide Corals",
+      "product_type": "WYSIWYG Frag",
+      "tags": ["Bowerbanki", "Auction", "WYSIWYG"],
+      "variants": [
+        {
+          "id": 42000000000006,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "WWC-AUC-RASP-7916",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "249.00",
+          "grams": 454,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 8000000000006,
+          "created_at": "2026-05-08T09:00:00-04:00",
+          "updated_at": "2026-05-09T12:00:00-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 32000000000006,
+          "created_at": "2026-05-08T09:00:30-04:00",
+          "position": 1,
+          "updated_at": "2026-05-08T09:01:00-04:00",
+          "product_id": 8000000000006,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/wwc/raspberry-pie-bowerbanki-7916-auc.jpg?v=1",
+          "width": 1500,
+          "height": 1500
+        }
+      ],
+      "options": [
+        {"name": "Title", "position": 1, "values": ["Default Title"]}
+      ]
+    },
+    {
+      "id": 8000000000007,
+      "title": "Active Bidding Acan 8021",
+      "handle": "active-bidding-acan-8021-auc",
+      "body_html": "<p>WWC auction — bid-only listing.</p>",
+      "published_at": "2026-05-08T10:00:00-04:00",
+      "created_at": "2026-05-08T09:00:00-04:00",
+      "updated_at": "2026-05-09T12:00:00-04:00",
+      "vendor": "World Wide Corals",
+      "product_type": "Frag",
+      "tags": ["Acan", "active_bidding"],
+      "variants": [
+        {
+          "id": 42000000000007,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "WWC-AUC-ACAN-8021",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "175.00",
+          "grams": 454,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 8000000000007,
+          "created_at": "2026-05-08T09:00:00-04:00",
+          "updated_at": "2026-05-09T12:00:00-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 32000000000007,
+          "created_at": "2026-05-08T09:00:30-04:00",
+          "position": 1,
+          "updated_at": "2026-05-08T09:01:00-04:00",
+          "product_id": 8000000000007,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/wwc/active-bidding-acan.jpg?v=1",
+          "width": 1500,
+          "height": 1500
+        }
+      ],
+      "options": [
+        {"name": "Title", "position": 1, "values": ["Default Title"]}
+      ]
+    },
+    {
+      "id": 8000000000008,
+      "title": "Tag-Drift Suffix-Only Auction",
+      "handle": "tag-drift-suffix-only-auc",
+      "body_html": "<p>Hypothetical tag-shape drift case — slug suffix matches but no auction tag present.</p>",
+      "published_at": "2026-05-08T10:00:00-04:00",
+      "created_at": "2026-05-08T09:00:00-04:00",
+      "updated_at": "2026-05-09T12:00:00-04:00",
+      "vendor": "World Wide Corals",
+      "product_type": "Frag",
+      "tags": ["Acan"],
+      "variants": [
+        {
+          "id": 42000000000008,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "WWC-AUC-DRIFT",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "99.00",
+          "grams": 454,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 8000000000008,
+          "created_at": "2026-05-08T09:00:00-04:00",
+          "updated_at": "2026-05-09T12:00:00-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 32000000000008,
+          "created_at": "2026-05-08T09:00:30-04:00",
+          "position": 1,
+          "updated_at": "2026-05-08T09:01:00-04:00",
+          "product_id": 8000000000008,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/wwc/tag-drift-suffix-only.jpg?v=1",
+          "width": 1500,
+          "height": 1500
+        }
+      ],
+      "options": [
+        {"name": "Title", "position": 1, "values": ["Default Title"]}
+      ]
     }
   ]
 }
