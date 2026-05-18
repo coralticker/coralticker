@@ -16,6 +16,7 @@
 // PriceDropListing, ArrivalListing) and the Rpc*Row cast-site interfaces are
 // preserved byte-for-byte — view components stay untouched.
 
+import { unstable_cache } from 'next/cache';
 import { getNeonSql } from '@/lib/db/neon';
 
 export interface Listing {
@@ -157,59 +158,76 @@ export async function getCoralAvailability(namedCoralId: number): Promise<Listin
 // /vendor/[slug] per site.md §4.5.
 // Filtered by vendor_id AND last_seen_at > now() - interval '14 days'.
 // CTK-046: paginated via LIMIT 50 OFFSET ((page - 1) * 50); default page = 1
-// keeps non-paginated callers untouched.
+// keeps non-paginated callers untouched. unstable_cache wrap (ISR-regression
+// fold 2026-05-18): searchParams reading flipped the route pure-dynamic at
+// runtime; cache key on (vendorId, page) restores ISR semantics per site.md
+// §4.5 + §1.2 revalidate = 600. fourteenDaysAgo computed inside the cached
+// fn — drifts up to 10 min within TTL window (mathematically acceptable on
+// a 14-day window).
 export async function getVendorInventory(
   vendorId: number,
   page: number = 1,
 ): Promise<Listing[]> {
-  const sql = getNeonSql();
-  const fourteenDaysAgo = new Date(Date.now() - 14 * 86_400_000).toISOString();
-  const offset = (page - 1) * 50;
+  return unstable_cache(
+    async () => {
+      const sql = getNeonSql();
+      const fourteenDaysAgo = new Date(Date.now() - 14 * 86_400_000).toISOString();
+      const offset = (page - 1) * 50;
 
-  const rows = (await sql`
-    SELECT
-      vl.id,
-      vl.raw_title,
-      vl.current_price,
-      vl.in_stock,
-      vl.image_url,
-      vl.product_url,
-      vl.first_seen_at,
-      vl.match_confidence,
-      vl.named_coral_id,
-      v.slug AS vendor_slug,
-      v.display_name AS vendor_display_name,
-      nc.canonical_name AS named_coral_canonical_name,
-      nc.slug AS named_coral_slug,
-      nc.origin_vendor AS named_coral_origin_vendor
-    FROM vendor_listings vl
-    JOIN vendors v ON v.id = vl.vendor_id
-    LEFT JOIN named_corals nc ON nc.id = vl.named_coral_id
-    WHERE vl.vendor_id = ${vendorId}
-      AND vl.last_seen_at > ${fourteenDaysAgo}
-    ORDER BY vl.first_seen_at DESC
-    LIMIT 50 OFFSET ${offset}
-  `) as unknown as VendorListingRow[];
+      const rows = (await sql`
+        SELECT
+          vl.id,
+          vl.raw_title,
+          vl.current_price,
+          vl.in_stock,
+          vl.image_url,
+          vl.product_url,
+          vl.first_seen_at,
+          vl.match_confidence,
+          vl.named_coral_id,
+          v.slug AS vendor_slug,
+          v.display_name AS vendor_display_name,
+          nc.canonical_name AS named_coral_canonical_name,
+          nc.slug AS named_coral_slug,
+          nc.origin_vendor AS named_coral_origin_vendor
+        FROM vendor_listings vl
+        JOIN vendors v ON v.id = vl.vendor_id
+        LEFT JOIN named_corals nc ON nc.id = vl.named_coral_id
+        WHERE vl.vendor_id = ${vendorId}
+          AND vl.last_seen_at > ${fourteenDaysAgo}
+        ORDER BY vl.first_seen_at DESC
+        LIMIT 50 OFFSET ${offset}
+      `) as unknown as VendorListingRow[];
 
-  return rows.map(rowToListing);
+      return rows.map(rowToListing);
+    },
+    ['getVendorInventory', String(vendorId), String(page)],
+    { revalidate: 600, tags: [`vendor-${vendorId}-page-${page}`] },
+  )();
 }
 
 // /vendor/[slug] total-pages math per site.md §4.5 + CTK-046.
 // COUNT against the same 14-day in-stock-recency window as getVendorInventory().
 // No JOINs — vendor_id + last_seen_at filter alone drives the count; vendors /
 // named_corals do not constrain row count (vendor existence is parent-query
-// guaranteed; named_corals join is LEFT).
+// guaranteed; named_corals join is LEFT). unstable_cache wrap per ISR-fold.
 export async function getVendorInventoryTotal(vendorId: number): Promise<number> {
-  const sql = getNeonSql();
-  const fourteenDaysAgo = new Date(Date.now() - 14 * 86_400_000).toISOString();
-  const rows = (await sql`
-    SELECT COUNT(*) AS total
-    FROM vendor_listings vl
-    WHERE vl.vendor_id = ${vendorId}
-      AND vl.last_seen_at > ${fourteenDaysAgo}
-  `) as unknown as { total: number | string }[];
-  const first = rows[0];
-  return first ? Number(first.total) : 0;
+  return unstable_cache(
+    async () => {
+      const sql = getNeonSql();
+      const fourteenDaysAgo = new Date(Date.now() - 14 * 86_400_000).toISOString();
+      const rows = (await sql`
+        SELECT COUNT(*) AS total
+        FROM vendor_listings vl
+        WHERE vl.vendor_id = ${vendorId}
+          AND vl.last_seen_at > ${fourteenDaysAgo}
+      `) as unknown as { total: number | string }[];
+      const first = rows[0];
+      return first ? Number(first.total) : 0;
+    },
+    ['getVendorInventoryTotal', String(vendorId)],
+    { revalidate: 600, tags: [`vendor-${vendorId}-total`] },
+  )();
 }
 
 // /deals price-drop feed per site.md §4.3.

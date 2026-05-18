@@ -12,7 +12,15 @@
 // (site.md §7.3); DB stores snake_case identifiers (scraper-config + R2
 // path convention). This module is the only normalization layer — kebab→snake
 // on read, snake→kebab on emit. DB / scrapers / R2 paths stay snake.
+//
+// unstable_cache wrap (CTK-046 ISR-regression fold, 2026-05-18): the
+// /vendor/[slug] route flipped to pure-dynamic at runtime when searchParams
+// was added (Cache-Control: private, no-cache, no-store on Jon-localhost
+// probe). Wrapping query helpers in unstable_cache restores ISR semantics
+// per site.md §4.5 + §1.2 (revalidate = 600 / 10 min). Tags allow targeted
+// revalidateTag invalidation downstream (no consumers yet at v1).
 
+import { unstable_cache } from 'next/cache';
 import { getNeonSql } from '@/lib/db/neon';
 
 export interface Vendor {
@@ -28,25 +36,31 @@ export interface Vendor {
 }
 
 export async function getVendorBySlug(slug: string): Promise<Vendor | null> {
-  const sql = getNeonSql();
-  const dbSlug = slug.replaceAll('-', '_');
-  const rows = (await sql`
-    SELECT
-      id,
-      slug,
-      display_name,
-      base_url,
-      platform,
-      scrape_method,
-      cadence_label,
-      image_strategy,
-      active
-    FROM vendors
-    WHERE slug = ${dbSlug}
-    LIMIT 1
-  `) as unknown as Vendor[];
+  return unstable_cache(
+    async () => {
+      const sql = getNeonSql();
+      const dbSlug = slug.replaceAll('-', '_');
+      const rows = (await sql`
+        SELECT
+          id,
+          slug,
+          display_name,
+          base_url,
+          platform,
+          scrape_method,
+          cadence_label,
+          image_strategy,
+          active
+        FROM vendors
+        WHERE slug = ${dbSlug}
+        LIMIT 1
+      `) as unknown as Vendor[];
 
-  return rows[0] ?? null;
+      return rows[0] ?? null;
+    },
+    ['getVendorBySlug', slug],
+    { revalidate: 600, tags: [`vendor-${slug}`] },
+  )();
 }
 
 export async function getAllActiveVendorSlugs(): Promise<{ slug: string }[]> {
