@@ -156,9 +156,15 @@ export async function getCoralAvailability(namedCoralId: number): Promise<Listin
 
 // /vendor/[slug] per site.md §4.5.
 // Filtered by vendor_id AND last_seen_at > now() - interval '14 days'.
-export async function getVendorInventory(vendorId: number): Promise<Listing[]> {
+// CTK-046: paginated via LIMIT 50 OFFSET ((page - 1) * 50); default page = 1
+// keeps non-paginated callers untouched.
+export async function getVendorInventory(
+  vendorId: number,
+  page: number = 1,
+): Promise<Listing[]> {
   const sql = getNeonSql();
   const fourteenDaysAgo = new Date(Date.now() - 14 * 86_400_000).toISOString();
+  const offset = (page - 1) * 50;
 
   const rows = (await sql`
     SELECT
@@ -182,9 +188,28 @@ export async function getVendorInventory(vendorId: number): Promise<Listing[]> {
     WHERE vl.vendor_id = ${vendorId}
       AND vl.last_seen_at > ${fourteenDaysAgo}
     ORDER BY vl.first_seen_at DESC
+    LIMIT 50 OFFSET ${offset}
   `) as unknown as VendorListingRow[];
 
   return rows.map(rowToListing);
+}
+
+// /vendor/[slug] total-pages math per site.md §4.5 + CTK-046.
+// COUNT against the same 14-day in-stock-recency window as getVendorInventory().
+// No JOINs — vendor_id + last_seen_at filter alone drives the count; vendors /
+// named_corals do not constrain row count (vendor existence is parent-query
+// guaranteed; named_corals join is LEFT).
+export async function getVendorInventoryTotal(vendorId: number): Promise<number> {
+  const sql = getNeonSql();
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 86_400_000).toISOString();
+  const rows = (await sql`
+    SELECT COUNT(*) AS total
+    FROM vendor_listings vl
+    WHERE vl.vendor_id = ${vendorId}
+      AND vl.last_seen_at > ${fourteenDaysAgo}
+  `) as unknown as { total: number | string }[];
+  const first = rows[0];
+  return first ? Number(first.total) : 0;
 }
 
 // /deals price-drop feed per site.md §4.3.
