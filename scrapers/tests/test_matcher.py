@@ -28,16 +28,8 @@ smoke from Session 1 to durable on-disk evidence:
 from __future__ import annotations
 
 import sys
-import types
 
-# Stub `supabase` so this file imports cleanly when run from a venv that
-# lacks scrapers/requirements.txt (CI runner has the dep; local-dev
-# convenience). matcher.py doesn't import supabase directly, but db.py
-# does — and the package's __init__ chain may pull it in.
-sys.modules.setdefault(
-    "supabase",
-    types.SimpleNamespace(Client=object, create_client=lambda *a, **k: None),
-)
+import psycopg
 
 from scrapers.common import matcher
 from scrapers.common.matcher import (
@@ -339,31 +331,33 @@ def test_load_match_cache_propagates_exception():
     exception. load_match_cache MUST propagate exceptions to the orchestrator
     rather than wrapping in fail-soft. The orchestrator's stage-2-prerequisite
     error path then surfaces a clean failure with error_class='other' and
-    halts the scrape."""
+    halts the scrape.
 
-    class _FailingTable:
-        def __init__(self, name):
-            self._name = name
+    CTK-045 Session 1 2026-05-18: _FailingClient mock reshaped from supabase-py
+    PostgREST surface to psycopg's cursor.execute path. psycopg.Error matches
+    production failure mode (Neon connectivity drops surface as
+    psycopg.OperationalError, subclass of psycopg.Error)."""
 
-        def select(self, *a, **k):
+    class _FailingCursor:
+        def __enter__(self):
             return self
 
-        def eq(self, *a, **k):
-            return self
+        def __exit__(self, *a):
+            return False
 
-        def execute(self):
-            raise RuntimeError("synthetic Supabase connectivity failure")
+        def execute(self, *a, **k):
+            raise psycopg.Error("synthetic Neon connectivity failure")
 
-    class _FailingClient:
-        def table(self, name):
-            return _FailingTable(name)
+    class _FailingConn:
+        def cursor(self):
+            return _FailingCursor()
 
     raised = False
     try:
-        load_match_cache(_FailingClient())
-    except RuntimeError as e:
+        load_match_cache(_FailingConn())
+    except psycopg.Error as e:
         raised = True
-        assert "synthetic Supabase connectivity failure" in str(e)
+        assert "synthetic Neon connectivity failure" in str(e)
     assert raised, (
         "load_match_cache must propagate connectivity exceptions, not swallow them. "
         "Per F4 contract: fail-soft applies per-listing in match_listing(), NOT to cache-load."
