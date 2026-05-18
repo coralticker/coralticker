@@ -1,0 +1,16 @@
+IBM Plex Sans and IBM Plex Mono fonts vendored under public/fonts/
+are licensed under the SIL Open Font License, Version 1.1.
+
+Copyright 2017 IBM Corp. All rights reserved.
+
+These fonts are subsetted to the Latin character range. Source files
+were obtained via the @fontsource/ibm-plex-sans and @fontsource/ibm-plex-mono
+packages (https://fontsource.org), which mirror the upstream IBM Plex
+release at https://github.com/IBM/plex.
+
+The IBM Plex font family was designed by Mike Abbink in collaboration
+with the Bold Monday type foundry.
+
+Full license text:
+https://github.com/IBM/plex/blob/master/LICENSE.txt
+https://scripts.sil.org/cms/scripts/page.php?site_id=nrsi&id=OFL

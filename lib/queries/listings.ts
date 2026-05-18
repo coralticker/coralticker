@@ -1,0 +1,305 @@
+// lib/queries/listings.ts
+//
+// Server-side query helpers consumed by Phase 2 view Server Components.
+// Listing shape mirrors site.md §3.5.1 — the read shape of architecture-v1.md
+// §1.4 vendor_listings + joined named_corals + vendors.
+//
+// Five helpers per site.md §4 contracts:
+//   getRecentDrops()        — homepage strip per §4.2 (plain JOIN + JS dedup)
+//   getRecentPriceDrops()   — /deals LAG-window per §4.3 (RPC function 0008)
+//   getRecentArrivals()     — /new UNION two-arm per §4.4 (RPC function 0007)
+//   getCoralAvailability()  — /coral/[slug] per §4.1 (plain JOIN)
+//   getVendorInventory()    — /vendor/[slug] per §4.5 (plain JOIN)
+//
+// Migrated CTK-043 cut-4 (2026-05-16) from supabase-js PostgREST builders to
+// raw SQL via @neondatabase/serverless. Public types (Listing,
+// PriceDropListing, ArrivalListing) and the Rpc*Row cast-site interfaces are
+// preserved byte-for-byte — view components stay untouched.
+
+import { getNeonSql } from '@/lib/db/neon';
+
+export interface Listing {
+  id: number;
+  vendorSlug: string;
+  vendorDisplayName: string;
+  rawTitle: string;
+  currentPrice: number | null;
+  inStock: boolean;
+  imageUrl: string | null;
+  productUrl: string;
+  firstSeenAt: string;
+  matchConfidence: 'exact' | 'alias' | 'fuzzy' | 'manual' | null;
+  namedCoralCanonicalName: string | null;
+  namedCoralSlug: string | null;
+  // Lineage fields per site.md §3.5.1 Lineage field rendering — only populated
+  // when namedCoralCanonicalName is non-null (LEFT JOIN named_corals).
+  namedCoralOriginVendor: string | null;
+  namedCoralYearIntroduced: number | null;
+}
+
+// Flat row shape returned by the JOIN below. PostgREST's nested-relation
+// shape (vendors: {...}, named_corals: {...}) is gone post-cut-4; columns
+// flatten with vendor_/named_coral_ prefixes. year_introduced still omitted
+// per Q-040-11 hold-position (hosted named_corals lacks the column per
+// 2026-05-14 probe).
+interface VendorListingRow {
+  id: number;
+  raw_title: string;
+  current_price: number | string | null;
+  in_stock: boolean;
+  image_url: string | null;
+  product_url: string;
+  first_seen_at: string;
+  match_confidence: 'exact' | 'alias' | 'fuzzy' | 'manual' | null;
+  named_coral_id: number | null;
+  vendor_slug: string;
+  vendor_display_name: string;
+  named_coral_canonical_name: string | null;
+  named_coral_slug: string | null;
+  named_coral_origin_vendor: string | null;
+}
+
+function rowToListing(row: VendorListingRow): Listing {
+  return {
+    id: row.id,
+    vendorSlug: row.vendor_slug,
+    vendorDisplayName: row.vendor_display_name,
+    rawTitle: row.raw_title,
+    currentPrice: row.current_price !== null ? Number(row.current_price) : null,
+    inStock: row.in_stock,
+    imageUrl: row.image_url,
+    productUrl: row.product_url,
+    firstSeenAt: row.first_seen_at,
+    matchConfidence: row.match_confidence,
+    namedCoralCanonicalName: row.named_coral_canonical_name,
+    namedCoralSlug: row.named_coral_slug,
+    namedCoralOriginVendor: row.named_coral_origin_vendor,
+    namedCoralYearIntroduced: null,
+  };
+}
+
+// Homepage strip per site.md §4.2 + Q-E default policy.
+// Plain JOIN with LEFT JOIN named_corals; JS-side dedup on named_coral_id
+// preserved from the Supabase impl (rather than pushing DISTINCT ON into SQL,
+// which complicates the LIMIT semantics).
+export async function getRecentDrops(limit = 10): Promise<Listing[]> {
+  const sql = getNeonSql();
+  const overFetch = limit * 3;
+  const rows = (await sql`
+    SELECT
+      vl.id,
+      vl.raw_title,
+      vl.current_price,
+      vl.in_stock,
+      vl.image_url,
+      vl.product_url,
+      vl.first_seen_at,
+      vl.match_confidence,
+      vl.named_coral_id,
+      v.slug AS vendor_slug,
+      v.display_name AS vendor_display_name,
+      nc.canonical_name AS named_coral_canonical_name,
+      nc.slug AS named_coral_slug,
+      nc.origin_vendor AS named_coral_origin_vendor
+    FROM vendor_listings vl
+    JOIN vendors v ON v.id = vl.vendor_id
+    LEFT JOIN named_corals nc ON nc.id = vl.named_coral_id
+    WHERE vl.in_stock = true
+    ORDER BY vl.first_seen_at DESC
+    LIMIT ${overFetch}
+  `) as unknown as VendorListingRow[];
+
+  const seen = new Set<number>();
+  const out: Listing[] = [];
+  for (const row of rows) {
+    const dedupKey = row.named_coral_id;
+    if (dedupKey !== null && seen.has(dedupKey)) continue;
+    if (dedupKey !== null) seen.add(dedupKey);
+    out.push(rowToListing(row));
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+// /coral/[slug] per site.md §4.1.
+// Filtered by named_coral_id AND last_seen_at > now() - interval '7 days'.
+export async function getCoralAvailability(namedCoralId: number): Promise<Listing[]> {
+  const sql = getNeonSql();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+
+  const rows = (await sql`
+    SELECT
+      vl.id,
+      vl.raw_title,
+      vl.current_price,
+      vl.in_stock,
+      vl.image_url,
+      vl.product_url,
+      vl.first_seen_at,
+      vl.match_confidence,
+      vl.named_coral_id,
+      v.slug AS vendor_slug,
+      v.display_name AS vendor_display_name,
+      nc.canonical_name AS named_coral_canonical_name,
+      nc.slug AS named_coral_slug,
+      nc.origin_vendor AS named_coral_origin_vendor
+    FROM vendor_listings vl
+    JOIN vendors v ON v.id = vl.vendor_id
+    LEFT JOIN named_corals nc ON nc.id = vl.named_coral_id
+    WHERE vl.named_coral_id = ${namedCoralId}
+      AND vl.last_seen_at > ${sevenDaysAgo}
+    ORDER BY vl.first_seen_at DESC
+  `) as unknown as VendorListingRow[];
+
+  return rows.map(rowToListing);
+}
+
+// /vendor/[slug] per site.md §4.5.
+// Filtered by vendor_id AND last_seen_at > now() - interval '14 days'.
+export async function getVendorInventory(vendorId: number): Promise<Listing[]> {
+  const sql = getNeonSql();
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 86_400_000).toISOString();
+
+  const rows = (await sql`
+    SELECT
+      vl.id,
+      vl.raw_title,
+      vl.current_price,
+      vl.in_stock,
+      vl.image_url,
+      vl.product_url,
+      vl.first_seen_at,
+      vl.match_confidence,
+      vl.named_coral_id,
+      v.slug AS vendor_slug,
+      v.display_name AS vendor_display_name,
+      nc.canonical_name AS named_coral_canonical_name,
+      nc.slug AS named_coral_slug,
+      nc.origin_vendor AS named_coral_origin_vendor
+    FROM vendor_listings vl
+    JOIN vendors v ON v.id = vl.vendor_id
+    LEFT JOIN named_corals nc ON nc.id = vl.named_coral_id
+    WHERE vl.vendor_id = ${vendorId}
+      AND vl.last_seen_at > ${fourteenDaysAgo}
+    ORDER BY vl.first_seen_at DESC
+  `) as unknown as VendorListingRow[];
+
+  return rows.map(rowToListing);
+}
+
+// /deals price-drop feed per site.md §4.3.
+// Backed by the get_recent_price_drops() SQL function (migration 0008)
+// wrapping the LAG-window CTE. Invoked as `SELECT * FROM get_recent_price_drops()`
+// rather than supabase.rpc post-cut-4.
+export interface PriceDropListing extends Listing {
+  priorPrice: number;
+  observedAt: string;
+}
+
+interface RpcPriceDropRow {
+  id: number;
+  vendor_id: number;
+  raw_title: string;
+  current_price: number | string | null;
+  in_stock: boolean;
+  image_url: string | null;
+  product_url: string;
+  first_seen_at: string;
+  named_coral_id: number | null;
+  match_confidence: 'exact' | 'alias' | 'fuzzy' | 'manual' | null;
+  prior_price: number | string;
+  observed_at: string;
+  vendor_slug: string;
+  vendor_display_name: string;
+  named_coral_canonical_name: string | null;
+  named_coral_slug: string | null;
+  // named_coral_year_introduced omitted from RPC projection per Q-040-11
+  // hold-position; PriceDropListing.namedCoralYearIntroduced always null
+  // until Q-040-12 audit + schema migration restore.
+  named_coral_origin_vendor: string | null;
+}
+
+function rpcRowToPriceDrop(row: RpcPriceDropRow): PriceDropListing {
+  return {
+    id: row.id,
+    vendorSlug: row.vendor_slug,
+    vendorDisplayName: row.vendor_display_name,
+    rawTitle: row.raw_title,
+    currentPrice: row.current_price !== null ? Number(row.current_price) : null,
+    inStock: row.in_stock,
+    imageUrl: row.image_url,
+    productUrl: row.product_url,
+    firstSeenAt: row.first_seen_at,
+    matchConfidence: row.match_confidence,
+    namedCoralCanonicalName: row.named_coral_canonical_name,
+    namedCoralSlug: row.named_coral_slug,
+    namedCoralOriginVendor: row.named_coral_origin_vendor,
+    namedCoralYearIntroduced: null,
+    priorPrice: Number(row.prior_price),
+    observedAt: row.observed_at,
+  };
+}
+
+export async function getRecentPriceDrops(): Promise<PriceDropListing[]> {
+  const sql = getNeonSql();
+  const rows = (await sql`SELECT * FROM get_recent_price_drops()`) as unknown as RpcPriceDropRow[];
+  return rows.map(rpcRowToPriceDrop);
+}
+
+// /new arrivals feed per site.md §4.4.
+// Backed by the get_recent_arrivals() SQL function (migration 0007) wrapping
+// the UNION two-arm CTE. Invoked as `SELECT * FROM get_recent_arrivals()` post-cut-4.
+export interface ArrivalListing extends Listing {
+  event: 'just-listed' | 'back-in-stock';
+  eventAt: string;
+}
+
+interface RpcArrivalRow {
+  id: number;
+  vendor_id: number;
+  raw_title: string;
+  current_price: number | string | null;
+  in_stock: boolean;
+  image_url: string | null;
+  product_url: string;
+  first_seen_at: string;
+  named_coral_id: number | null;
+  match_confidence: 'exact' | 'alias' | 'fuzzy' | 'manual' | null;
+  event: 'just-listed' | 'back-in-stock';
+  event_at: string;
+  vendor_slug: string;
+  vendor_display_name: string;
+  named_coral_canonical_name: string | null;
+  named_coral_slug: string | null;
+  // named_coral_year_introduced omitted from RPC projection per Q-040-11
+  // hold-position; ArrivalListing.namedCoralYearIntroduced always null until
+  // Q-040-12 audit + schema migration restore.
+  named_coral_origin_vendor: string | null;
+}
+
+function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
+  return {
+    id: row.id,
+    vendorSlug: row.vendor_slug,
+    vendorDisplayName: row.vendor_display_name,
+    rawTitle: row.raw_title,
+    currentPrice: row.current_price !== null ? Number(row.current_price) : null,
+    inStock: row.in_stock,
+    imageUrl: row.image_url,
+    productUrl: row.product_url,
+    firstSeenAt: row.first_seen_at,
+    matchConfidence: row.match_confidence,
+    namedCoralCanonicalName: row.named_coral_canonical_name,
+    namedCoralSlug: row.named_coral_slug,
+    namedCoralOriginVendor: row.named_coral_origin_vendor,
+    namedCoralYearIntroduced: null,
+    event: row.event,
+    eventAt: row.event_at,
+  };
+}
+
+export async function getRecentArrivals(): Promise<ArrivalListing[]> {
+  const sql = getNeonSql();
+  const rows = (await sql`SELECT * FROM get_recent_arrivals()`) as unknown as RpcArrivalRow[];
+  return rows.map(rpcRowToArrival);
+}

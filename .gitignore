@@ -2,3 +2,27 @@
 bash.exe.stackdump
 __pycache__/
 .env
+
+# Next.js / Node
+/node_modules
+/.next/
+/out/
+/build
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.a11y/
+
+# Migration / one-off scratch artifacts
+.backfill-*.json
+.migrate-r2-progress-*.json
+.build-session-*.log
+.pnpm-dev-*.log
+.tmp-*.html
+phase[0-9]-*.log
+curl-*-body.txt
+.neon-migration/
