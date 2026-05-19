@@ -88,9 +88,15 @@ export function SortFilterBar({
     'hover:underline focus-visible:underline underline-offset-[3px] decoration-1';
   const activeClass = 'underline underline-offset-[3px] decoration-1';
 
+  // Mid-dot uses non-breaking space BEFORE the dot so it stays glued to the
+  // preceding label as an unbreakable unit. Trailing regular space remains a
+  // wrap opportunity. CTK-053 Session 3: trailing-dot JSX shape alone wasn't
+  // enough — browser greedy line-break at MUSHROOM's preceding-space at 375px
+  // still produced a leading-dot line-2 start. nbsp-before-dot forces the
+  // break to land at the post-dot space, keeping the dot with the prior label.
   const midDot = (
     <span aria-hidden="true" className="text-forest">
-      {' · '}
+      {' · '}
     </span>
   );
 
@@ -106,9 +112,13 @@ export function SortFilterBar({
           // Active option clicks clear back to default sort ('newest').
           const targetSort: ListingSort = isActive ? 'newest' : opt.value;
           const href = buildHref(slug, targetSort, category, inStock);
+          const isLast = i === SORT_OPTIONS.length - 1;
+          // Mid-dot TRAILS the preceding option so wrap-breaks keep the dot
+          // at end-of-line-N with the previous label, not at start-of-line-N+1
+          // before the next label. CTK-053 Session 3 verify: leading-dot on
+          // 375px-viewport FILTER row wrap confirmed via Jon DevTools pass.
           return (
             <span key={opt.value}>
-              {i > 0 && midDot}
               <Link
                 href={href}
                 className={isActive ? activeClass : linkClass}
@@ -116,6 +126,7 @@ export function SortFilterBar({
               >
                 {opt.label}
               </Link>
+              {!isLast && midDot}
             </span>
           );
         })}
@@ -130,9 +141,9 @@ export function SortFilterBar({
             ? null
             : opt.value;
           const href = buildHref(slug, sort, targetCategory, inStock);
+          const isLast = i === CATEGORY_OPTIONS.length - 1;
           return (
             <span key={opt.value}>
-              {i > 0 && midDot}
               <Link
                 href={href}
                 className={isActive ? activeClass : linkClass}
@@ -140,6 +151,7 @@ export function SortFilterBar({
               >
                 {opt.label}
               </Link>
+              {!isLast && midDot}
             </span>
           );
         })}
