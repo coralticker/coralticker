@@ -38,16 +38,24 @@ import {
 import {
   getVendorInventory,
   getVendorInventoryTotal,
+  type ListingCategory,
+  type ListingSort,
 } from '@/lib/queries/listings';
 import { DataRowSkeleton } from '@/components/ui/data-row-skeleton';
 import { VendorInventoryRow } from './_components/vendor-inventory-row';
 import { PaginationNav } from './_components/pagination-nav';
+import { SortFilterBar } from './_components/sort-filter-bar';
 
 export const revalidate = 600;
 
 interface PageProps {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    sort?: string;
+    category?: string;
+    'in-stock'?: string;
+  }>;
 }
 
 // CTK-046: parse ?page=N URL-state. Default 1; clamp NaN / < 1 / non-integer
@@ -59,6 +67,49 @@ function parsePage(raw: string | undefined): number {
   const n = parseInt(raw, 10);
   if (Number.isNaN(n) || n < 1) return 1;
   return n;
+}
+
+// CTK-053: parse ?sort= URL-state against the 3-value allowlist. Invalid
+// inputs silently fall back to the default 'newest' per plan §Scope #3
+// default-as-absent canonical-chain discipline.
+const SORT_ALLOWLIST: readonly ListingSort[] = [
+  'newest',
+  'price-asc',
+  'price-desc',
+];
+function parseSort(raw: string | undefined): ListingSort {
+  if (!raw) return 'newest';
+  return (SORT_ALLOWLIST as readonly string[]).includes(raw)
+    ? (raw as ListingSort)
+    : 'newest';
+}
+
+// CTK-053: parse ?category= URL-state against the 8-value coral-filter
+// allowlist. Schema enum has 12 values; fish / invert / equipment / other
+// are excluded from the filter UI per plan §Out-of-scope and silently fall
+// back to null here.
+const CATEGORY_ALLOWLIST: readonly ListingCategory[] = [
+  'sps',
+  'lps',
+  'softie',
+  'zoa',
+  'mushroom',
+  'chalice',
+  'anemone',
+  'clam',
+];
+function parseCategory(raw: string | undefined): ListingCategory | null {
+  if (!raw) return null;
+  return (CATEGORY_ALLOWLIST as readonly string[]).includes(raw)
+    ? (raw as ListingCategory)
+    : null;
+}
+
+// CTK-053: parse ?in-stock=1 URL-state. Any non-'1' value (including absent)
+// reads as OFF — preserves the 14d-window mixed in-stock + recently-out
+// default render shape.
+function parseInStock(raw: string | undefined): boolean {
+  return raw === '1';
 }
 
 export async function generateStaticParams(): Promise<{ slug: string }[]> {
@@ -106,8 +157,26 @@ function RetiredVendorView({ vendor }: { vendor: Vendor }) {
   );
 }
 
-async function Inventory({ vendor, page }: { vendor: Vendor; page: number }) {
-  const listings = await getVendorInventory(vendor.id, page);
+async function Inventory({
+  vendor,
+  page,
+  sort,
+  category,
+  inStock,
+}: {
+  vendor: Vendor;
+  page: number;
+  sort: ListingSort;
+  category: ListingCategory | null;
+  inStock: boolean;
+}) {
+  const listings = await getVendorInventory(
+    vendor.id,
+    page,
+    sort,
+    category,
+    inStock,
+  );
 
   if (listings.length === 0) {
     return (
@@ -160,8 +229,16 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
   // PaginationNav state still renders ("PAGE 1 OF 1" both-disabled), consistent
   // with brand-manager spec for /vendor/jf, /vendor/tsa, /vendor/pacific-east
   // v1 sparsity. Upper-clamp via Math.min keeps malformed ?page=999 graceful.
+  //
+  // CTK-053: sort/category/in-stock params parsed against allowlists; invalid
+  // inputs silently default. Total query uses filter params (page-count
+  // shrinks under filter); inventory query uses all four (page + sort +
+  // filters).
+  const sort = parseSort(sp.sort);
+  const category = parseCategory(sp.category);
+  const inStock = parseInStock(sp['in-stock']);
   const rawPage = parsePage(sp.page);
-  const total = await getVendorInventoryTotal(vendor.id);
+  const total = await getVendorInventoryTotal(vendor.id, category, inStock);
   const totalPages = Math.max(1, Math.ceil(total / 50));
   const page = Math.min(rawPage, totalPages);
 
@@ -170,9 +247,19 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
   // Metadata API has no first-class prev/next slot; icons.other is the
   // documented escape hatch but semantically misleading.
   // Prev for page 2 routes to bare URL (canonical) per site.md §6 SEO discipline.
-  const prevHref =
-    page === 2 ? `/vendor/${slug}` : `/vendor/${slug}?page=${page - 1}`;
-  const nextHref = `/vendor/${slug}?page=${page + 1}`;
+  // CTK-053: filter/sort params preserved in prev/next hrefs so SEO chain
+  // stays within the filtered subset.
+  function pageHref(p: number): string {
+    const params = new URLSearchParams();
+    if (sort !== 'newest') params.set('sort', sort);
+    if (category !== null) params.set('category', category);
+    if (inStock) params.set('in-stock', '1');
+    if (p !== 1) params.set('page', String(p));
+    const qs = params.toString();
+    return qs ? `/vendor/${slug}?${qs}` : `/vendor/${slug}`;
+  }
+  const prevHref = pageHref(page - 1);
+  const nextHref = pageHref(page + 1);
 
   return (
     <main className="px-6 py-12 max-w-3xl mx-auto">
@@ -194,13 +281,32 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
       </p>
 
       <div className="mt-10">
+        <SortFilterBar
+          slug={slug}
+          sort={sort}
+          category={category}
+          inStock={inStock}
+        />
         <h2 className="text-sm font-bold pb-2 mb-2 border-b border-ink/20">
           Current inventory.
         </h2>
         <Suspense fallback={<VendorInventorySkeleton />}>
-          <Inventory vendor={vendor} page={page} />
+          <Inventory
+            vendor={vendor}
+            page={page}
+            sort={sort}
+            category={category}
+            inStock={inStock}
+          />
         </Suspense>
-        <PaginationNav currentPage={page} totalPages={totalPages} slug={slug} />
+        <PaginationNav
+          currentPage={page}
+          totalPages={totalPages}
+          slug={slug}
+          sort={sort}
+          category={category}
+          inStock={inStock}
+        />
       </div>
     </main>
   );

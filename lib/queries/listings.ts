@@ -164,9 +164,35 @@ export async function getCoralAvailability(namedCoralId: number): Promise<Listin
 // §4.5 + §1.2 revalidate = 600. fourteenDaysAgo computed inside the cached
 // fn — drifts up to 10 min within TTL window (mathematically acceptable on
 // a 14-day window).
+//
+// CTK-053: sort + category + inStock params. Default sort 'newest' preserves
+// the pre-CTK-053 ORDER BY first_seen_at DESC. price-asc / price-desc use
+// NULLS LAST in both directions so "price on request" auction rows
+// (current_price IS NULL per project_auctions_in_scope.md) sink below priced
+// rows regardless of direction. Category = exact-match against the schema
+// enum (architecture-v1.md §1.4 L360-362) — NULL silent in unfiltered state.
+// In-stock toggle adds AND vl.in_stock = true when on. Cache key tuples
+// extend per CTK-053 plan §Scope #8 — (vendorId, page, sort, category,
+// inStock) avoids cross-filter bleed.
+
+export type ListingSort = 'newest' | 'price-asc' | 'price-desc';
+
+export type ListingCategory =
+  | 'sps'
+  | 'lps'
+  | 'softie'
+  | 'zoa'
+  | 'mushroom'
+  | 'chalice'
+  | 'anemone'
+  | 'clam';
+
 export async function getVendorInventory(
   vendorId: number,
   page: number = 1,
+  sort: ListingSort = 'newest',
+  category: ListingCategory | null = null,
+  inStock: boolean = false,
 ): Promise<Listing[]> {
   return unstable_cache(
     async () => {
@@ -174,59 +200,138 @@ export async function getVendorInventory(
       const fourteenDaysAgo = new Date(Date.now() - 14 * 86_400_000).toISOString();
       const offset = (page - 1) * 50;
 
-      const rows = (await sql`
-        SELECT
-          vl.id,
-          vl.raw_title,
-          vl.current_price,
-          vl.in_stock,
-          vl.image_url,
-          vl.product_url,
-          vl.first_seen_at,
-          vl.match_confidence,
-          vl.named_coral_id,
-          v.slug AS vendor_slug,
-          v.display_name AS vendor_display_name,
-          nc.canonical_name AS named_coral_canonical_name,
-          nc.slug AS named_coral_slug,
-          nc.origin_vendor AS named_coral_origin_vendor
-        FROM vendor_listings vl
-        JOIN vendors v ON v.id = vl.vendor_id
-        LEFT JOIN named_corals nc ON nc.id = vl.named_coral_id
-        WHERE vl.vendor_id = ${vendorId}
-          AND vl.last_seen_at > ${fourteenDaysAgo}
-        ORDER BY vl.first_seen_at DESC
-        LIMIT 50 OFFSET ${offset}
-      `) as unknown as VendorListingRow[];
+      // Optional filters collapse via SQL-side NULL/false constant folding:
+      // `(${category}::text IS NULL OR vl.category = ${category})` lets a null
+      // category short-circuit through the planner; same shape for inStock.
+      // ORDER BY can't be parameterized — switch on the allowlisted sort
+      // string and emit one of three full SQL queries. Sort is validated at
+      // the view layer (page.tsx allowlist parse).
+      const categoryParam = category ?? null;
+      const inStockParam = inStock;
+
+      const rows = (await (() => {
+        if (sort === 'price-asc') {
+          return sql`
+            SELECT
+              vl.id, vl.raw_title, vl.current_price, vl.in_stock,
+              vl.image_url, vl.product_url, vl.first_seen_at,
+              vl.match_confidence, vl.named_coral_id,
+              v.slug AS vendor_slug, v.display_name AS vendor_display_name,
+              nc.canonical_name AS named_coral_canonical_name,
+              nc.slug AS named_coral_slug,
+              nc.origin_vendor AS named_coral_origin_vendor
+            FROM vendor_listings vl
+            JOIN vendors v ON v.id = vl.vendor_id
+            LEFT JOIN named_corals nc ON nc.id = vl.named_coral_id
+            WHERE vl.vendor_id = ${vendorId}
+              AND vl.last_seen_at > ${fourteenDaysAgo}
+              AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
+              AND (NOT ${inStockParam}::boolean OR vl.in_stock = true)
+            ORDER BY vl.current_price ASC NULLS LAST, vl.first_seen_at DESC
+            LIMIT 50 OFFSET ${offset}
+          `;
+        }
+        if (sort === 'price-desc') {
+          return sql`
+            SELECT
+              vl.id, vl.raw_title, vl.current_price, vl.in_stock,
+              vl.image_url, vl.product_url, vl.first_seen_at,
+              vl.match_confidence, vl.named_coral_id,
+              v.slug AS vendor_slug, v.display_name AS vendor_display_name,
+              nc.canonical_name AS named_coral_canonical_name,
+              nc.slug AS named_coral_slug,
+              nc.origin_vendor AS named_coral_origin_vendor
+            FROM vendor_listings vl
+            JOIN vendors v ON v.id = vl.vendor_id
+            LEFT JOIN named_corals nc ON nc.id = vl.named_coral_id
+            WHERE vl.vendor_id = ${vendorId}
+              AND vl.last_seen_at > ${fourteenDaysAgo}
+              AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
+              AND (NOT ${inStockParam}::boolean OR vl.in_stock = true)
+            ORDER BY vl.current_price DESC NULLS LAST, vl.first_seen_at DESC
+            LIMIT 50 OFFSET ${offset}
+          `;
+        }
+        // sort === 'newest'
+        return sql`
+          SELECT
+            vl.id, vl.raw_title, vl.current_price, vl.in_stock,
+            vl.image_url, vl.product_url, vl.first_seen_at,
+            vl.match_confidence, vl.named_coral_id,
+            v.slug AS vendor_slug, v.display_name AS vendor_display_name,
+            nc.canonical_name AS named_coral_canonical_name,
+            nc.slug AS named_coral_slug,
+            nc.origin_vendor AS named_coral_origin_vendor
+          FROM vendor_listings vl
+          JOIN vendors v ON v.id = vl.vendor_id
+          LEFT JOIN named_corals nc ON nc.id = vl.named_coral_id
+          WHERE vl.vendor_id = ${vendorId}
+            AND vl.last_seen_at > ${fourteenDaysAgo}
+            AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
+            AND (NOT ${inStockParam}::boolean OR vl.in_stock = true)
+          ORDER BY vl.first_seen_at DESC
+          LIMIT 50 OFFSET ${offset}
+        `;
+      })()) as unknown as VendorListingRow[];
 
       return rows.map(rowToListing);
     },
-    ['getVendorInventory', String(vendorId), String(page)],
-    { revalidate: 600, tags: [`vendor-${vendorId}-page-${page}`] },
+    [
+      'getVendorInventory',
+      String(vendorId),
+      String(page),
+      sort,
+      category ?? '_',
+      inStock ? '1' : '0',
+    ],
+    {
+      revalidate: 600,
+      tags: [
+        `vendor-${vendorId}-page-${page}-${sort}-${category ?? '_'}-${inStock ? '1' : '0'}`,
+      ],
+    },
   )();
 }
 
-// /vendor/[slug] total-pages math per site.md §4.5 + CTK-046.
+// /vendor/[slug] total-pages math per site.md §4.5 + CTK-046 + CTK-053.
 // COUNT against the same 14-day in-stock-recency window as getVendorInventory().
-// No JOINs — vendor_id + last_seen_at filter alone drives the count; vendors /
-// named_corals do not constrain row count (vendor existence is parent-query
-// guaranteed; named_corals join is LEFT). unstable_cache wrap per ISR-fold.
-export async function getVendorInventoryTotal(vendorId: number): Promise<number> {
+// No JOINs — vendor_id + last_seen_at + optional category + optional in_stock
+// drive the count; vendors / named_corals do not constrain row count.
+// unstable_cache wrap per ISR-fold. Cache key drops sort + page (totals are
+// invariant to both) — keeps cache footprint linear in category × inStock
+// rather than category × inStock × page × sort.
+export async function getVendorInventoryTotal(
+  vendorId: number,
+  category: ListingCategory | null = null,
+  inStock: boolean = false,
+): Promise<number> {
   return unstable_cache(
     async () => {
       const sql = getNeonSql();
       const fourteenDaysAgo = new Date(Date.now() - 14 * 86_400_000).toISOString();
+      const categoryParam = category ?? null;
+      const inStockParam = inStock;
       const rows = (await sql`
         SELECT COUNT(*) AS total
         FROM vendor_listings vl
         WHERE vl.vendor_id = ${vendorId}
           AND vl.last_seen_at > ${fourteenDaysAgo}
+          AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
+          AND (NOT ${inStockParam}::boolean OR vl.in_stock = true)
       `) as unknown as { total: number | string }[];
       const first = rows[0];
       return first ? Number(first.total) : 0;
     },
-    ['getVendorInventoryTotal', String(vendorId)],
-    { revalidate: 600, tags: [`vendor-${vendorId}-total`] },
+    [
+      'getVendorInventoryTotal',
+      String(vendorId),
+      category ?? '_',
+      inStock ? '1' : '0',
+    ],
+    {
+      revalidate: 600,
+      tags: [`vendor-${vendorId}-total-${category ?? '_'}-${inStock ? '1' : '0'}`],
+    },
   )();
 }
 

@@ -18,21 +18,50 @@
 // Lighthouse audit on /new or /deals reopening their LIMIT 100 caps).
 
 import Link from 'next/link';
+import type { ListingCategory, ListingSort } from '@/lib/queries/listings';
 
 interface PaginationNavProps {
   currentPage: number;
   totalPages: number;
   slug: string;
+  // CTK-053: filter/sort state preserved across pagination — clicking NEXT
+  // on /vendor/wwc?category=sps routes to /vendor/wwc?category=sps&page=2,
+  // not /vendor/wwc?page=2. Defaults match the no-filter/no-sort case so
+  // pre-CTK-053 callers (none currently — single-view co-located) stay
+  // untouched.
+  sort?: ListingSort;
+  category?: ListingCategory | null;
+  inStock?: boolean;
 }
 
 // Page 1 routes to bare URL per site.md §6 SEO discipline (canonical = bare
 // route, no ?page query) — keeps prev/next href shape consistent with the
-// canonical chain.
-function hrefForPage(slug: string, page: number): string {
-  return page === 1 ? `/vendor/${slug}` : `/vendor/${slug}?page=${page}`;
+// canonical chain. CTK-053: sort + category + in-stock params preserved on
+// every prev/next href so pagination stays inside the filtered subset.
+function hrefForPage(
+  slug: string,
+  page: number,
+  sort: ListingSort,
+  category: ListingCategory | null,
+  inStock: boolean,
+): string {
+  const params = new URLSearchParams();
+  if (sort !== 'newest') params.set('sort', sort);
+  if (category !== null) params.set('category', category);
+  if (inStock) params.set('in-stock', '1');
+  if (page !== 1) params.set('page', String(page));
+  const qs = params.toString();
+  return qs ? `/vendor/${slug}?${qs}` : `/vendor/${slug}`;
 }
 
-export function PaginationNav({ currentPage, totalPages, slug }: PaginationNavProps) {
+export function PaginationNav({
+  currentPage,
+  totalPages,
+  slug,
+  sort = 'newest',
+  category = null,
+  inStock = false,
+}: PaginationNavProps) {
   const prevDisabled = currentPage <= 1;
   const nextDisabled = currentPage >= totalPages;
 
@@ -43,7 +72,10 @@ export function PaginationNav({ currentPage, totalPages, slug }: PaginationNavPr
   const prev = prevDisabled ? (
     <span className={disabledClass}>PREV</span>
   ) : (
-    <Link href={hrefForPage(slug, currentPage - 1)} className={linkClass}>
+    <Link
+      href={hrefForPage(slug, currentPage - 1, sort, category, inStock)}
+      className={linkClass}
+    >
       PREV
     </Link>
   );
@@ -51,7 +83,10 @@ export function PaginationNav({ currentPage, totalPages, slug }: PaginationNavPr
   const next = nextDisabled ? (
     <span className={disabledClass}>NEXT</span>
   ) : (
-    <Link href={hrefForPage(slug, currentPage + 1)} className={linkClass}>
+    <Link
+      href={hrefForPage(slug, currentPage + 1, sort, category, inStock)}
+      className={linkClass}
+    >
       NEXT
     </Link>
   );
