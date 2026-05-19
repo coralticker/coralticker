@@ -18,6 +18,7 @@ Coverage per plan.md table row 90:
 
 from __future__ import annotations
 
+import os
 import sys
 import types
 from io import BytesIO
@@ -28,6 +29,16 @@ from io import BytesIO
 sys.modules.setdefault(
     "supabase",
     types.SimpleNamespace(Client=object, create_client=lambda *a, **k: None),
+)
+
+# Stub `boto3` so this file imports cleanly when run from a venv that lacks
+# scrapers/requirements.txt. images.py imports boto3 at module top per
+# CTK-036 cut-2; the test mocks images._S3_CLIENT directly, so the real
+# boto3.client() factory never fires under test. _get_s3_client() short-
+# circuits when _S3_CLIENT is non-None.
+sys.modules.setdefault(
+    "boto3",
+    types.SimpleNamespace(client=lambda *a, **k: None),
 )
 
 from PIL import Image
@@ -123,33 +134,32 @@ def test_compress_corrupt_bytes_falls_through():
     assert raised, "_compress() must raise on corrupt bytes (precondition for fail-soft)"
 
     # Now exercise mirror()'s fail-soft branch end-to-end with a captured
-    # upload payload. Mocks: http.fetch_image returns garbage bytes;
-    # supabase client captures upload kwargs. Assert that the upload body
-    # equals the raw garbage (NOT a _compress() output) and that the path
+    # upload payload. Mocks: http.fetch_image returns garbage bytes; boto3
+    # S3 client captures put_object kwargs. Assert that the upload body
+    # equals the raw garbage (NOT a _compress() output) and that the key
     # carries the vendor-source extension (.jpg, NOT .webp cutover).
+    #
+    # CTK-036 cut-2 (2026-05-15): mock target swapped from supabase
+    # client.storage.from_(bucket).upload to images._S3_CLIENT.put_object.
+    # R2_BUCKET_NAME env var is read at upload time so the test stubs it.
     captured: dict = {}
 
-    class _MockBucket:
-        def upload(self, **kwargs):
+    class _MockS3Client:
+        def put_object(self, **kwargs):
             captured.update(kwargs)
-            return types.SimpleNamespace(status_code=200)
-
-    class _MockStorage:
-        def from_(self, bucket):
-            assert bucket == images._BUCKET
-            return _MockBucket()
-
-    class _MockClient:
-        storage = _MockStorage()
+            return {"ResponseMetadata": {"HTTPStatusCode": 200}}
 
     raw_garbage = b"this is definitely not an image"
     original_fetch = images.http.fetch_image
     original_public_url = images._public_url
+    original_s3_client = images._S3_CLIENT
+    original_bucket_env = os.environ.get("R2_BUCKET_NAME")
     images.http.fetch_image = lambda url: raw_garbage
-    images._public_url = lambda path: f"https://example.test/{path}"
+    images._public_url = lambda key: f"https://example.test/{key}"
+    images._S3_CLIENT = _MockS3Client()
+    os.environ["R2_BUCKET_NAME"] = "test-bucket"
     try:
         result = images.mirror(
-            client=_MockClient(),
             vendor_slug="testvendor",
             product_url="https://example.test/products/test-coral",
             vendor_image_url="https://cdn.example.test/img/test-coral.jpg",
@@ -157,22 +167,31 @@ def test_compress_corrupt_bytes_falls_through():
     finally:
         images.http.fetch_image = original_fetch
         images._public_url = original_public_url
+        images._S3_CLIENT = original_s3_client
+        if original_bucket_env is None:
+            os.environ.pop("R2_BUCKET_NAME", None)
+        else:
+            os.environ["R2_BUCKET_NAME"] = original_bucket_env
 
     assert result is not None, (
         "mirror() returned None on Pillow-exception path; fail-soft contract requires "
         "raw-upload success path to return the public URL"
     )
-    assert captured.get("file") == raw_garbage, (
+    assert captured.get("Body") == raw_garbage, (
         f"fail-soft branch uploaded compressed (or transformed) bytes instead of raw: "
-        f"got {len(captured.get('file', b''))} bytes vs raw {len(raw_garbage)}"
+        f"got {len(captured.get('Body', b''))} bytes vs raw {len(raw_garbage)}"
     )
-    assert captured.get("path", "").endswith(".jpg"), (
+    assert captured.get("Key", "").endswith(".jpg"), (
         f"fail-soft branch did not preserve vendor-source extension: "
-        f"path={captured.get('path')!r}"
+        f"Key={captured.get('Key')!r}"
     )
-    assert captured.get("file_options", {}).get("content-type") == "image/jpeg", (
+    assert captured.get("ContentType") == "image/jpeg", (
         f"fail-soft branch did not preserve vendor-source content-type: "
-        f"got {captured.get('file_options', {}).get('content-type')!r}"
+        f"got {captured.get('ContentType')!r}"
+    )
+    assert captured.get("Bucket") == "test-bucket", (
+        f"put_object did not target R2_BUCKET_NAME env var: "
+        f"got Bucket={captured.get('Bucket')!r}"
     )
 
 

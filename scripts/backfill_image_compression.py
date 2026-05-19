@@ -120,7 +120,17 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 
-_BUCKET = images._BUCKET  # 'listing-images'
+# Inlined post-CTK-036 cut-2 (2026-05-15). images._BUCKET was removed when
+# images.py swapped to R2 (the active forward-write target now reads from
+# env R2_BUCKET_NAME). This script remains Supabase-Storage-specific by
+# design — its job is to backfill the legacy listing-images bucket so the
+# CTK-036 cut-3 R2 re-upload has a clean Supabase-side starting state.
+#
+# CTK-036 cleanup: delete this script post-cut-7 bucket-drop. The listing-
+# images Supabase bucket goes away in cut-7; once that lands, this script
+# has no target to point at and is dead code. Tracking pointer kept here
+# so the cleanup-time grep ("CTK-036 cleanup") surfaces it.
+_BUCKET = "listing-images"
 _VENDOR_SLUGS = ("pacific_east", "wwc", "tsa")
 _LIST_PAGE_SIZE = 100
 _DELETE_BATCH_SIZE = 100

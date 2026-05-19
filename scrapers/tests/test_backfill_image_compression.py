@@ -36,6 +36,16 @@ sys.modules.setdefault(
     types.SimpleNamespace(Client=object, create_client=lambda *a, **k: None),
 )
 
+# Stub `boto3` so this file imports cleanly when run from a venv that lacks
+# scrapers/requirements.txt. images.py imports boto3 at module top per
+# CTK-036 cut-2; this test exercises the CTK-035 backfill script path
+# (Supabase storage → Supabase storage compression) and never invokes the
+# R2 forward-write codepath, so a bare stub is enough.
+sys.modules.setdefault(
+    "boto3",
+    types.SimpleNamespace(client=lambda *a, **k: None),
+)
+
 from scripts import backfill_image_compression as bf
 from scrapers.common import images
 
