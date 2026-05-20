@@ -29,13 +29,20 @@ export function Wordmark(props: WordmarkProps) {
   // §"Wordmark + tagline lockup" — wordmark 1.60× tagline (CTK-052 wordmark-dominant
   // lock 2026-05-19; supersedes CTK-040 Q-2 Variant C 1.30× balance ratio), tagline
   // Plex Mono 0.08em tracking, rule spans remaining line-width.
+  //
+  // CTK-056 S2: responsive degradation per branding-guide.md §"Wordmark + tagline
+  // lockup" L320 (locked 2026-05-20). <640px: stacked composition — wordmark row 1,
+  // tagline row 2, both left-anchored, no rule (a rule on its own row reads as a
+  // section divider, not the sequential-pause em-dash the motif requires).
+  // ≥640px: horizontal lockup unchanged (wordmark 1.60× + spanning rule + inline
+  // tagline). Wordmark 1.60× ratio honored at every viewport.
   const tagline = props.tagline ?? 'Never miss the drop.';
   return (
-    <span className="flex w-full items-center gap-3 text-2xl md:text-3xl">
+    <span className="flex flex-col sm:flex-row sm:items-center gap-3 text-2xl md:text-3xl">
       <span className="text-[1.60em]">{wordmark}</span>
       <span
         aria-hidden="true"
-        className="h-px bg-ink flex-auto"
+        className="hidden sm:block h-px bg-ink flex-auto"
       />
       <span className="font-mono font-bold uppercase tracking-[0.08em]">{tagline}</span>
     </span>
