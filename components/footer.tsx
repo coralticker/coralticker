@@ -6,12 +6,21 @@
 //   - Plex Mono lowercase / sentence case in inkFaint for the disclaimer line
 //     (branding-guide.md §"Mono uppercase register" footer-chrome carve-out)
 //
-// CTK-049 S1: mid-dot extracted to its own forest-colored span (matches
-// app/vendor/[slug]/_components/pagination-nav.tsx:100 pattern per
-// branding-guide.md L211 forest-mid-dot separator canon — footer was the
-// drift). lastScrape binds to scraper_runs.finished_at MAX via
+// CTK-049 S1: lastScrape binds to scraper_runs.finished_at MAX via
 // lib/queries/scraper-runs.ts; renders as relative-time per L283 canon.
 // Em-dash fallback only when no successful scrape exists in DB.
+//
+// CTK-049 S1c: round-2 polish per /brand-manager amendments at
+// branding-guide.md L326. (1) Disclaimer is prose-register: period after
+// "vendors." terminates segment-1; single space (not forest mid-dot) to
+// the freshness phrase. Forest mid-dot is reserved for telegraphic chrome
+// (eyebrows / pagination / sort-filter per §"Mono uppercase register"
+// L211) where facts are not period-terminated; period + mid-dot reads as
+// double-terminator. (2) Wordmark one typographic step larger than
+// disclaimer (text-base over text-sm) — restores brand-anchor primacy
+// against Plex Mono optical-size bias that otherwise lets the long
+// disclaimer dominate. items-baseline on the flex row aligns wordmark
+// baseline to disclaimer baseline across the size step.
 
 import { Wordmark } from '@/components/ui/wordmark';
 import { getLastScrapeAt } from '@/lib/queries/scraper-runs';
@@ -24,13 +33,13 @@ export async function Footer() {
     : '—';
 
   return (
-    <footer className="px-6 py-6 mt-12 text-sm">
+    <footer className="px-6 py-6 mt-12">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <Wordmark variant="nav" />
-        <span className="font-mono text-ink/60">
-          Not affiliated with vendors.
-          <span aria-hidden="true" className="text-forest">{' · '}</span>
-          Last scrape: {lastScrape}
+        <span className="text-base">
+          <Wordmark variant="nav" />
+        </span>
+        <span className="font-mono text-sm text-ink/60">
+          Not affiliated with vendors. Last scrape: {lastScrape}
         </span>
       </div>
     </footer>
