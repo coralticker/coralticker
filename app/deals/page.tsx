@@ -13,9 +13,13 @@
 //
 // Empty-state per §4.3 row 1214: quiet drop days are a REAL product state at
 // v1 vendor count, not a system-health anomaly (contrast §4.4 /new's empty
-// where zero arrivals across 4 vendors IS a scraper-silence signal). Renders
-// the §4.3 single voice-aligned line lifted verbatim from row 1214. Page H1
-// still renders.
+// where zero arrivals across 4 vendors IS a scraper-silence signal). Page H1
+// still renders. CTK-049 S1: copy rewritten to two-line factual ownership
+// of the gap — "No price drops..." + "Drops surface here...". No "I" voice:
+// content-availability state is not a gap-moment per branding-guide.md
+// L100-106 carve-out (carve-out scope is brand-protective-hedge surfaces:
+// dormancy-not-found, vendor-not-found, retired-vendor, downtime — not
+// data-availability empty slots).
 //
 // Loading-state: RSC Suspense fallback covers card placeholders only via
 // <DataRowSkeleton fields={...}>; <GroupDivider> renders post-Suspense per
@@ -52,17 +56,15 @@ export const metadata: Metadata = {
 
 const DIVIDER_THRESHOLD = 12;
 
-const EMPTY_FALLBACK =
-  "No price drops in the last 24 hours. I'll surface them as vendors update.";
-
 async function PriceDropsFeed() {
   const drops = await getRecentPriceDrops();
 
   if (drops.length === 0) {
     return (
-      <p role="status" className="text-base text-ink py-6">
-        {EMPTY_FALLBACK}
-      </p>
+      <div role="status" className="text-base text-ink py-6 space-y-2">
+        <p>No price drops in the last 24 hours.</p>
+        <p>Drops surface here when a vendor cuts a listing&apos;s price.</p>
+      </div>
     );
   }
 

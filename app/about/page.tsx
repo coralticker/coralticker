@@ -30,20 +30,19 @@ export default function About() {
         <p>
           CoralTicker watches a handful of reef coral vendors and surfaces every new
           listing in one feed. If you&apos;re the kind of reefer who refreshes World
-          Wide Corals and Pacific East Aquaculture waiting for a drop, this exists
-          so you don&apos;t have to.
+          Wide Corals and Top Shelf Aquatics waiting for a drop, this exists so
+          you don&apos;t have to.
         </p>
         <p>
-          I&apos;m Jon — reefer, data engineer by day. I built CoralTicker because
-          I kept missing listings. It&apos;s a personal project, not a startup. No
-          team, no investors, no roadmap pressure. I add vendors when there&apos;s
-          signal they&apos;re worth tracking; I ship features when they fix something
-          I&apos;d actually use.
+          I&apos;m Jon. Reefer. Data engineer. I built CoralTicker because I kept
+          missing listings. It&apos;s a personal project, not a startup. No team,
+          no investors, no roadmap pressure. I add vendors when there&apos;s signal
+          they&apos;re worth tracking. I ship features that fix something I&apos;d
+          actually use.
         </p>
         <p>
           CoralTicker doesn&apos;t sell coral. The links go to the vendor&apos;s own
-          site — that&apos;s where the listing lives. CoralTicker is the discovery
-          layer, not the storefront.
+          site — that&apos;s where the listing lives.
         </p>
         <p>
           If you&apos;ve got feedback, an alert idea, or a vendor I should add,
