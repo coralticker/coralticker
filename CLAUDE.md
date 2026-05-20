@@ -20,6 +20,15 @@
 | `.claude/research/*.md` | Vendor scans, market research, named-coral seed list |
 | `.claude/time-log.md` | COI compliance evidence (personal time only) |
 
+## Repo layout — two-repo split
+
+`.claude/` is its own **private** git repo, separate from the **public** `coralticker` repo. The public repo's `.gitignore:1` excludes `.claude/` so session work — ticket scaffolding, plan.md / results.md / journal entries, brand + architecture sources — stays private. Both repos live side-by-side under the same working directory and version-control independently:
+
+- **Public** — `app/`, `components/`, `lib/`, `scrapers/`, `CLAUDE.md`, etc. Pushed to GitHub `coralticker/coralticker`.
+- **Private `.claude/`** — orientation docs, ticket history, brand + architecture sources, session journals. Synced via its own remote.
+
+Implication for commit directives: `.claude/` paths can't enter a public-repo commit alongside code changes — `git add -f` would override the gitignore but persistently auto-track those files in the public repo, defeating the split. Bundle directives must separate code from `.claude/` artifacts (the `.claude/` work commits in the private repo as a separate operation). See memory `feedback_paste_directive_gitignored_artifacts.md`.
+
 ## Voice
 
 Grounded, dry, specific, first-person singular. No SaaS hype. See `.claude/branding-guide.md` for principles + before/after examples. Match `.claude/reef-project-plan.md`'s register.
