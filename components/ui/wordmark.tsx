@@ -36,9 +36,16 @@ export function Wordmark(props: WordmarkProps) {
   // section divider, not the sequential-pause em-dash the motif requires).
   // ≥640px: horizontal lockup unchanged (wordmark 1.60× + spanning rule + inline
   // tagline). Wordmark 1.60× ratio honored at every viewport.
+  //
+  // CTK-056 S3: sm:items-baseline (not items-center) per /lead-frontend eyeball-
+  // pass review-results. items-center floats tagline + 1px rule in the vertical
+  // middle of the 1.60× wordmark's line-box; items-baseline aligns them to the
+  // wordmark's baseline (where the forest full-stop sits) — typographic standard
+  // for inline rule-with-text lockups. Mobile (flex-col) unchanged — items-baseline
+  // only fires above sm: breakpoint.
   const tagline = props.tagline ?? 'Never miss the drop.';
   return (
-    <span className="flex flex-col sm:flex-row sm:items-center gap-3 text-2xl md:text-3xl">
+    <span className="flex flex-col sm:flex-row sm:items-baseline gap-3 text-2xl md:text-3xl">
       <span className="text-[1.60em]">{wordmark}</span>
       <span
         aria-hidden="true"
