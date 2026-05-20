@@ -1,0 +1,53 @@
+{
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/.pytest_cache": true,
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/.a11y": true,
+    "**/.vercel": true,
+    "**/out": true,
+    "**/build": true,
+    "**/*.tsbuildinfo": true,
+    "**/next-env.d.ts": true,
+    "**/bash.exe.stackdump": true,
+    "**/.neon-migration": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/.pytest_cache": true,
+    "**/__pycache__": true,
+    "**/.a11y": true,
+    "**/.vercel": true,
+    "**/out": true,
+    "**/build": true,
+    "**/pnpm-lock.yaml": true,
+    "**/package-lock.json": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.next/**": true,
+    "**/.pytest_cache/**": true,
+    "**/__pycache__/**": true,
+    "**/.a11y/**": true,
+    "**/.vercel/**": true,
+    "**/out/**": true,
+    "**/build/**": true,
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true
+  },
+  "typescript.tsserver.watchOptions": {
+    "excludeDirectories": [
+      "**/node_modules",
+      "**/.next",
+      "**/.pytest_cache",
+      "**/out",
+      "**/build"
+    ]
+  },
+  "search.useIgnoreFiles": true,
+  "search.useGlobalIgnoreFiles": true,
+  "explorer.excludeGitIgnore": false
+}

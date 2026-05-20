@@ -1,6 +1,7 @@
 .claude/
 bash.exe.stackdump
 __pycache__/
+.pytest_cache/
 .env
 
 # Next.js / Node
@@ -24,5 +25,6 @@ yarn-error.log*
 .pnpm-dev-*.log
 .tmp-*.html
 phase[0-9]-*.log
+*_run.log
 curl-*-body.txt
 .neon-migration/
