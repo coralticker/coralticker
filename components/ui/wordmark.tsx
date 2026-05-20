@@ -43,13 +43,23 @@ export function Wordmark(props: WordmarkProps) {
   // wordmark's baseline (where the forest full-stop sits) — typographic standard
   // for inline rule-with-text lockups. Mobile (flex-col) unchanged — items-baseline
   // only fires above sm: breakpoint.
+  //
+  // CTK-056 S4: rule lifted to cap-height/2 via sm:translate-y-[-0.35em] on the
+  // rule span only. items-baseline alone places the rule at the tagline baseline
+  // (= bottom of NEVER uppercase letters), so the rule reads as passing through
+  // the BOTTOM of NEVER, not through its middle. Em-dash typographic convention
+  // is cap-height/2 — rule through the vertical middle of the uppercase letters.
+  // -0.35em ≈ half the cap-height of Plex Mono at the outer font-size
+  // (text-2xl md:text-3xl); em-relative unit scales with breakpoint. sm: prefix
+  // scopes the lift to the inline lockup mode only — mobile (flex-col, rule
+  // hidden) untouched. Tagline + wordmark baseline alignment intact.
   const tagline = props.tagline ?? 'Never miss the drop.';
   return (
     <span className="flex flex-col sm:flex-row sm:items-baseline gap-3 text-2xl md:text-3xl">
       <span className="text-[1.60em]">{wordmark}</span>
       <span
         aria-hidden="true"
-        className="hidden sm:block h-px bg-ink flex-auto"
+        className="hidden sm:block h-px bg-ink flex-auto sm:translate-y-[-0.35em]"
       />
       <span className="font-mono font-bold uppercase tracking-[0.08em]">{tagline}</span>
     </span>
