@@ -21,6 +21,16 @@
 // against Plex Mono optical-size bias that otherwise lets the long
 // disclaimer dominate. items-baseline on the flex row aligns wordmark
 // baseline to disclaimer baseline across the size step.
+//
+// CTK-049 S1d: round-3 mobile-degradation amendment per branding-guide.md
+// L326. At <640px the two disclaimer segments break to separate rows
+// (wordmark row 1 / "Not affiliated with vendors." row 2 / "Last scrape:
+// {timestamp}" row 3). The freshness phrase earns its own beat at mobile
+// widths where the prose wraps anyway; forcing the break at the sentence
+// boundary (segment-1's period) is cleaner than letting the wrap land
+// mid-fragment. Implementation: <br className="sm:hidden" /> renders as a
+// line break at <640px and display:none at ≥640px. Desktop single-line
+// composition unchanged.
 
 import { Wordmark } from '@/components/ui/wordmark';
 import { getLastScrapeAt } from '@/lib/queries/scraper-runs';
@@ -39,7 +49,7 @@ export async function Footer() {
           <Wordmark variant="nav" />
         </span>
         <span className="font-mono text-sm text-ink/60">
-          Not affiliated with vendors. Last scrape: {lastScrape}
+          Not affiliated with vendors.<br className="sm:hidden" /> Last scrape: {lastScrape}
         </span>
       </div>
     </footer>
