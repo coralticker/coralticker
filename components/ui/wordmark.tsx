@@ -26,12 +26,13 @@ export function Wordmark(props: WordmarkProps) {
   }
 
   // hero — left-aligned wordmark + em-dash rule + tagline per branding-guide.md
-  // §"Wordmark + tagline lockup" — wordmark 1.30× tagline (Variant C lock 2026-05-18),
-  // tagline Plex Mono 0.08em tracking, rule spans remaining line-width.
+  // §"Wordmark + tagline lockup" — wordmark 1.60× tagline (CTK-052 wordmark-dominant
+  // lock 2026-05-19; supersedes CTK-040 Q-2 Variant C 1.30× balance ratio), tagline
+  // Plex Mono 0.08em tracking, rule spans remaining line-width.
   const tagline = props.tagline ?? 'Never miss the drop.';
   return (
     <span className="flex w-full items-center gap-3 text-2xl md:text-3xl">
-      <span className="text-[1.30em]">{wordmark}</span>
+      <span className="text-[1.60em]">{wordmark}</span>
       <span
         aria-hidden="true"
         className="h-px bg-ink flex-auto"
