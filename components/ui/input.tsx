@@ -28,7 +28,7 @@ export function Input(props: InputProps) {
       required={props.required}
       defaultValue={props.defaultValue}
       disabled={props.disabled}
-      className="block w-full px-3 py-2 bg-cream text-ink border border-ink/30 font-sans text-sm placeholder:text-ink/40 focus:outline-none focus:border-ink disabled:opacity-50"
+      className="block w-full px-3 py-2 bg-cream text-ink border border-ink/30 font-sans text-sm placeholder:text-ink/60 focus:outline-none focus:border-ink disabled:opacity-50"
     />
   );
 }
