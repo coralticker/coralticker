@@ -70,7 +70,7 @@ export function PaginationNav({
   const disabledClass = 'opacity-40';
 
   const prev = prevDisabled ? (
-    <span className={disabledClass}>PREV</span>
+    <span aria-disabled="true" className={disabledClass}>PREV</span>
   ) : (
     <Link
       href={hrefForPage(slug, currentPage - 1, sort, category, inStock)}
@@ -81,7 +81,7 @@ export function PaginationNav({
   );
 
   const next = nextDisabled ? (
-    <span className={disabledClass}>NEXT</span>
+    <span aria-disabled="true" className={disabledClass}>NEXT</span>
   ) : (
     <Link
       href={hrefForPage(slug, currentPage + 1, sort, category, inStock)}

@@ -7,7 +7,7 @@ type AccentDotVariant = 'wishlist-match' | 'scraper-status';
 
 interface AccentDotProps {
   variant: AccentDotVariant;
-  'aria-label'?: string;
+  'aria-label': string;
 }
 
 export function AccentDot({ variant, ...rest }: AccentDotProps) {

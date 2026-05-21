@@ -64,7 +64,7 @@ export function DataRow({ fields, matchIndicator }: DataRowProps) {
       ) : null}
       {fields.map((field, i) => (
         <Fragment key={i}>
-          {i > 0 ? <span className="text-forest"> — </span> : null}
+          {i > 0 ? <span aria-hidden="true" className="text-forest"> — </span> : null}
           <strong className="font-bold">{field.label}.</strong>{' '}
           <RenderValue value={field.value} />
         </Fragment>

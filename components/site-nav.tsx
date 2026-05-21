@@ -37,8 +37,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Wordmark } from '@/components/ui/wordmark';
 
-interface SiteNavProps {}
-
 interface NavLink {
   href: string;
   label: string;
@@ -55,7 +53,7 @@ const linkClass =
   'hover:underline focus-visible:underline underline-offset-[3px] decoration-1';
 const activeLinkClass = 'underline underline-offset-[3px] decoration-1';
 
-export function SiteNav(_props: SiteNavProps = {}) {
+export function SiteNav() {
   const pathname = usePathname();
 
   return (
@@ -76,6 +74,7 @@ export function SiteNav(_props: SiteNavProps = {}) {
               <li className="inline whitespace-nowrap">
                 <Link
                   href={link.href}
+                  aria-current={isActive ? 'page' : undefined}
                   className={isActive ? activeLinkClass : linkClass}
                 >
                   {link.label}

@@ -48,9 +48,9 @@ export async function Footer() {
         <span className="text-base">
           <Wordmark variant="nav" />
         </span>
-        <span className="font-mono text-sm text-ink/60">
+        <small className="font-mono text-sm text-ink/60">
           Not affiliated with vendors.<br className="sm:hidden" /> Last scrape: {lastScrape}
-        </span>
+        </small>
       </div>
     </footer>
   );

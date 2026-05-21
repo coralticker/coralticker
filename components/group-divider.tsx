@@ -19,7 +19,7 @@ export function GroupDivider({ label }: GroupDividerProps) {
       aria-label={label}
     >
       <div className="border-t border-forest" />
-      <div className="mt-3 font-mono text-xs uppercase tracking-[0.08em] text-ink">
+      <div aria-hidden="true" className="mt-3 font-mono text-xs uppercase tracking-[0.08em] text-ink">
         {label}
       </div>
     </div>

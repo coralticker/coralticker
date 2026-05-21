@@ -31,8 +31,8 @@ export default function RootLayout({
         <SiteNav />
         <RelativeTimeProvider>
           <main className="flex-1">{children}</main>
+          <Footer />
         </RelativeTimeProvider>
-        <Footer />
       </body>
     </html>
   );
