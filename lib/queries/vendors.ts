@@ -72,3 +72,28 @@ export async function getAllActiveVendorSlugs(): Promise<{ slug: string }[]> {
   `) as unknown as { slug: string }[];
   return rows.map((row) => ({ slug: row.slug.replaceAll('_', '-') }));
 }
+
+// CTK-055: powers /vendors index page. Alphabetical by display_name for
+// vendor-neutrality per branding-guide.md L41-42 (no curated tier sort).
+// Slug normalized snake → kebab on emit per module seam.
+export async function getAllActiveVendors(): Promise<
+  { slug: string; display_name: string }[]
+> {
+  return unstable_cache(
+    async () => {
+      const sql = getNeonSql();
+      const rows = (await sql`
+        SELECT slug, display_name
+        FROM vendors
+        WHERE active = true
+        ORDER BY display_name ASC
+      `) as unknown as { slug: string; display_name: string }[];
+      return rows.map((row) => ({
+        slug: row.slug.replaceAll('_', '-'),
+        display_name: row.display_name,
+      }));
+    },
+    ['getAllActiveVendors'],
+    { revalidate: 600, tags: ['vendors-index'] },
+  )();
+}
