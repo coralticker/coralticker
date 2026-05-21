@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import Script from 'next/script';
 import { plexSans, plexMono } from './fonts';
 import { Wordmark } from '@/components/ui/wordmark';
 import { Footer } from '@/components/footer';
@@ -18,6 +19,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${plexSans.variable} ${plexMono.variable}`}>
+      <head>
+        <Script
+          defer
+          data-domain="coralticker.com"
+          src="https://plausible.io/js/script.js"
+          strategy="afterInteractive"
+        />
+      </head>
       <body className="font-sans bg-cream text-ink min-h-screen flex flex-col">
         <nav className="px-6 py-4">
           <Wordmark variant="nav" />
