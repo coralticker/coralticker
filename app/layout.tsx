@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import Script from 'next/script';
 import { plexSans, plexMono } from './fonts';
-import { Wordmark } from '@/components/ui/wordmark';
+import { SiteNav } from '@/components/site-nav';
 import { Footer } from '@/components/footer';
 import { RelativeTimeProvider } from '@/components/ui/relative-time';
 
@@ -28,9 +28,7 @@ export default function RootLayout({
         />
       </head>
       <body className="font-sans bg-cream text-ink min-h-screen flex flex-col">
-        <nav className="px-6 py-4">
-          <Wordmark variant="nav" />
-        </nav>
+        <SiteNav />
         <RelativeTimeProvider>
           <main className="flex-1">{children}</main>
         </RelativeTimeProvider>
