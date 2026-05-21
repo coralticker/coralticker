@@ -56,8 +56,9 @@ IMAGE_STRATEGY = "mirror"
 TSA_CATEGORY_FILTER = {
     "product_type_allowlist": ["", "Coral-POS", "Livestock"],
     "tag_denylist": [
-        "Angelfish", "Beginner Fish", "Clownfish", "Nano Fish", "Tang",
-        "WYSIWYG Fish",
+        "Algae Eater", "Angelfish", "Beginner Fish", "Clownfish", "Invert",
+        "Live Rock", "Macroalgae", "Mangrove", "Nano Fish", "Refugiums",
+        "Tang", "WYSIWYG Fish",
     ],
 }
 
@@ -328,16 +329,50 @@ def test_filter_tsa_permissive_when_no_block(products):
         assert _should_keep(p, {}) is True
 
 
-# ─── Test 18 (CTK-037): skip-count across TSA fixture matches expected ────────
+# ─── Test 18 (CTK-037 / CTK-041 Session 2): skip-count across TSA fixture ─────
 def test_filter_tsa_skip_count_matches(products):
     """TSA fixture composition: 4 Livestock coral (Deep Soul Favia, Berry Bash
     Echinata, Beast Boy Favia, Krak God Zoanthids) + 1 Livestock fish (Powder
-    Blue Tang — tag-denylist hit) + 2 Aquarium Supplies (T-shirt + Hydros Duet
-    — allowlist miss). Expected filter skip = 3."""
+    Blue Tang — tag-denylist hit per CTK-037) + 2 Aquarium Supplies (T-shirt +
+    Hydros Duet — allowlist miss) + 3 Livestock non-coral (CTK-041 Session 2
+    additions — Skunk Cleaner Shrimp / Chaeto Macroalgae / Mexican Turbo
+    Snail; tag-denylist hits on Invert / Macroalgae / Algae Eater).
+    Expected: 4 kept, 6 skipped."""
     kept = sum(1 for p in products if _should_keep(p, TSA_CATEGORY_FILTER))
     skipped = sum(1 for p in products if not _should_keep(p, TSA_CATEGORY_FILTER))
     assert kept == 4, f"expected 4 kept, got {kept}"
-    assert skipped == 3, f"expected 3 skipped, got {skipped}"
+    assert skipped == 6, f"expected 6 skipped, got {skipped}"
+
+
+# ─── CTK-041 Session 2: tag_denylist rejects Livestock + Invert tag ──────────
+def test_filter_rejects_livestock_invert(products):
+    """CTK-041 Session 2 — Invert umbrella tag catches Shrimp/Crab/Urchin/
+    Starfish/Snail/Lobster co-carry per live audit. Skunk Cleaner Shrimp is
+    product_type='Livestock' (passes allowlist) + tags include Invert + Shrimp
+    — Invert match short-circuits reject."""
+    p = _by_title(products, "Skunk Cleaner Shrimp")
+    assert _should_keep(p, TSA_CATEGORY_FILTER) is False
+    assert "Invert" in p["tags"]
+
+
+# ─── CTK-041 Session 2: tag_denylist rejects Livestock + Macroalgae tag ──────
+def test_filter_rejects_livestock_macroalgae(products):
+    """CTK-041 Session 2 — Macroalgae is bio-media algae; refugium-shape
+    content surfaced inside Livestock allowlist per Jon-eyeball /vendor/tsa
+    2026-05-19. Chaeto Macroalgae is product_type='Livestock' + tags
+    [Macroalgae, Refugiums]."""
+    p = _by_title(products, "Chaeto Macroalgae")
+    assert _should_keep(p, TSA_CATEGORY_FILTER) is False
+
+
+# ─── CTK-041 Session 2: tag_denylist rejects Livestock + Algae Eater tag ─────
+def test_filter_rejects_livestock_algae_eater(products):
+    """CTK-041 Session 2 — Algae Eater catches algae-utility inverts (snails
+    + crabs sold for algae control). Mexican Turbo Snail is
+    product_type='Livestock' + tags [Algae Eater, Invert, Snail] — multi-tag
+    intersection short-circuits on first match."""
+    p = _by_title(products, "Mexican Turbo Snail")
+    assert _should_keep(p, TSA_CATEGORY_FILTER) is False
 
 
 # ─── Test 19 (CTK-037 Session 5.5): predicate normalization keeps None/absent ─
@@ -384,6 +419,9 @@ def main() -> int:
         test_filter_tsa_tag_denylist_rejects_tang,
         test_filter_tsa_permissive_when_no_block,
         test_filter_tsa_skip_count_matches,
+        test_filter_rejects_livestock_invert,
+        test_filter_rejects_livestock_macroalgae,
+        test_filter_rejects_livestock_algae_eater,
         test_filter_normalizes_none_product_type_to_empty_string,
         test_filter_rejects_none_product_type_when_empty_not_in_allowlist,
     ]

@@ -391,6 +391,55 @@
       "options": [
         {"name": "Title", "position": 1, "values": ["Default Title"]}
       ]
+    },
+    {
+      "id": 7000000000009,
+      "title": "Nassarius Sandbed Crew",
+      "handle": "nassarius-sandbed-crew-ctk041-v2",
+      "body_html": "<p>Nassarius snails — CTK-041 Session 2 v2 belt-and-suspenders fixture (tag-only-no-Snail-umbrella case).</p>",
+      "published_at": "2026-05-20T10:00:00-04:00",
+      "created_at": "2026-05-20T09:00:00-04:00",
+      "updated_at": "2026-05-20T12:00:00-04:00",
+      "vendor": "Pacific East Aquaculture",
+      "product_type": "Weekly Special",
+      "tags": ["Nassarius"],
+      "variants": [
+        {
+          "id": 41000000000009,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "PE-V2-NASSARIUS-CTK041",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "11.99",
+          "grams": 50,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 7000000000009,
+          "created_at": "2026-05-20T09:00:00-04:00",
+          "updated_at": "2026-05-20T12:00:00-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 31000000000009,
+          "created_at": "2026-05-20T09:00:30-04:00",
+          "position": 1,
+          "updated_at": "2026-05-20T09:01:00-04:00",
+          "product_id": 7000000000009,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/pe/nassarius-sandbed-crew.jpg?v=1",
+          "width": 1500,
+          "height": 1500
+        }
+      ],
+      "options": [
+        {"name": "Title", "position": 1, "values": ["Default Title"]}
+      ]
     }
   ]
 }

@@ -51,15 +51,27 @@ originator_prefix: tsa  # CTK-026 pre-impl spot-check: 89/250 (~36%) carry "TSA 
 # denylist — per seed-list inclusion (ECC Sherman/Rainbow BTA, D1 lean (a)).
 # Equipment lives in Aquarium Supplies / Oversized / Drop shipped — denied
 # by allowlist default. D1 + D2 + D3 leans locked 2026-05-10 by Jon.
+# CTK-041 Session 2 tag_denylist extension: 6 non-coral tags (algae-utility
+# inverts + bio media umbrella) added 2026-05-21 per Jon-eyeball /vendor/tsa
+# 2026-05-19 (algae + bio media surfaced inside Livestock allowlist) +
+# 17-page live walk empirical (2,731 Livestock rows; ~120 catchable
+# non-coral; ~4.4% leak rate). Sales-bucket / rotating-content discipline
+# per open-items.md Open + memory feedback_rotating_bucket_allowlist.md.
 category_filter:
   product_type_allowlist:
     - ""                  # empty product_type bucket; 9/10 sample real coral (Blastomussa/Acropora/Chalice/Acan) per CTK-037 Session 4.5; remaining ~7 rows imageless test-data per /lead-backend spot-check 2026-05-11 (frontend has_image filter excludes); ~62 real-coral recovery; Q-8 path (a) (CTK-037 Session 5 2026-05-11)
     - Coral-POS           # 1/1 real coral (SPS Cap) per CTK-037 Session 4.5 2026-05-11
     - Livestock           # 2408 items; coral + fish + anemones (CTK-037 2026-05-10)
   tag_denylist:
+    - Algae Eater         # algae-utility inverts, 26 items (CTK-041 2026-05-21)
     - Angelfish           # fish, 18 items in Livestock (CTK-037 2026-05-10)
     - Beginner Fish       # fish, 31 items in Livestock (CTK-037 2026-05-10)
     - Clownfish           # fish, 19 items in Livestock (CTK-037 2026-05-10)
+    - Invert              # umbrella tag catches Shrimp/Crab/Urchin/Starfish/Snail/Lobster/Chiton/Sand Sifter/Cucumber co-carry, 77 items (CTK-041 2026-05-21)
+    - Live Rock           # bio-media substrate, 1 item (CTK-041 2026-05-21)
+    - Macroalgae          # bio-media algae, 9 items (CTK-041 2026-05-21)
+    - Mangrove            # bio-media refugium plant, 1 item (CTK-041 2026-05-21)
     - Nano Fish           # fish, 22 items in Livestock (CTK-037 2026-05-10)
+    - Refugiums           # bio-media umbrella future-proof, 6 items (CTK-041 2026-05-21)
     - Tang                # fish, 33 items in Livestock (CTK-037 2026-05-10)
     - WYSIWYG Fish        # fish, 48 items in Livestock (CTK-037 2026-05-10)

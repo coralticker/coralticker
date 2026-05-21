@@ -66,18 +66,30 @@ category_filter:
     - Weekly Special      # 6/6 real coral exhaustive sample + fresh-catalog tag dist 100% coral-typed (CTK-037 Session 4.5 2026-05-11)
     - WYSIWYG             # WYSIWYG-photographed coral, 1797 items (CTK-037 2026-05-10)
     - WYSIWYG Frags       # 2-item typo variant, kept for coverage (CTK-037 2026-05-10)
-  # CTK-041 tag_denylist: invert-shape tags catching Weekly Special bucket
-  # rotation. Allowlist entry locked CTK-037 Session 4.5 2026-05-11 on a
-  # snapshot 100%-coral sample; vendor rotated bucket to inverts within 3
-  # days (Banded Trochus / Pom Pom Crab / Sea Hare / Astrea Algae Mowers /
-  # Nerites / Nassarius / Strawberry Conch). Sales-bucket discipline per
-  # open-items.md Open + memory feedback_rotating_bucket_allowlist.md.
-  # v1 list from /lead-backend investigation 2026-05-14; Session 2
-  # validation scrape extends if additional invert tags surface.
+  # CTK-041 tag_denylist v1 (2026-05-14): invert-shape tags catching Weekly
+  # Special bucket rotation. Allowlist entry locked CTK-037 Session 4.5
+  # 2026-05-11 on a snapshot 100%-coral sample; vendor rotated bucket to
+  # inverts within 3 days (Banded Trochus / Pom Pom Crab / Sea Hare /
+  # Astrea Algae Mowers / Nerites / Nassarius / Strawberry Conch).
+  # Sales-bucket discipline per open-items.md Open + memory
+  # feedback_rotating_bucket_allowlist.md.
+  #
+  # CTK-041 tag_denylist v2 (2026-05-21): 4 snail-species belt-and-suspenders
+  # entries (Cerith / Conch / Nassarius / Nerite) per open-items.md L74 fold
+  # trigger. The 2026-05-18 eyeball trigger was a stale-render artifact
+  # (Jon disambiguation), not a real leak through the v1 list — but the
+  # discipline-rule case for belt-and-suspenders against tag-shape drift
+  # mid-rotation (a Weekly Special row tagged Nassarius alone without the
+  # Snail / Inverts umbrella co-tag would have slipped v1) is sound;
+  # forward-binding only, no retroactive backfill.
   tag_denylist:
     - Algae Muncher       # Astrea Algae Mowers (CTK-041 2026-05-14)
     - Astrea Snails       # snail (CTK-041 2026-05-14)
+    - Cerith              # snail belt-and-suspenders (CTK-041 2026-05-21)
+    - Conch               # snail belt-and-suspenders (CTK-041 2026-05-21)
     - Crab                # Pom Pom Crab (CTK-041 2026-05-14)
     - Inverts             # umbrella tag (CTK-041 2026-05-14)
+    - Nassarius           # snail belt-and-suspenders (CTK-041 2026-05-21)
+    - Nerite              # snail belt-and-suspenders (CTK-041 2026-05-21)
     - Snail               # Nerites/Nassarius/Strawberry Conch (CTK-041 2026-05-14)
     - Trochus             # Banded Trochus (CTK-041 2026-05-14)

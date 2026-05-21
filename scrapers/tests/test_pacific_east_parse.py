@@ -42,7 +42,8 @@ PE_CATEGORY_FILTER = {
         "WYSIWYG", "WYSIWYG Frags",
     ],
     "tag_denylist": [
-        "Algae Muncher", "Astrea Snails", "Crab", "Inverts", "Snail", "Trochus",
+        "Algae Muncher", "Astrea Snails", "Cerith", "Conch", "Crab",
+        "Inverts", "Nassarius", "Nerite", "Snail", "Trochus",
     ],
 }
 
@@ -143,17 +144,19 @@ def test_filter_pe_permissive_when_no_block(products):
         assert _should_keep(p, {}) is True, f"empty filter rejected {p['title']!r}"
 
 
-# Test 8: skip-count across PE fixture matches expected (5 of 8 denied)
+# Test 8: skip-count across PE fixture matches expected
 def test_filter_pe_skip_count_matches(products):
     """PE fixture composition: 3 coral (Acropora, Euphyllia, Maxima Clam) +
     2 non-coral by product_type (TankRaised fish, Live Rock) + 3 invert-rows
     by tag_denylist (Banded Trochus, Pom Pom Crab, Astrea Algae Mowers; all
-    under Weekly Special product_type — CTK-041 rotating-bucket leak).
-    Expected: 3 kept, 5 skipped."""
+    under Weekly Special — CTK-041 v1 rotating-bucket leak) + 1 v2
+    belt-and-suspenders row (Nassarius Sandbed Crew — tag-only-no-Snail-
+    umbrella; CTK-041 Session 2 false-positive guard against tag-shape
+    drift). Expected: 3 kept, 6 skipped."""
     kept = sum(1 for p in products if _should_keep(p, PE_CATEGORY_FILTER))
     skipped = sum(1 for p in products if not _should_keep(p, PE_CATEGORY_FILTER))
     assert kept == 3, f"expected 3 kept, got {kept}"
-    assert skipped == 5, f"expected 5 skipped, got {skipped}"
+    assert skipped == 6, f"expected 6 skipped, got {skipped}"
 
 
 # CTK-041 Test 13: tag_denylist rejects Banded Trochus under Weekly Special
@@ -183,7 +186,7 @@ def test_filter_rejects_pe_weekly_special_astrea(products):
 def test_filter_pe_weekly_special_passes_when_no_invert_tags(products):
     """Synthetic case — Weekly Special product_type alone passes; tag_denylist
     rejects only when invert tags are present. Ensures the allowlist entry
-    isn't silently broken by the 6-tag denylist for legitimate Weekly Special
+    isn't silently broken by the 10-tag denylist for legitimate Weekly Special
     coral listings (D-3 false-deny risk-check)."""
     synthetic = {
         "title": "Weekly Special - Legitimate Coral",
@@ -191,6 +194,40 @@ def test_filter_pe_weekly_special_passes_when_no_invert_tags(products):
         "tags": ["WYSIWYG", "SPS"],
     }
     assert _should_keep(synthetic, PE_CATEGORY_FILTER) is True
+
+
+# CTK-041 Session 2 Test 17: tag_denylist v2 rejects Nassarius alone (no
+# Snail / Inverts umbrella co-tag) — belt-and-suspenders against tag-shape
+# drift mid-rotation per open-items.md L74 fold trigger.
+def test_filter_rejects_pe_nassarius_tag_only(products):
+    """CTK-041 Session 2 v2 fold — a hypothetical Weekly Special row tagged
+    Nassarius alone (no Snail / Inverts umbrella co-tag) would slip the v1
+    6-tag list. v2 adds Nassarius as a species-specific entry so tag-shape
+    drift mid-rotation can't surface as a one-cycle leak."""
+    p = _by_title(products, "Nassarius Sandbed Crew")
+    assert _should_keep(p, PE_CATEGORY_FILTER) is False
+    # Sanity: this row carries Nassarius alone without Snail / Inverts.
+    assert "Nassarius" in p["tags"]
+    assert "Snail" not in p["tags"]
+    assert "Inverts" not in p["tags"]
+
+
+# CTK-041 Session 2 Test 18: tag_denylist v2 rejects Cerith — pure synthetic
+# case (no fixture row needed) confirming forward-binding semantics.
+def test_filter_rejects_pe_cerith_tag_only_synthetic(products):
+    """CTK-041 Session 2 v2 fold — synthetic Cerith-tag-only row confirms
+    the v2 entry fires forward-binding without requiring an empirical
+    fixture row (CTK-041 v1 backfill 2026-05-18 caught all empirical
+    snail-shape rows via Snail / Inverts co-tag; Cerith / Nerite / Conch
+    entries are purely forward-binding belt-and-suspenders). Takes the
+    `products` fixture for script-mode runner uniformity but doesn't use
+    it — synthetic row is constructed inline."""
+    synthetic = {
+        "title": "Cerith Sandbed Cleaners",
+        "product_type": "Weekly Special",
+        "tags": ["Cerith"],
+    }
+    assert _should_keep(synthetic, PE_CATEGORY_FILTER) is False
 
 
 # Test 9: product_url absolute per CTK-033 D1 anchor
@@ -250,6 +287,8 @@ def main() -> int:
         test_filter_rejects_pe_weekly_special_pom_pom_crab,
         test_filter_rejects_pe_weekly_special_astrea,
         test_filter_pe_weekly_special_passes_when_no_invert_tags,
+        test_filter_rejects_pe_nassarius_tag_only,
+        test_filter_rejects_pe_cerith_tag_only_synthetic,
     ]
 
     failures: list[tuple[str, str]] = []
