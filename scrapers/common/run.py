@@ -206,14 +206,21 @@ def run(slug: str) -> int:
         error_message = str(e)
         log.error("blocked: %s", e)
 
-    except RuntimeError as e:
-        # http.fetch errors come up here with .error_class set per
-        # parse_shopify._to_exception. Other RuntimeErrors land as 'other'.
-        ec = getattr(e, "error_class", None)
+    except parse_shopify.FetchError as e:
+        # http.fetch typed error — error_class is one of arch §2.4:
+        # http_429 / http_5xx / network / other.
         status = "failed"
-        error_class = ec if ec in ("http_429", "http_5xx", "network") else "other"
+        error_class = e.error_class if e.error_class in ("http_429", "http_5xx", "network") else "other"
         error_message = str(e)
-        log.error("runtime error (%s): %s", error_class, e)
+        log.error("fetch error (%s): %s", error_class, e)
+
+    except RuntimeError as e:
+        # Other RuntimeErrors land as 'other' — e.g., unknown-platform stub or
+        # any future RuntimeError raised inside the stage 2-6 try block.
+        status = "failed"
+        error_class = "other"
+        error_message = str(e)
+        log.error("runtime error: %s", e)
 
     except Exception as e:  # noqa: BLE001 — last-resort catch-all to ensure scraper_runs closes
         status = "failed"

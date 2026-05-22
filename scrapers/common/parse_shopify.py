@@ -26,6 +26,16 @@ class BlockedError(Exception):
     """http.fetch returned error_class='block'. NO retry per arch §2.4."""
 
 
+class FetchError(RuntimeError):
+    """http.fetch returned a non-success, non-block error_class (network /
+    http_429 / http_5xx / other). Orchestrator catches + records the typed
+    error_class on scraper_runs without sniffing strings."""
+
+    def __init__(self, error_class: str, message: str) -> None:
+        super().__init__(message)
+        self.error_class = error_class
+
+
 @dataclass
 class ParseResult:
     items: list[dict]
@@ -198,12 +208,9 @@ def _normalize_product(
     }
 
 
-def _to_exception(result: http.FetchResult) -> Exception:
-    """Map an http.FetchResult error_class to the right Exception. Orchestrator
-    catches BaseException and records error_class on scraper_runs; passing a
-    typed marker lets us tell network from 429 from 5xx without sniffing strings."""
-    cls = result.error_class
-    msg = f"{cls}: {result.error_message}"
-    err = RuntimeError(msg)
-    err.error_class = cls  # type: ignore[attr-defined]
-    return err
+def _to_exception(result: http.FetchResult) -> FetchError:
+    """Map an http.FetchResult error_class to a typed FetchError. Orchestrator
+    catches FetchError and records error_class on scraper_runs; the named
+    subclass replaces a runtime-attached attribute on a bare RuntimeError."""
+    cls = result.error_class or "other"
+    return FetchError(cls, f"{cls}: {result.error_message}")

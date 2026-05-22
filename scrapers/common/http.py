@@ -24,8 +24,8 @@ USER_AGENT = (
 )
 
 # Per arch §2.4 retry policy. No external library — plain loop per decision #12.
-RETRY_BACKOFF_429_5XX = (30, 60, 120)  # seconds
-RETRY_BACKOFF_NETWORK = (10, 10, 10)
+RETRY_BACKOFF_429_5XX = (30, 60, 120)  # seconds; per-attempt backoff
+NETWORK_RETRY_DELAY = 10  # seconds; flat per-retry sleep on network error path
 REQUEST_TIMEOUT = 30  # per-request hard ceiling; well under workflow 10-min cap
 
 
@@ -66,8 +66,8 @@ def fetch(url: str, request_delay_sec: float = 2.0) -> FetchResult:
         except (requests.ConnectionError, requests.Timeout) as e:
             last_message = f"{type(e).__name__}: {e}"
             log.warning("fetch %s attempt %d network error: %s", url, attempt, last_message)
-            if attempt < len(RETRY_BACKOFF_NETWORK):
-                time.sleep(RETRY_BACKOFF_NETWORK[attempt - 1])
+            if attempt < len(RETRY_BACKOFF_429_5XX):
+                time.sleep(NETWORK_RETRY_DELAY)
                 continue
             return FetchResult(None, None, "network", last_message)
 
@@ -88,10 +88,12 @@ def fetch(url: str, request_delay_sec: float = 2.0) -> FetchResult:
             time.sleep(backoff)
             continue
 
-        if r.status_code in (403, 503):
-            # 403/503 with WAF body markers = block; without = treat as 5xx-shaped failure
+        if r.status_code == 403:
+            # 403 with WAF body markers = block; without = treat as 5xx-shaped
+            # failure. 503 falls into the 5xx-range branch above; only 403
+            # reaches here.
             if _looks_blocked(r.content):
-                return FetchResult(None, r.status_code, "block", f"HTTP {r.status_code} with WAF body")
+                return FetchResult(None, 403, "block", "HTTP 403 with WAF body")
             time.sleep(backoff)
             continue
 

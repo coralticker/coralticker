@@ -69,6 +69,8 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+import psycopg
+
 log = logging.getLogger(__name__)
 
 
@@ -127,7 +129,7 @@ class MatchResult:
 _NULL_RESULT = MatchResult(None, None, None, None)
 
 
-def load_match_cache(conn) -> MatchCache:
+def load_match_cache(conn: psycopg.Connection) -> MatchCache:
     """Load active named_corals + aliases once at scrape start.
 
     Empty cache is the Phase 1 expected state (seed loads at Phase 3 per

@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Iterable, Literal
 
+import psycopg
+
 from scrapers.common import images as image_pipeline
 from scrapers.common.matcher import MatchResult
 
@@ -94,7 +96,7 @@ class MirrorTask:
 
 
 def persist_phase_a(
-    conn,
+    conn: psycopg.Connection,
     vendor_row: dict,
     decisions: list[ItemDecision],
     existing_by_url: dict[str, dict],
@@ -267,7 +269,7 @@ def persist_phase_a(
     return mirror_queue
 
 
-def persist_phase_b(conn, vendor_row: dict, mirror_queue: list[MirrorTask]) -> tuple[int, int]:
+def persist_phase_b(conn: psycopg.Connection, vendor_row: dict, mirror_queue: list[MirrorTask]) -> tuple[int, int]:
     """Phase B — best-effort, per-row, fail-soft. Iterates the Phase A mirror
     queue: for each entry, attempt mirror() + UPDATE vendor_listings.image_url.
     Per-row exceptions log a WARNING and continue; no row fails the whole run.

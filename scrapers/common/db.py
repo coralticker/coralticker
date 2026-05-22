@@ -61,7 +61,7 @@ def get_conn() -> psycopg.Connection:
     return psycopg.connect(conninfo, autocommit=True, row_factory=dict_row)
 
 
-def fetch_vendor(conn, slug: str) -> dict:
+def fetch_vendor(conn: psycopg.Connection, slug: str) -> dict:
     """Stage 1 (Config) — load vendors row by slug. Raises if not present;
     matches plan task 'Verify Pacific East vendors row present from CTK-028
     seed' as a runtime smoke. Hardcoded vendor_id elsewhere is a comment;
@@ -81,7 +81,7 @@ def fetch_vendor(conn, slug: str) -> dict:
     return rows[0]
 
 
-def fetch_existing_listings(conn, vendor_id: int) -> dict[str, dict]:
+def fetch_existing_listings(conn: psycopg.Connection, vendor_id: int) -> dict[str, dict]:
     """Bulk-load all vendor_listings for vendor at stage 5 start. Returned as
     dict keyed by product_url for O(1) per-item lookup in diff.classify +
     diff.persist_phase_a (the Phase B image-mirror queue check needs to know
@@ -145,7 +145,7 @@ def fetch_existing_listings(conn, vendor_id: int) -> dict[str, dict]:
     return {r["product_url"]: r for r in rows}
 
 
-def get_7d_median_seen(conn, vendor_id: int) -> float:
+def get_7d_median_seen(conn: psycopg.Connection, vendor_id: int) -> float:
     """Silent-canary 7d_median half per arch §2.4. Returns the median of
     listings_seen across the last 7 days of SUCCESS runs for this vendor.
 
@@ -173,7 +173,7 @@ def get_7d_median_seen(conn, vendor_id: int) -> float:
     return (seen_values[n // 2 - 1] + seen_values[n // 2]) / 2.0
 
 
-def start_scraper_run(conn, vendor_id: int, git_sha: str) -> int:
+def start_scraper_run(conn: psycopg.Connection, vendor_id: int, git_sha: str) -> int:
     """Insert a scraper_runs row at stage 1 with status='running'. Returns
     the bigserial id used by price_history.scraper_run_id and by the post-step
     timeout-cleanup hook (arch §2.4 timeout-cleanup choice (a) — `if: always()`)."""
@@ -188,7 +188,7 @@ def start_scraper_run(conn, vendor_id: int, git_sha: str) -> int:
 
 
 def finish_scraper_run(
-    conn,
+    conn: psycopg.Connection,
     run_id: int,
     status: str,
     error_class: str | None,
@@ -225,7 +225,7 @@ def finish_scraper_run(
         )
 
 
-def finish_phase_b(conn, run_id: int) -> None:
+def finish_phase_b(conn: psycopg.Connection, run_id: int) -> None:
     """CTK-038 — write `phase_b_finished_at` after Phase B reaches its
     post-mirror code path. Called from run.py AFTER the nested
     `if mirror_queue:` block (so zero-NEW steady-state rows also get a
@@ -250,7 +250,7 @@ def finish_phase_b(conn, run_id: int) -> None:
         log.warning("finish_phase_b write failed for run_id=%d (non-fatal): %s", run_id, e)
 
 
-def cleanup_stale_runs(conn, vendor_id: int, git_sha: str) -> int:
+def cleanup_stale_runs(conn: psycopg.Connection, vendor_id: int, git_sha: str) -> int:
     """Arch §2.4 timeout-cleanup choice (a) — `if: always()` post-step calls
     this to flip any still-`running` rows for this vendor + git_sha to
     failed/timeout. Catches GH Actions hard-kill at the 10-min cap that
