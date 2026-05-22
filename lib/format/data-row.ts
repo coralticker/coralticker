@@ -26,6 +26,16 @@ function formatValue(value: DataRowField['value'], now: Date): string {
   if (value.kind === 'relative-time') {
     return formatRelativeTime(value.timestamp, now);
   }
+  if (value.kind === 'invalidated') {
+    // CTK-070 OOS state-marker: channel-neutral text representation of the
+    // invalidated value. Strikethrough rendering is DOM-only per
+    // branding-guide.md §"State markers" L197 generalized canon; non-DOM
+    // channels carry the same semantic via the row-state-marker label
+    // ("OUT OF STOCK") rendered separately at the channel adapter, plus
+    // the bare value here. Channel adapters that want a unicode strikethrough
+    // (combining char U+0336) can re-process at the adapter layer.
+    return value.value;
+  }
   // price-drop-new: "was $oldValue, now $newValue" — channel-neutral text;
   // strikethrough + forest-bold rendering is DOM-only per branding-guide.md §"State markers".
   return `was ${value.oldValue}, now ${value.newValue}`;

@@ -34,13 +34,23 @@
 // scrape volume + 24h window + price-drop sparsity, the 12-card threshold is
 // unlikely to trip on /deals — site.md §4.3 line 1191 calls this out. Logic
 // is identical to /new for production-data-driven exercise per directive.
+//
+// CTK-070: per-page eyebrow `N PRICE DROPS · LATEST X AGO` renders ABOVE H1
+// per branding-guide.md L222 + site.md §4.3 step 1. "PRICE DROPS" is explicit
+// two-word noun (NOT "DROPS" alone) — disambiguates from the canonical brand
+// "drop" verb so the eyebrow reads as a count of price-change events, not
+// vendor drops. Empty-branch suppresses the eyebrow entirely (no source for
+// LATEST). React.cache() dedupes the price-drops query across the eyebrow +
+// feed Suspense boundaries.
 
 import type { Metadata } from 'next';
+import { cache } from 'react';
 import { Suspense, type ReactNode } from 'react';
 import { ListingCard } from '@/components/listing-card';
 import { GroupDivider } from '@/components/group-divider';
 import { DataRowSkeleton } from '@/components/ui/data-row-skeleton';
 import { bucketLabel, bucketTransition } from '@/lib/format/group-bucket';
+import { formatRelativeTime } from '@/lib/format/relative-time';
 import { getRecentPriceDrops } from '@/lib/queries/listings';
 
 export const revalidate = 300;
@@ -53,8 +63,31 @@ export const metadata: Metadata = {
 
 const DIVIDER_THRESHOLD = 12;
 
+// Request-scoped dedup so the eyebrow + feed Suspense boundaries share one
+// query roundtrip (single-derivation discipline per site.md Decision Q).
+const dropsCached = cache(() => getRecentPriceDrops());
+
+async function Eyebrow() {
+  const drops = await dropsCached();
+  if (drops.length === 0) return null; // empty-branch suppresses eyebrow per Decision Q.
+  const latestObservedAt = drops[0]!.observedAt; // drops ordered DESC by observed_at; first row is max.
+  const latestRelative = formatRelativeTime(latestObservedAt, new Date()).toUpperCase();
+  const countNoun = drops.length === 1 ? 'PRICE DROP' : 'PRICE DROPS';
+  return (
+    <p className="text-xs uppercase tracking-[0.08em] font-mono text-ink mb-4">
+      {drops.length} {countNoun}
+      <span className="text-forest"> · </span>
+      LATEST {latestRelative}
+    </p>
+  );
+}
+
+function EyebrowSkeleton() {
+  return <div className="h-4 mb-4 bg-ink/5" aria-hidden="true" />;
+}
+
 async function PriceDropsFeed() {
-  const drops = await getRecentPriceDrops();
+  const drops = await dropsCached();
 
   if (drops.length === 0) {
     return (
@@ -126,6 +159,9 @@ function FeedSkeleton() {
 export default function DealsPage() {
   return (
     <section className="px-6 py-12 max-w-3xl mx-auto">
+      <Suspense fallback={<EyebrowSkeleton />}>
+        <Eyebrow />
+      </Suspense>
       <h1 className="text-3xl md:text-4xl font-bold mb-8">
         Price drops · last 24 hours
       </h1>

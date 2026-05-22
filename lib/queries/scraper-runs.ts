@@ -40,3 +40,30 @@ export async function getLastScrapeAt(): Promise<string | null> {
     { revalidate: 300, tags: ['scraper-runs'] },
   )();
 }
+
+// CTK-070: per-vendor scrape-cadence freshness for /vendor/[slug] populated
+// eyebrow `N CORALS · UPDATED X AGO` per site.md §4.5 step 1 + Decision Q
+// freshness-source pick. Mirrors getLastScrapeAt()'s status='success' filter
+// — "UPDATED" verb names successful data refresh; partial / failed scrapes
+// would mislead. unstable_cache wrap aligned to /vendor/[slug]'s 600s ISR
+// cadence per site.md §1.2 + §4.5 line 1450.
+export async function getLatestScrapeFinishedAt(
+  vendorId: number,
+): Promise<string | null> {
+  return unstable_cache(
+    async () => {
+      const sql = getNeonSql();
+      const rows = (await sql`
+        SELECT MAX(finished_at) AS latest_finished_at
+        FROM scraper_runs
+        WHERE vendor_id = ${vendorId}
+          AND status = 'success'
+          AND finished_at IS NOT NULL
+      `) as unknown as { latest_finished_at: string | null }[];
+
+      return rows[0]?.latest_finished_at ?? null;
+    },
+    ['getLatestScrapeFinishedAt', String(vendorId)],
+    { revalidate: 600, tags: [`scraper-runs-vendor-${vendorId}`] },
+  )();
+}

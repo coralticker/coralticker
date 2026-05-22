@@ -74,3 +74,25 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
   `) as unknown as { slug: string }[];
   return rows;
 }
+
+// CTK-070: empty-branch freshness for /coral/[slug] empty eyebrow
+// `NOT LISTED · LAST SEEN X AGO` per site.md §4.1 step 1 + Decision Q. NO
+// recency cap — deliberately ignores the 7-day in-window predicate that
+// determined emptiness, so the eyebrow can name the historical last-seen
+// across all prior listings of this coral. The freshness substrate is
+// vendor_listings.last_seen_at (named_corals has no last_seen_at column).
+// Returns null when zero historical rows exist (seed-list entry never
+// surfaced a vendor listing); page-side renders bare `NOT LISTED` with no
+// `· LAST SEEN X AGO` chunk per the L216 canon empty-branch rule.
+export async function getCoralLastSeenAt(
+  namedCoralId: number,
+): Promise<string | null> {
+  const sql = getNeonSql();
+  const rows = (await sql`
+    SELECT MAX(last_seen_at) AS last_seen_at
+    FROM vendor_listings
+    WHERE named_coral_id = ${namedCoralId}
+  `) as unknown as { last_seen_at: string | null }[];
+
+  return rows[0]?.last_seen_at ?? null;
+}

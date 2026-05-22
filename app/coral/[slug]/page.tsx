@@ -32,11 +32,13 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import {
   getAllNamedCoralSlugs,
+  getCoralLastSeenAt,
   getNamedCoralBySlug,
   type NamedCoral,
 } from '@/lib/queries/named-corals';
 import { getCoralAvailability } from '@/lib/queries/listings';
 import { DataRow, type DataRowField } from '@/components/ui/data-row';
+import { formatRelativeTime } from '@/lib/format/relative-time';
 import { VendorAvailabilityRow } from './_components/vendor-availability-row';
 
 export const revalidate = 1800;
@@ -95,8 +97,35 @@ export default async function CoralPage({ params }: PageProps) {
     ? 'Currently available.'
     : 'Currently unavailable.';
 
+  // CTK-070: per-page eyebrow per branding-guide.md L216 + site.md §4.1 step 1.
+  // Populated: `N VENDORS · LATEST X AGO` — count = listings.length, freshness
+  // = max(firstSeenAt) across the listings (listings ordered DESC by query;
+  // first row carries max). Empty: `NOT LISTED · LAST SEEN X AGO` — freshness
+  // via getCoralLastSeenAt() with no recency cap; bare `NOT LISTED` when zero
+  // historical rows. Single derivation page-level.
+  const now = new Date();
+  const lastSeenAt = hasListings ? null : await getCoralLastSeenAt(coral.id);
+  const eyebrow = hasListings ? (
+    <p className="text-xs uppercase tracking-[0.08em] font-mono text-ink mb-4">
+      {listings.length} {listings.length === 1 ? 'VENDOR' : 'VENDORS'}
+      <span className="text-forest"> · </span>
+      LATEST {formatRelativeTime(listings[0]!.firstSeenAt, now).toUpperCase()}
+    </p>
+  ) : lastSeenAt === null ? (
+    <p className="text-xs uppercase tracking-[0.08em] font-mono text-ink mb-4">
+      NOT LISTED
+    </p>
+  ) : (
+    <p className="text-xs uppercase tracking-[0.08em] font-mono text-ink mb-4">
+      NOT LISTED
+      <span className="text-forest"> · </span>
+      LAST SEEN {formatRelativeTime(lastSeenAt, now).toUpperCase()}
+    </p>
+  );
+
   return (
     <main className="px-6 py-12 max-w-3xl mx-auto">
+      {eyebrow}
       <h1 className="text-3xl md:text-4xl font-bold mb-4">
         {coral.canonical_name}
       </h1>

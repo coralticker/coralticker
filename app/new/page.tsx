@@ -22,13 +22,23 @@
 //
 // ISR revalidate=300 per §1.2 + §4.4 line 1303 (5 min ≤ scrape-completion
 // target). Metadata wording verbatim from site.md §6.1 vocabulary.
+//
+// CTK-070: per-page eyebrow `N ARRIVALS · LATEST X AGO` renders ABOVE H1
+// per branding-guide.md L220 + site.md §4.4 step 1. Empty-branch suppresses
+// the eyebrow entirely per Decision Q (no source for LATEST). Eyebrow paints
+// in its own Suspense; H1 + outer layout resolve immediately per §4.4
+// Loading row. React.cache() dedupes the arrivals query across the eyebrow
+// + feed Suspense boundaries (single derivation page-level per Decision Q;
+// the topmost card's Listed timestamp = eyebrow's LATEST value).
 
 import type { Metadata } from 'next';
+import { cache } from 'react';
 import { Suspense, type ReactNode } from 'react';
 import { ListingCard } from '@/components/listing-card';
 import { GroupDivider } from '@/components/group-divider';
 import { DataRowSkeleton } from '@/components/ui/data-row-skeleton';
 import { bucketLabel, bucketTransition } from '@/lib/format/group-bucket';
+import { formatRelativeTime } from '@/lib/format/relative-time';
 import {
   getRecentArrivals,
   type ArrivalListing,
@@ -48,6 +58,10 @@ const DIVIDER_THRESHOLD = 12;
 const DOWNTIME_FALLBACK =
   'Scrapers are catching up. New arrivals will surface here when they land.';
 
+// Request-scoped dedup so the eyebrow + feed Suspense boundaries share one
+// query roundtrip (single-derivation discipline per site.md Decision Q).
+const arrivalsCached = cache(() => getRecentArrivals());
+
 // Discriminator-as-seam per Decision H + §4.4 lines 1316-1322. View code
 // converts a query row to <ListingCard> props; no per-view conditional inside
 // the composition dispatches on event.
@@ -59,8 +73,27 @@ function rowToProps(arrival: ArrivalListing) {
     : ({ listing, event: 'back-in-stock', observedAt: eventAt } as const);
 }
 
+async function Eyebrow() {
+  const arrivals = await arrivalsCached();
+  if (arrivals.length === 0) return null; // empty-branch suppresses eyebrow per Decision Q.
+  const latestEventAt = arrivals[0]!.eventAt; // arrivals ordered DESC; first row is max(eventAt).
+  const latestRelative = formatRelativeTime(latestEventAt, new Date()).toUpperCase();
+  const countNoun = arrivals.length === 1 ? 'ARRIVAL' : 'ARRIVALS';
+  return (
+    <p className="text-xs uppercase tracking-[0.08em] font-mono text-ink mb-4">
+      {arrivals.length} {countNoun}
+      <span className="text-forest"> · </span>
+      LATEST {latestRelative}
+    </p>
+  );
+}
+
+function EyebrowSkeleton() {
+  return <div className="h-4 mb-4 bg-ink/5" aria-hidden="true" />;
+}
+
 async function ArrivalsFeed() {
-  const arrivals = await getRecentArrivals();
+  const arrivals = await arrivalsCached();
 
   if (arrivals.length === 0) {
     return (
@@ -116,6 +149,9 @@ function FeedSkeleton() {
 export default function NewArrivalsPage() {
   return (
     <section className="px-6 py-12 max-w-3xl mx-auto">
+      <Suspense fallback={<EyebrowSkeleton />}>
+        <Eyebrow />
+      </Suspense>
       <h1 className="text-3xl md:text-4xl font-bold mb-8">
         New arrivals · last 24 hours
       </h1>

@@ -41,7 +41,9 @@ import {
   type ListingCategory,
   type ListingSort,
 } from '@/lib/queries/listings';
+import { getLatestScrapeFinishedAt } from '@/lib/queries/scraper-runs';
 import { DataRowSkeleton } from '@/components/ui/data-row-skeleton';
+import { formatRelativeTime } from '@/lib/format/relative-time';
 import { VendorInventoryRow } from './_components/vendor-inventory-row';
 import { PaginationNav } from './_components/pagination-nav';
 import { SortFilterBar } from './_components/sort-filter-bar';
@@ -242,6 +244,36 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
   const totalPages = Math.max(1, Math.ceil(total / 50));
   const page = Math.min(rawPage, totalPages);
 
+  // CTK-070: per-page eyebrow per branding-guide.md L217 + site.md §4.5 step 1.
+  // Populated: `N CORALS · UPDATED X AGO` — count = `total` (the full filtered
+  // inventory count at page level, NOT listings.length per-page) for honest
+  // count semantics under pagination; freshness = max(scraper_runs.finished_at)
+  // via getLatestScrapeFinishedAt (scrape-cadence, NOT first_seen_at-max per
+  // Decision Q rationale). Count-semantic divergence from site.md L1448
+  // ("listings.length post-pagination") flagged for /lead-frontend review-
+  // results: total > listings.length when paginated; "50 CORALS" on page 1 of
+  // 7 would mislead. Single derivation page-level — no second inventory query.
+  // Empty branch (total === 0): comment-stubbed below — /brand-manager weigh-
+  // in pending on empty-state eyebrow register per directive.
+  const latestScrapeAt = total > 0 ? await getLatestScrapeFinishedAt(vendor.id) : null;
+  const eyebrow = total > 0 ? (
+    <p className="text-xs uppercase tracking-[0.08em] font-mono text-ink mb-4">
+      {total} {total === 1 ? 'CORAL' : 'CORALS'}
+      {latestScrapeAt !== null ? (
+        <>
+          <span className="text-forest"> · </span>
+          UPDATED {formatRelativeTime(latestScrapeAt, new Date()).toUpperCase()}
+        </>
+      ) : null}
+    </p>
+  ) : null;
+  // Empty-branch eyebrow stub: when total === 0, the eyebrow does NOT render
+  // at v1 per site.md §4.5 step 1 deferral — /brand-manager weighs in on the
+  // empty-state register (lean placeholder: `INACTIVE · LAST UPDATE X AGO`),
+  // then a follow-up engineer session wires the empty-branch render. Until
+  // then, the empty-state body line ("Nothing in stock from {vendor} right
+  // now…" at Inventory below) owns the surface alone.
+
   // <link rel="prev"/"next"> emitted via React 19 link hoisting (auto-promoted
   // to document head when rendered without a `precedence` attribute). Next.js
   // Metadata API has no first-class prev/next slot; icons.other is the
@@ -265,6 +297,7 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
     <main className="px-6 py-12 max-w-3xl mx-auto">
       {page > 1 && <link rel="prev" href={prevHref} />}
       {page < totalPages && <link rel="next" href={nextHref} />}
+      {eyebrow}
       <h1 className="text-3xl md:text-4xl font-bold mb-4">
         {vendor.display_name}
       </h1>

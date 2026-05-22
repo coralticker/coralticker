@@ -18,6 +18,15 @@
 // Auction listings carry `currentPrice === null` per project_auctions_in_scope.md
 // (2026-05-14) — rendered as "price on request" via formatPrice() below; the
 // query layer deliberately does NOT filter `current_price IS NOT NULL` away.
+//
+// CTK-070: live OOS render branch. /vendor/[slug] is an inventory-reconciliation
+// surface — getVendorInventory() passes in_stock through without filtering
+// (except via the optional IN STOCK ONLY user toggle from CTK-053). When
+// listing.inStock === false, render the mono-uppercase OUT OF STOCK label in
+// the row state-marker slot (above the row, mirrors WISHLIST MATCH prefix
+// shape per branding-guide.md L207) AND strikethrough the Price field via
+// {kind: 'invalidated'} per the new L197 generalized canon. Near-black, NOT
+// forest — preserves the 5-job lock.
 
 import Image from 'next/image';
 import { CaveatLabel } from '@/components/ui/caveat-label';
@@ -42,10 +51,17 @@ function shouldCaveat(listing: Listing): boolean {
 export function VendorInventoryRow({ listing }: VendorInventoryRowProps) {
   const coralName = listing.namedCoralCanonicalName ?? listing.rawTitle;
   const altText = `${listing.vendorDisplayName} listing of ${coralName}`;
+  const isOutOfStock = !listing.inStock;
 
+  const priceFormatted = formatPrice(listing.currentPrice);
   const fields: DataRowField[] = [
     { label: 'Coral', value: coralName },
-    { label: 'Price', value: formatPrice(listing.currentPrice) },
+    {
+      label: 'Price',
+      value: isOutOfStock
+        ? { kind: 'invalidated', value: priceFormatted }
+        : priceFormatted,
+    },
     {
       label: 'Listed',
       value: { kind: 'relative-time', timestamp: listing.firstSeenAt },
@@ -57,7 +73,7 @@ export function VendorInventoryRow({ listing }: VendorInventoryRowProps) {
       href={listing.productUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="block py-6 border-b border-ink/10 hover:bg-ink/[0.02]"
+      className="block py-6 border-b border-ink/20 hover:bg-ink/[0.02]"
     >
       <div className="flex gap-4">
         <div className="shrink-0 w-24 h-24 bg-ink/5" aria-hidden={!listing.imageUrl}>
@@ -74,6 +90,11 @@ export function VendorInventoryRow({ listing }: VendorInventoryRowProps) {
           ) : null}
         </div>
         <div className="flex-1 min-w-0">
+          {isOutOfStock ? (
+            <p className="text-xs uppercase tracking-[0.08em] font-mono text-ink mb-1">
+              Out of stock
+            </p>
+          ) : null}
           <DataRow fields={fields} />
           {shouldCaveat(listing) ? (
             <div className="mt-1">

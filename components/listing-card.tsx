@@ -18,6 +18,19 @@
 //
 // Image via next/image unoptimized per arch-v1 #53 with explicit width/height/sizes.
 // Whole row is a link to productUrl — vendor-traffic-respect per branding-guide.md.
+//
+// CTK-070: cross-surface OOS render branch backstop. Deal-buyer surfaces (`/`,
+// `/new`, `/deals`) filter `WHERE in_stock = true` at the query level per
+// site.md §4.2/§4.3/§4.4 — OOS rows do not reach this composition in v1
+// operationally. The branch lives here for cross-surface composition-parity
+// with <VendorAvailabilityRow> + <VendorInventoryRow> per site.md §3.5.1 last
+// bullet + branding-guide.md §"State markers" L199 cross-surface medal rule.
+// When listing.inStock === false, render mono-uppercase OUT OF STOCK label
+// above the lead sentence AND strikethrough the Price via {kind: 'invalidated'}.
+// On a price-dropped event the discriminator drives Price → price-drop-new
+// shape regardless; OUT OF STOCK label still renders above the lead as the
+// row-state declaration. Backstop semantics: if the query filter ever leaks,
+// the row reads honestly.
 
 import Image from 'next/image';
 import { CaveatLabel } from '@/components/ui/caveat-label';
@@ -63,6 +76,11 @@ function buildFields(props: ListingCardProps): DataRowField[] {
     { label: 'Ref', value: derivedRef(listing.productUrl) },
   ];
 
+  // Event-driven price-drop-new render (forest accent + struck old) takes
+  // precedence over invalidated-render when both could apply; the OUT OF
+  // STOCK label above the lead still carries the row-state declaration
+  // independently. CTK-070 backstop semantics — feed-surface query filters
+  // gate in_stock=true so the OOS branch fires only if the filter leaks.
   if (event === 'price-dropped') {
     fields.push({
       label: 'Price',
@@ -71,6 +89,11 @@ function buildFields(props: ListingCardProps): DataRowField[] {
         oldValue: formatPrice(props.priorPrice),
         newValue: formatPrice(listing.currentPrice),
       },
+    });
+  } else if (!listing.inStock) {
+    fields.push({
+      label: 'Price',
+      value: { kind: 'invalidated', value: formatPrice(listing.currentPrice) },
     });
   } else {
     fields.push({ label: 'Price', value: formatPrice(listing.currentPrice) });
@@ -113,6 +136,7 @@ export function ListingCard(props: ListingCardProps) {
     ? `${listing.vendorDisplayName} listing of ${listing.namedCoralCanonicalName}`
     : `${listing.vendorDisplayName} listing — ${listing.rawTitle}`;
   const fields = buildFields(props);
+  const isOutOfStock = !listing.inStock;
 
   return (
     <a
@@ -136,6 +160,11 @@ export function ListingCard(props: ListingCardProps) {
           ) : null}
         </div>
         <div className="flex-1 min-w-0">
+          {isOutOfStock ? (
+            <p className="text-xs uppercase tracking-[0.08em] font-mono text-ink mb-1">
+              Out of stock
+            </p>
+          ) : null}
           <p className="text-base leading-snug">
             <strong className="font-bold">{coralName}</strong>{' '}
             <span className="font-normal">{leadVerb(props)}</span>
