@@ -9,10 +9,7 @@ import { bucketLabel, bucketTransition, DIVIDER_THRESHOLD } from '@/lib/format/g
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { getRecentPriceDrops, type PriceDropListing } from '@/lib/queries/listings';
 
-// 900s (15-min ISR) — heavier RPC (LAG-window CTE) + price-drop event cadence
-// ranges hourly→weekly per vendor. / + /new stay at 300s per site.md §0.3
-// "homepage feels live"; /deals is the documented exception.
-export const revalidate = 900;
+export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: 'Coral price drops — last 24 hours — CoralTicker',
