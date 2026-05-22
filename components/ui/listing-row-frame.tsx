@@ -42,6 +42,7 @@ export function ListingRowFrame({
   matchIndicator,
 }: ListingRowFrameProps) {
   const isOutOfStock = !listing.inStock;
+  const dataRow = <DataRow fields={fields} matchIndicator={matchIndicator} />;
 
   return (
     <a
@@ -71,13 +72,7 @@ export function ListingRowFrame({
               /vendor/[slug]) live-render OOS rows by design. */}
           {isOutOfStock ? <OutOfStockMarker /> : null}
           {leadSlot}
-          {leadSlot ? (
-            <div className="mt-2">
-              <DataRow fields={fields} matchIndicator={matchIndicator} />
-            </div>
-          ) : (
-            <DataRow fields={fields} matchIndicator={matchIndicator} />
-          )}
+          {leadSlot ? <div className="mt-2">{dataRow}</div> : dataRow}
           {shouldCaveat(listing) ? (
             <div className="mt-1">
               <CaveatLabel kind="match-name-based" />
