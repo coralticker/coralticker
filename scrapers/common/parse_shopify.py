@@ -187,7 +187,7 @@ def _normalize_product(
     return {
         "raw_title": raw_title,
         "normalized_title": normalize.normalize_title(raw_title, originator_prefix=originator_prefix),
-        "product_url": product_url,            # vendor-relative; orchestrator joins base_url at persist
+        "product_url": product_url,
         "vendor_sku": sku,
         "current_price": current_price,
         "currency": "USD",                     # Phase 1 vendors all USD per Q1-3

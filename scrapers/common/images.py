@@ -129,8 +129,10 @@ def _compress(body: bytes) -> bytes:
     `Image.thumbnail()` is no-upscale by contract — images smaller than
     `_TARGET_MAX_EDGE` on both dimensions pass through at native size.
     Non-RGB/L modes (RGBA, P, CMYK) flatten to RGB before save; alpha is
-    dropped against an implicit white background via Pillow's default
-    `convert('RGB')` path."""
+    dropped, and transparent pixels surface their RGB channel verbatim
+    (Pillow's default `convert('RGB')` from RGBA discards alpha without
+    compositing on any background). Vendor coral photos rarely have
+    transparency so the user-visible impact is near-zero."""
     img = Image.open(BytesIO(body))
     if img.mode not in ("RGB", "L"):
         img = img.convert("RGB")

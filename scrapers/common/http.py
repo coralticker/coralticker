@@ -46,7 +46,7 @@ class FetchResult:
     """Explicit fetch outcome. Orchestrator branches on .error_class."""
     body: bytes | None
     status_code: int | None
-    error_class: str | None  # one of arch §2.4: http_429 / http_5xx / network / block / None on success
+    error_class: str | None  # one of arch §2.4: http_429 / http_5xx / network / block / other / None on success
     error_message: str | None
 
 

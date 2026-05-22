@@ -28,10 +28,11 @@ class ItemDecision:
     existing_id: int | None = None  # set on update paths; None for "new"
     # CTK-025: matcher result attached by run.py stage 5.5. None = matcher
     # didn't run (preserve existing match fields in UPSERT — payload omits
-    # match columns; PostgREST keeps existing values). Non-None = write all
-    # four match fields (named_coral_id, match_confidence, match_method,
-    # matched_at) on the UPSERT row, even if all four are null (stage 7
-    # no-match — explicit clear).
+    # match columns; the absent-column = keep-existing contract is preserved
+    # via per-row dynamic ON CONFLICT DO UPDATE in _upsert_listing_row).
+    # Non-None = write all four match fields (named_coral_id,
+    # match_confidence, match_method, matched_at) on the UPSERT row, even if
+    # all four are null (stage 7 no-match — explicit clear).
     match_result: MatchResult | None = None
 
 
@@ -139,8 +140,9 @@ def persist_phase_a(
         # hotlinks on every scrape). Mirror strategy defers to Phase B for
         # both NEW and EXISTING-with-NULL-image_url rows; image_url is OMITTED
         # from the upsert payload so the column default (NULL) lands on NEW
-        # and existing image_url is preserved on UPDATE (PostgREST upsert
-        # only writes columns present in the payload).
+        # and existing image_url is preserved on UPDATE — the absent-column =
+        # keep-existing contract is preserved via per-row dynamic ON CONFLICT
+        # DO UPDATE in _upsert_listing_row (writes only payload-present cols).
         hotlink_url: str | None = None
         if image_strategy == "hotlink" and d.decision == "new" and item.get("vendor_image_url"):
             hotlink_url = item["vendor_image_url"]
@@ -174,10 +176,11 @@ def persist_phase_a(
             "lineage_flag": item.get("lineage_flag", "unknown"),
             "last_seen_at": now,
         }
-        # first_seen_at is omitted from every payload: PostgREST batch upsert
-        # unions columns across rows + sends NULL via EXCLUDED for omitted
-        # cells on UPDATE-path. DB DEFAULT now() handles INSERT; trigger
-        # preserve_first_seen_at locks UPDATE.
+        # first_seen_at is omitted from every payload: the absent-column =
+        # keep-existing contract via per-row dynamic ON CONFLICT DO UPDATE in
+        # _upsert_listing_row means UPDATE never touches first_seen_at when
+        # it's not in the payload. DB DEFAULT now() handles INSERT; trigger
+        # preserve_first_seen_at is the belt-and-suspenders lock on UPDATE.
         if d.decision == "new" and hotlink_url is not None:
             row["image_url"] = hotlink_url
         if d.decision == "price_changed":
@@ -185,8 +188,9 @@ def persist_phase_a(
 
         # CTK-025: write the four matcher fields when run.py attached a
         # match_result. Always-explicit on 'new' rows (run.py invokes the
-        # matcher); omitted on update-path rows so PostgREST preserves the
-        # existing match fields (no clobber on price/stock-only changes).
+        # matcher); omitted on update-path rows so the existing match fields
+        # are preserved via per-row dynamic ON CONFLICT DO UPDATE in
+        # _upsert_listing_row (no clobber on price/stock-only changes).
         if d.match_result is not None:
             row["named_coral_id"] = d.match_result.named_coral_id
             row["match_confidence"] = d.match_result.match_confidence
@@ -205,14 +209,15 @@ def persist_phase_a(
                 "_product_url": product_url,  # join key; stripped before INSERT
             })
 
-    # UPSERT vendor_listings per-row with dynamic column list — replicates
-    # PostgREST upsert's "columns absent from payload preserve existing on
-    # UPDATE" semantics by including only the row's actual keys in both the
-    # INSERT column list and the ON CONFLICT DO UPDATE SET clause. Per-row
-    # execute keeps the heterogeneous-column path clean (CTK-025 match-field
-    # preservation rule + CTK-024 image_url-on-NEW-only rule both ride on
-    # this); RETURNING id, product_url builds the listing_id-by-url map
-    # inline (CTK-024 Session 5 — replaces the post-upsert SELECT round-trip).
+    # UPSERT vendor_listings per-row with dynamic column list — preserves the
+    # absent-column = keep-existing contract via per-row dynamic ON CONFLICT
+    # DO UPDATE in _upsert_listing_row, by including only the row's actual
+    # keys in both the INSERT column list and the ON CONFLICT DO UPDATE SET
+    # clause. Per-row execute keeps the heterogeneous-column path clean
+    # (CTK-025 match-field preservation rule + CTK-024 image_url-on-NEW-only
+    # rule both ride on this); RETURNING id, product_url builds the
+    # listing_id-by-url map inline (CTK-024 Session 5 — replaces the
+    # post-upsert SELECT round-trip).
     id_by_url: dict[str, int] = {}
     if upserts:
         with conn.cursor() as cur:

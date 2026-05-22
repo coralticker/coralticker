@@ -124,6 +124,7 @@ def fetch_existing_listings(conn, vendor_id: int) -> dict[str, dict]:
         if len(chunk) < page_size:
             break
     else:
+        # while-else fires only on iteration-ceiling reach (no break taken).
         log.warning(
             "fetch_existing_listings hit %d-iteration ceiling for vendor_id=%d "
             "(%d rows fetched); catalog may exceed %d-row hard cap",
