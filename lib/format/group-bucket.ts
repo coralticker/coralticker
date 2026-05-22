@@ -19,6 +19,12 @@
 // branding-guide.md §"Mono uppercase register"; this helper emits the literal
 // uppercase string. The composition's class wiring applies the typography.
 
+// Minimum feed size at which day-bucket dividers fire per branding-guide.md
+// §"Group dividers on long feed surfaces" line 257. Threshold is shared by /new
+// + /deals view loops; gating + bucketTransition pairing lives view-side, but
+// the literal lives here alongside the helpers it pairs with.
+export const DIVIDER_THRESHOLD = 12;
+
 const MONTH_NAMES_UPPER = [
   'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
   'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',

@@ -5,11 +5,14 @@ import { ListingCard } from '@/components/listing-card';
 import { GroupDivider } from '@/components/group-divider';
 import { DataRowSkeleton } from '@/components/ui/data-row-skeleton';
 import { PageEyebrow, PageEyebrowSkeleton } from '@/components/ui/page-eyebrow';
-import { bucketLabel, bucketTransition } from '@/lib/format/group-bucket';
+import { bucketLabel, bucketTransition, DIVIDER_THRESHOLD } from '@/lib/format/group-bucket';
 import { formatRelativeTime } from '@/lib/format/relative-time';
-import { getRecentPriceDrops } from '@/lib/queries/listings';
+import { getRecentPriceDrops, type PriceDropListing } from '@/lib/queries/listings';
 
-export const revalidate = 300;
+// 900s (15-min ISR) — heavier RPC (LAG-window CTE) + price-drop event cadence
+// ranges hourly→weekly per vendor. / + /new stay at 300s per site.md §0.3
+// "homepage feels live"; /deals is the documented exception.
+export const revalidate = 900;
 
 export const metadata: Metadata = {
   title: 'Coral price drops — last 24 hours — CoralTicker',
@@ -17,9 +20,25 @@ export const metadata: Metadata = {
     'Price drops across reef coral vendors in the last 24 hours. One feed, every vendor.',
 };
 
-const DIVIDER_THRESHOLD = 12;
+const SKELETON_ROW_COUNT = 6;
+
+// Quiet vs. downtime distinction: zero price-drops in 24h is normal market
+// state (vendors haven't dropped prices), not a scraper-down signal. Voice
+// diverges from DOWNTIME_FALLBACK on / + /new; canon register pending
+// /brand-manager call (F-11).
+const QUIET_DAY_COPY =
+  "No price drops in the last 24 hours. I'll surface them as vendors update.";
 
 const dropsCached = cache(() => getRecentPriceDrops());
+
+function priceDropToProps(d: PriceDropListing) {
+  return {
+    listing: d,
+    event: 'price-dropped' as const,
+    priorPrice: d.priorPrice,
+    observedAt: d.observedAt,
+  };
+}
 
 async function Eyebrow() {
   const drops = await dropsCached();
@@ -35,7 +54,7 @@ async function PriceDropsFeed() {
   if (drops.length === 0) {
     return (
       <p role="status" className="text-base text-ink py-6">
-        No price drops in the last 24 hours. I&apos;ll surface them as vendors update.
+        {QUIET_DAY_COPY}
       </p>
     );
   }
@@ -44,13 +63,7 @@ async function PriceDropsFeed() {
     return (
       <>
         {drops.map((d) => (
-          <ListingCard
-            key={d.id}
-            listing={d}
-            event="price-dropped"
-            priorPrice={d.priorPrice}
-            observedAt={d.observedAt}
-          />
+          <ListingCard key={d.id} {...priceDropToProps(d)} />
         ))}
       </>
     );
@@ -69,15 +82,7 @@ async function PriceDropsFeed() {
         />,
       );
     }
-    out.push(
-      <ListingCard
-        key={curr.id}
-        listing={curr}
-        event="price-dropped"
-        priorPrice={curr.priorPrice}
-        observedAt={curr.observedAt}
-      />,
-    );
+    out.push(<ListingCard key={curr.id} {...priceDropToProps(curr)} />);
   }
   return <>{out}</>;
 }
@@ -90,7 +95,7 @@ function FeedSkeleton() {
   ];
   return (
     <div aria-busy="true">
-      {Array.from({ length: 6 }).map((_, i) => (
+      {Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
         <div key={i} className="py-6 border-b border-ink/30">
           <DataRowSkeleton fields={fields} />
         </div>

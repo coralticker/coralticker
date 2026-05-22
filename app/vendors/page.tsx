@@ -8,6 +8,7 @@
 // ISR revalidate = 600 per site.md §1.2 + /vendor/[slug] precedent.
 
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { getAllActiveVendors } from '@/lib/queries/vendors';
 
@@ -22,24 +23,48 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function VendorsPage() {
-  const vendors = await getAllActiveVendors();
+const SKELETON_ROW_COUNT = 6;
 
+async function VendorList() {
+  const vendors = await getAllActiveVendors();
+  return (
+    <ul>
+      {vendors.map((vendor) => (
+        <li key={vendor.slug} className="py-3">
+          <Link
+            href={`/vendor/${vendor.slug}`}
+            className="text-base font-bold underline"
+          >
+            {vendor.display_name}
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function VendorListSkeleton() {
+  return (
+    <ul role="status" aria-busy="true" aria-label="Loading vendors">
+      {Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
+        <li key={i} className="py-3">
+          <span
+            aria-hidden="true"
+            className="inline-block h-4 w-40 align-middle bg-ink/15 rounded-sm animate-pulse"
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export default function VendorsPage() {
   return (
     <main className="px-6 py-12 max-w-3xl mx-auto">
       <h1 className="text-3xl md:text-4xl font-bold mb-8">Vendors.</h1>
-      <ul>
-        {vendors.map((vendor) => (
-          <li key={vendor.slug} className="py-3">
-            <Link
-              href={`/vendor/${vendor.slug}`}
-              className="text-base font-bold underline"
-            >
-              {vendor.display_name}
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <Suspense fallback={<VendorListSkeleton />}>
+        <VendorList />
+      </Suspense>
     </main>
   );
 }

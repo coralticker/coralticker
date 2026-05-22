@@ -11,9 +11,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bucketTransition, bucketLabel } from './group-bucket.ts';
-
-const DIVIDER_THRESHOLD = 12;
+import { bucketTransition, bucketLabel, DIVIDER_THRESHOLD } from './group-bucket.ts';
 
 // Helper: simulates the view-side dividers-fired count for a feed of N cards
 // with given event_at timestamps. Mirrors app/new/page.tsx FeedWithDividers

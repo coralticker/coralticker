@@ -5,7 +5,7 @@ import { ListingCard } from '@/components/listing-card';
 import { GroupDivider } from '@/components/group-divider';
 import { DataRowSkeleton } from '@/components/ui/data-row-skeleton';
 import { PageEyebrow, PageEyebrowSkeleton } from '@/components/ui/page-eyebrow';
-import { bucketLabel, bucketTransition } from '@/lib/format/group-bucket';
+import { bucketLabel, bucketTransition, DIVIDER_THRESHOLD } from '@/lib/format/group-bucket';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import {
   getRecentArrivals,
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     'New coral arrivals across reef vendors in the last 24 hours — just-listed and back-in-stock. One feed, every vendor.',
 };
 
-const DIVIDER_THRESHOLD = 12;
+const SKELETON_ROW_COUNT = 6;
 
 const DOWNTIME_FALLBACK =
   'Scrapers are catching up. New arrivals will surface here when they land.';
@@ -82,14 +82,13 @@ async function ArrivalsFeed() {
 
 function FeedSkeleton() {
   const fields = [
-    { label: 'Coral', value: '' },
-    { label: 'Vendor', value: '' },
+    { label: 'Ref', value: '' },
     { label: 'Price', value: '' },
     { label: 'Listed', value: '' },
   ];
   return (
     <div aria-busy="true">
-      {Array.from({ length: 6 }).map((_, i) => (
+      {Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
         <div key={i} className="py-6 border-b border-ink/30">
           <DataRowSkeleton fields={fields} />
         </div>
