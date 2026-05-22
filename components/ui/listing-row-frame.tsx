@@ -65,6 +65,10 @@ export function ListingRowFrame({
           ) : null}
         </div>
         <div className="flex-1 min-w-0">
+          {/* OOS render branch is a composition-parity backstop. Feed surfaces
+              (/new, /deals) filter in_stock=true at the query layer; this branch
+              only fires there if a filter leaks. Inventory surfaces (/coral/[slug],
+              /vendor/[slug]) live-render OOS rows by design. */}
           {isOutOfStock ? <OutOfStockMarker /> : null}
           {leadSlot}
           {leadSlot ? (
