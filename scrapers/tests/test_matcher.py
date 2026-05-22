@@ -365,18 +365,30 @@ def test_load_match_cache_propagates_exception():
 
 
 # ─── Trigram similarity sanity ────────────────────────────────────────────────
+# CTK-063 Session 1 commit 3: _trigram_similarity now consumes pre-computed
+# trigram sets (built once per scrape via _trigrams + cached on NamedCoral.trigrams).
+# Wrap with _trigrams() at the call site; the Jaccard semantics under test are
+# unchanged.
 def test_trigram_similarity_identical():
-    assert matcher._trigram_similarity("wwc dragon", "wwc dragon") == 1.0
+    assert matcher._trigram_similarity(
+        matcher._trigrams("wwc dragon"), matcher._trigrams("wwc dragon"),
+    ) == 1.0
 
 
 def test_trigram_similarity_disjoint():
-    sim = matcher._trigram_similarity("wwc dragon", "pacific east")
+    sim = matcher._trigram_similarity(
+        matcher._trigrams("wwc dragon"), matcher._trigrams("pacific east"),
+    )
     assert sim < 0.2, f"disjoint strings should have low similarity; got {sim}"
 
 
 def test_trigram_similarity_empty_strings():
-    assert matcher._trigram_similarity("", "") == 0.0
-    assert matcher._trigram_similarity("wwc", "") == 0.0
+    assert matcher._trigram_similarity(
+        matcher._trigrams(""), matcher._trigrams(""),
+    ) == 0.0
+    assert matcher._trigram_similarity(
+        matcher._trigrams("wwc"), matcher._trigrams(""),
+    ) == 0.0
 
 
 # ─── Test runner ──────────────────────────────────────────────────────────────

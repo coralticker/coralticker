@@ -86,6 +86,7 @@ class NamedCoral:
     normalized_name: str
     requires_vendor_prefix: bool
     category: int  # 1 (stable lineage) or 2 (semi-stable, requires vendor prefix)
+    trigrams: set[str] = field(default_factory=set)  # pre-computed at load_match_cache; consumed by stage-6 trigram Jaccard
 
 
 @dataclass
@@ -105,12 +106,33 @@ class MatchCache:
     iteration without per-stage filter overhead.
     nc_by_id supports stage-4 alias->named_coral resolution for the
     category-2 guard application.
+    named_corals_by_length_desc is the named_corals list pre-sorted by
+    -len(normalized_name) so stages 2 + 3 iterate longest-name-first
+    (sub-prefix-collision avoidance) without a per-listing re-sort.
     """
     named_corals: list[NamedCoral] = field(default_factory=list)
     canonical_index: dict[str, NamedCoral] = field(default_factory=dict)
     nc_by_id: dict[int, NamedCoral] = field(default_factory=dict)
     auto_link_aliases: list[Alias] = field(default_factory=list)
     flag_review_aliases: list[Alias] = field(default_factory=list)
+    named_corals_by_length_desc: list[NamedCoral] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        # Self-enforce the load-time invariants so test callers that build
+        # MatchCache by hand don't have to repeat load_match_cache's wiring:
+        #   - named_corals_by_length_desc must equal named_corals sorted by
+        #     -len(normalized_name) (consumed by stages 2 + 3).
+        #   - each NamedCoral.trigrams must hold the pre-computed trigram set
+        #     (consumed by stage 6 fuzzy fallback).
+        # load_match_cache populates both before construction, so this
+        # post-init is a no-op on the production path.
+        if self.named_corals and not self.named_corals_by_length_desc:
+            self.named_corals_by_length_desc = sorted(
+                self.named_corals, key=lambda c: -len(c.normalized_name),
+            )
+        for nc in self.named_corals:
+            if not nc.trigrams:
+                nc.trigrams = _trigrams(nc.normalized_name)
 
 
 @dataclass
@@ -150,11 +172,15 @@ def load_match_cache(conn: psycopg.Connection) -> MatchCache:
             normalized_name=r["normalized_name"],
             requires_vendor_prefix=bool(r["requires_vendor_prefix"]),
             category=int(r["category"]),
+            trigrams=_trigrams(r["normalized_name"]),
         )
         for r in nc_rows
     ]
     canonical_index = {nc.normalized_name: nc for nc in nc_list}
     nc_by_id = {nc.id: nc for nc in nc_list}
+    # Longest-name-first ordering for stages 2 + 3 prefix matching — pre-sort
+    # once at load time so per-listing cascade iteration doesn't re-sort.
+    named_corals_by_length_desc = sorted(nc_list, key=lambda c: -len(c.normalized_name))
 
     with conn.cursor() as cur:
         cur.execute(
@@ -185,6 +211,7 @@ def load_match_cache(conn: psycopg.Connection) -> MatchCache:
         nc_by_id=nc_by_id,
         auto_link_aliases=auto_link,
         flag_review_aliases=flag_review,
+        named_corals_by_length_desc=named_corals_by_length_desc,
     )
 
 
@@ -209,7 +236,7 @@ def match_listing(
         return _hit(nc.id, "exact", "canonical-exact")
 
     # Stage 2 — canonical-prefix (longest-name-first to avoid sub-prefix collisions)
-    for nc in sorted(cache.named_corals, key=lambda c: -len(c.normalized_name)):
+    for nc in cache.named_corals_by_length_desc:
         if normalized_title.startswith(nc.normalized_name + " "):
             if _category_2_passes(nc, normalized_title):
                 return _hit(nc.id, "exact", "canonical-prefix")
@@ -220,7 +247,7 @@ def match_listing(
         nc = cache.canonical_index.get(synthesized)
         if nc is not None and _category_2_passes(nc, synthesized):
             return _hit(nc.id, "exact", "canonical-implicit-prefix")
-        for nc in sorted(cache.named_corals, key=lambda c: -len(c.normalized_name)):
+        for nc in cache.named_corals_by_length_desc:
             if synthesized.startswith(nc.normalized_name + " "):
                 if _category_2_passes(nc, synthesized):
                     return _hit(nc.id, "exact", "canonical-implicit-prefix")
@@ -244,9 +271,12 @@ def match_listing(
                 matched_at=_now_iso(),
             )
 
-    # Stage 6 — fuzzy fallback (pg_trgm-equivalent trigram Jaccard)
+    # Stage 6 — fuzzy fallback (pg_trgm-equivalent trigram Jaccard). Compute
+    # the listing's trigrams once; each named_coral's trigrams pre-computed
+    # at load_match_cache time.
+    title_trigrams = _trigrams(normalized_title)
     scored = [
-        (_trigram_similarity(normalized_title, nc.normalized_name), nc)
+        (_trigram_similarity(title_trigrams, nc.trigrams), nc)
         for nc in cache.named_corals
     ]
     scored.sort(key=lambda x: x[0], reverse=True)
@@ -289,17 +319,19 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _trigram_similarity(a: str, b: str) -> float:
+def _trigram_similarity(ta: set[str], tb: set[str]) -> float:
     """pg_trgm-equivalent similarity score in [0.0, 1.0]. Pure-Python
-    trigram Jaccard: |trigrams(a) intersect trigrams(b)| /
-    |trigrams(a) union trigrams(b)|.
+    trigram Jaccard: |ta intersect tb| / |ta union tb|. Callers supply
+    pre-computed trigram sets — the listing-side set is computed once per
+    listing in match_listing; the named_coral-side set is computed once
+    per scrape in load_match_cache and lives on NamedCoral.trigrams.
 
     pg_trgm extracts trigrams from each word with leading/trailing space
-    padding; we mirror that with two leading spaces and one trailing space
-    on the full string. Close enough for the cascade scaffold; CTK-002
-    calibration validates against actual pg_trgm before Phase 3 launch.
+    padding; _trigrams() mirrors that with two leading spaces and one
+    trailing space on the full string. Close enough for the cascade
+    scaffold; CTK-002 calibration validates against actual pg_trgm
+    before Phase 3 launch.
     """
-    ta, tb = _trigrams(a), _trigrams(b)
     if not ta and not tb:
         return 0.0
     union = ta | tb
