@@ -1,3 +1,7 @@
+// getLastScrapeAt is consumed by components/footer.tsx to render the footer
+// freshness signal — function name doesn't telegraph the footer-render use
+// case, so naming the consumer here saves a grep at 11pm.
+//
 // Column choice rationale: `finished_at` (Phase A persist end-time) is the
 // user-facing "data is this fresh" signal. `phase_b_finished_at` (Phase B
 // image-mirror end-time) is cosmetic (R2 rehost) and may hard-cancel at the

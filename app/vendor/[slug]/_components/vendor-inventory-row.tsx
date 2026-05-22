@@ -54,7 +54,7 @@ export function VendorInventoryRow({ listing }: VendorInventoryRowProps) {
       href={listing.productUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="block py-6 border-b border-ink/20 hover:bg-ink/[0.02]"
+      className="block py-6 border-b border-ink/30 hover:bg-ink/[0.02]"
     >
       <div className="flex gap-4">
         <div className="shrink-0 w-24 h-24 bg-ink/5" aria-hidden={!listing.imageUrl}>

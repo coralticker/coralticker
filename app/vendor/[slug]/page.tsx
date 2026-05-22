@@ -174,7 +174,7 @@ function VendorInventorySkeleton() {
   return (
     <div aria-busy="true">
       {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="py-6 border-b border-ink/10">
+        <div key={i} className="py-6 border-b border-ink/30">
           <DataRowSkeleton fields={fields} />
         </div>
       ))}
