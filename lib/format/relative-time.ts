@@ -23,6 +23,10 @@ const MONTH_NAMES = [
 export function formatRelativeTime(timestamp: string, now: Date): string {
   const past = new Date(timestamp).getTime();
   const diffMs = now.getTime() - past;
+  // Clamp negative diffs (future timestamps) to 0; clamp the < 1h branch's
+  // minute floor to 1. Unreachable for DB-written timestamps, but possible
+  // for <RelativeTime> when SSR/client clocks skew — collapses to "1 minute ago"
+  // rather than rendering "0 minutes ago" or a negative count.
   const diffSec = Math.max(0, Math.floor(diffMs / 1000));
 
   if (diffSec < 3_600) {

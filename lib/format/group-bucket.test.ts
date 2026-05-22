@@ -63,6 +63,14 @@ test('bucketTransition: crosses local-day boundary → true', () => {
 
 // --- bucketLabel ladder ---------------------------------------------------
 
+test('bucketLabel: dayDiff=0 same-day → throws (caller contract)', () => {
+  // Per CTK-062 F-7: same-day passthrough is a caller bug — bucketTransition()
+  // skips same-day pairs, so bucketLabel() should never receive dayDiff=0.
+  const now = new Date(2026, 4, 14, 12, 0);
+  const sameDay = new Date(2026, 4, 14, 9, 0).toISOString();
+  assert.throws(() => bucketLabel(sameDay, now), /dayDiff must be positive/);
+});
+
 test('bucketLabel: 1 day ago → YESTERDAY', () => {
   const now = new Date(2026, 4, 14, 12, 0);
   const yesterday = new Date(2026, 4, 13, 18, 0).toISOString();

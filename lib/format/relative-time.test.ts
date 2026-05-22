@@ -33,3 +33,11 @@ test('604800s boundary → MMM D absolute format (< 7d → ≥ 7d transition)', 
   const result = formatRelativeTime(past, NOW);
   assert.match(result, /^[A-Z][a-z]{2} \d{1,2}$/, `expected "MMM D" pattern, got "${result}"`);
 });
+
+test('future timestamp (SSR/client clock skew) → clamps to "1 minute ago"', () => {
+  // Per CTK-062 F-8: negative diffs clamp to 0 + minute-floor clamps to 1.
+  // Pins the intentional behavior; without these clamps a clock-skewed future
+  // timestamp would render "0 minutes ago" or a negative count.
+  const future = new Date(NOW.getTime() + 30_000).toISOString();
+  assert.equal(formatRelativeTime(future, NOW), '1 minute ago');
+});

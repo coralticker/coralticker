@@ -39,6 +39,13 @@ export function bucketLabel(timestamp: string, now: Date): string {
   const nowDay = startOfLocalDay(now);
   const dayDiff = Math.floor((nowDay - eventDay) / 86_400_000);
 
+  // Caller contract: dayDiff must be positive. Same-day passthrough (dayDiff=0)
+  // is a caller bug — bucketTransition() suppresses same-day pairs, so this
+  // helper should never receive one. Without the throw, dayDiff=0 silently
+  // returned "YESTERDAY" per the `<= 1` ladder.
+  if (dayDiff <= 0) {
+    throw new Error('bucketLabel: dayDiff must be positive (same-day passthrough is a caller bug)');
+  }
   if (dayDiff <= 1) {
     return 'YESTERDAY';
   }

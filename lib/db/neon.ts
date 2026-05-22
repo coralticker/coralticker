@@ -18,17 +18,20 @@
 
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 
-const NEON_DATABASE_URL = process.env.NEON_DATABASE_URL;
+const NEON_DATABASE_URL_RAW = process.env.NEON_DATABASE_URL;
 
-if (!NEON_DATABASE_URL) {
+if (!NEON_DATABASE_URL_RAW) {
   throw new Error('NEON_DATABASE_URL must be set. See .env.example.');
 }
+
+// Narrowed past the throw — no `!` needed at the call site below.
+const NEON_DATABASE_URL: string = NEON_DATABASE_URL_RAW;
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 
 export function getNeonSql(): NeonQueryFunction<false, false> {
   if (_sql === null) {
-    _sql = neon(NEON_DATABASE_URL!);
+    _sql = neon(NEON_DATABASE_URL);
   }
   return _sql;
 }

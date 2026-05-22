@@ -19,6 +19,13 @@
 import { unstable_cache } from 'next/cache';
 import { getNeonSql } from '@/lib/db/neon';
 
+// Spec-driven recency + pagination constants. Named per CTK-062 F-5 fold to
+// keep literal sites grep-able back to their site.md spec source.
+const PAGE_SIZE = 50; // site.md §4.5 — vendor-inventory pagination chunk.
+const CORAL_RECENCY_DAYS = 7; // site.md §4.1 — /coral/[slug] availability window.
+const VENDOR_RECENCY_DAYS = 14; // site.md §4.5 — /vendor/[slug] inventory window.
+const MS_PER_DAY = 86_400_000;
+
 export interface Listing {
   id: number;
   vendorSlug: string;
@@ -126,7 +133,7 @@ export async function getRecentDrops(limit = 10): Promise<Listing[]> {
 // Filtered by named_coral_id AND last_seen_at > now() - interval '7 days'.
 export async function getCoralAvailability(namedCoralId: number): Promise<Listing[]> {
   const sql = getNeonSql();
-  const sevenDaysAgo = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const sevenDaysAgo = new Date(Date.now() - CORAL_RECENCY_DAYS * MS_PER_DAY).toISOString();
 
   const rows = (await sql`
     SELECT
@@ -157,7 +164,7 @@ export async function getCoralAvailability(namedCoralId: number): Promise<Listin
 
 // /vendor/[slug] per site.md §4.5.
 // Filtered by vendor_id AND last_seen_at > now() - interval '14 days'.
-// CTK-046: paginated via LIMIT 50 OFFSET ((page - 1) * 50); default page = 1
+// CTK-046: paginated via LIMIT PAGE_SIZE OFFSET ((page - 1) * PAGE_SIZE); default page = 1
 // keeps non-paginated callers untouched. unstable_cache wrap (ISR-regression
 // fold 2026-05-18): searchParams reading flipped the route pure-dynamic at
 // runtime; cache key on (vendorId, page) restores ISR semantics per site.md
@@ -197,8 +204,8 @@ export async function getVendorInventory(
   return unstable_cache(
     async () => {
       const sql = getNeonSql();
-      const fourteenDaysAgo = new Date(Date.now() - 14 * 86_400_000).toISOString();
-      const offset = (page - 1) * 50;
+      const fourteenDaysAgo = new Date(Date.now() - VENDOR_RECENCY_DAYS * MS_PER_DAY).toISOString();
+      const offset = (page - 1) * PAGE_SIZE;
 
       // Optional filters collapse via SQL-side NULL/false constant folding:
       // `(${category}::text IS NULL OR vl.category = ${category})` lets a null
@@ -228,7 +235,7 @@ export async function getVendorInventory(
               AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
               AND (NOT ${inStockParam}::boolean OR vl.in_stock = true)
             ORDER BY vl.current_price ASC NULLS LAST, vl.first_seen_at DESC
-            LIMIT 50 OFFSET ${offset}
+            LIMIT ${PAGE_SIZE} OFFSET ${offset}
           `;
         }
         if (sort === 'price-desc') {
@@ -249,7 +256,7 @@ export async function getVendorInventory(
               AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
               AND (NOT ${inStockParam}::boolean OR vl.in_stock = true)
             ORDER BY vl.current_price DESC NULLS LAST, vl.first_seen_at DESC
-            LIMIT 50 OFFSET ${offset}
+            LIMIT ${PAGE_SIZE} OFFSET ${offset}
           `;
         }
         // sort === 'newest'
@@ -270,7 +277,7 @@ export async function getVendorInventory(
             AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
             AND (NOT ${inStockParam}::boolean OR vl.in_stock = true)
           ORDER BY vl.first_seen_at DESC
-          LIMIT 50 OFFSET ${offset}
+          LIMIT ${PAGE_SIZE} OFFSET ${offset}
         `;
       })()) as unknown as VendorListingRow[];
 
@@ -308,7 +315,7 @@ export async function getVendorInventoryTotal(
   return unstable_cache(
     async () => {
       const sql = getNeonSql();
-      const fourteenDaysAgo = new Date(Date.now() - 14 * 86_400_000).toISOString();
+      const fourteenDaysAgo = new Date(Date.now() - VENDOR_RECENCY_DAYS * MS_PER_DAY).toISOString();
       const categoryParam = category ?? null;
       const inStockParam = inStock;
       const rows = (await sql`
@@ -339,6 +346,8 @@ export async function getVendorInventoryTotal(
 // Backed by the get_recent_price_drops() SQL function (migration 0008)
 // wrapping the LAG-window CTE. Invoked as `SELECT * FROM get_recent_price_drops()`
 // rather than supabase.rpc post-cut-4.
+// CTK-061 migration 0009 caps the LAG window to 24h — limits price-drop event
+// surfacing to the most recent observation pair, not all historical drops.
 export interface PriceDropListing extends Listing {
   priorPrice: number;
   observedAt: string;

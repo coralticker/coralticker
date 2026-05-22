@@ -18,15 +18,22 @@ function formatValue(value: DataRowField['value'], now: Date): string {
   if (typeof value === 'string') {
     return value;
   }
-  if (value.kind === 'relative-time') {
-    return formatRelativeTime(value.timestamp, now);
+  switch (value.kind) {
+    case 'relative-time':
+      return formatRelativeTime(value.timestamp, now);
+    case 'invalidated':
+      // DOM-only strikethrough. Non-DOM channels carry the OOS semantic via a
+      // separate row-state-marker label at the channel adapter, plus the bare
+      // value here. Adapters wanting a unicode strikethrough (combining char
+      // U+0336) can re-process at the adapter layer.
+      return value.value;
+    case 'price-drop-new':
+      return `was ${value.oldValue}, now ${value.newValue}`;
+    default: {
+      // Exhaustiveness check: adding a 5th DataRowFieldValue kind fails
+      // typecheck here, forcing the new branch to be handled explicitly.
+      const _exhaustive: never = value;
+      throw new Error(`formatDataRow: unhandled value kind ${JSON.stringify(_exhaustive)}`);
+    }
   }
-  if (value.kind === 'invalidated') {
-    // DOM-only strikethrough. Non-DOM channels carry the OOS semantic via a
-    // separate row-state-marker label at the channel adapter, plus the bare
-    // value here. Adapters wanting a unicode strikethrough (combining char
-    // U+0336) can re-process at the adapter layer.
-    return value.value;
-  }
-  return `was ${value.oldValue}, now ${value.newValue}`;
 }
