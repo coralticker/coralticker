@@ -1,36 +1,17 @@
-// §4.5 <VendorInventoryRow> — single-view co-located composition
+// /vendor/[slug] is an inventory-reconciliation surface — getVendorInventory()
+// passes in_stock through without filtering (except via the optional IN STOCK
+// ONLY user toggle). Inventory rows here can carry namedCoralId === null (no
+// match against the seed list) — the Coral field falls back to rawTitle and the
+// caveat suppresses entirely; that branch never fires at <VendorAvailabilityRow>
+// because /coral/[slug]'s query filters to named_coral_id != null.
 //
-// Per site.md §4.5 + Decision K. Structural inversion of <VendorAvailabilityRow>
-// (`/coral/[slug]`'s co-located composition): coral-per-row here (vendor is
-// fixed by page H1); vendor-per-row at `/coral/[slug]` (coral fixed by H1).
-// Different first-field, different field semantics, same brand-discipline
-// pattern. Co-location earns its keep on Decision D inclusion bar (single-view).
-//
-// NO event lead. Page H1 carries the vendor lead; this row is bare data + caveat.
-// Same Decision D risk-language fold that drove <ListingCard>'s 5→3 cascade.
-//
-// Caveat suppression covers an extra case here that does NOT fire at
-// <VendorAvailabilityRow>: when `namedCoralId === null` (no match against the
-// seed list at all), the caveat suppresses entirely and the Coral field renders
-// `rawTitle` literal. /coral/[slug]'s query filters to `named_coral_id != null`,
-// so that branch never fires there.
-//
-// Auction listings carry `currentPrice === null` per project_auctions_in_scope.md
-// (2026-05-14) — rendered as "price on request" via formatPrice() below; the
-// query layer deliberately does NOT filter `current_price IS NOT NULL` away.
-//
-// CTK-070: live OOS render branch. /vendor/[slug] is an inventory-reconciliation
-// surface — getVendorInventory() passes in_stock through without filtering
-// (except via the optional IN STOCK ONLY user toggle from CTK-053). When
-// listing.inStock === false, render the mono-uppercase OUT OF STOCK label in
-// the row state-marker slot (above the row, mirrors WISHLIST MATCH prefix
-// shape per branding-guide.md L207) AND strikethrough the Price field via
-// {kind: 'invalidated'} per the new L197 generalized canon. Near-black, NOT
-// forest — preserves the 5-job lock.
+// Auction listings carry currentPrice === null per project_auctions_in_scope.md
+// — rendered as "price on request" via formatPrice() below.
 
 import Image from 'next/image';
 import { CaveatLabel } from '@/components/ui/caveat-label';
 import { DataRow, type DataRowField } from '@/components/ui/data-row';
+import { OutOfStockMarker } from '@/components/ui/out-of-stock-marker';
 import type { Listing } from '@/lib/queries/listings';
 
 interface VendorInventoryRowProps {
@@ -90,11 +71,7 @@ export function VendorInventoryRow({ listing }: VendorInventoryRowProps) {
           ) : null}
         </div>
         <div className="flex-1 min-w-0">
-          {isOutOfStock ? (
-            <p className="text-xs uppercase tracking-[0.08em] font-mono text-ink mb-1">
-              Out of stock
-            </p>
-          ) : null}
+          {isOutOfStock ? <OutOfStockMarker /> : null}
           <DataRow fields={fields} />
           {shouldCaveat(listing) ? (
             <div className="mt-1">

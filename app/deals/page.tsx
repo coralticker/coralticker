@@ -1,54 +1,10 @@
-// /deals — current price-drop feed per site.md §4.3
-//
-// Server Component composing the page H1 + Suspense-wrapped feed of
-// <ListingCard event="price-dropped" priorPrice observedAt /> per row.
-// Data via getRecentPriceDrops() — LAG-window CTE specced at site.md §4.3
-// lines 1135-1160, executed as the get_recent_price_drops() RPC per
-// supabase/migrations/0008. priorPrice from LAG.prior_price flows into
-// <ListingCard> + composes <DataRow value={{ kind: 'price-drop-new', ... }}>
-// per Decision H (forest #1B5E20 + semantic <del> live inside the primitive).
-// Listed-field timestamp = observed_at (price-drop observation time per
-// site.md §4.3 lines 1176-1178 + listing-card.tsx:79-80 discriminator seam),
-// not first_seen_at.
-//
-// Empty-state per §4.3 row 1214: quiet drop days are a REAL product state at
-// v1 vendor count, not a system-health anomaly (contrast §4.4 /new's empty
-// where zero arrivals across 4 vendors IS a scraper-silence signal). Page H1
-// still renders. CTK-049 S1: gap-moment "I" voice per branding-guide.md
-// L100-106 carve-out — /deals empty is structurally identical to /coral/[slug]
-// empty per L103 example list ("the data slot ... the user expected is absent").
-//
-// Loading-state: RSC Suspense fallback covers card placeholders only via
-// <DataRowSkeleton fields={...}>; <GroupDivider> renders post-Suspense per
-// §4.3 group-divider applicability subsection (§4.4 owns composition shape
-// via Q-J/Decision I; §4.3 inherits trigger only). Page H1 + outer layout
-// resolve immediately.
-//
-// Error-state: route-level app/error.tsx boundary (Session 1b) covers throws.
-//
-// ISR revalidate=300 per §1.2 + §4.3 line 1166 (5 min ≤ scrape-completion
-// target). Metadata wording verbatim from site.md §6.1 vocabulary.
-//
-// Q-J inheritance from §4.4: <GroupDivider> fires only when card array length
-// is ≥ 12 AND observed_at distribution crosses a UTC day boundary. At v1
-// scrape volume + 24h window + price-drop sparsity, the 12-card threshold is
-// unlikely to trip on /deals — site.md §4.3 line 1191 calls this out. Logic
-// is identical to /new for production-data-driven exercise per directive.
-//
-// CTK-070: per-page eyebrow `N PRICE DROPS · LATEST X AGO` renders ABOVE H1
-// per branding-guide.md L222 + site.md §4.3 step 1. "PRICE DROPS" is explicit
-// two-word noun (NOT "DROPS" alone) — disambiguates from the canonical brand
-// "drop" verb so the eyebrow reads as a count of price-change events, not
-// vendor drops. Empty-branch suppresses the eyebrow entirely (no source for
-// LATEST). React.cache() dedupes the price-drops query across the eyebrow +
-// feed Suspense boundaries.
-
 import type { Metadata } from 'next';
 import { cache } from 'react';
 import { Suspense, type ReactNode } from 'react';
 import { ListingCard } from '@/components/listing-card';
 import { GroupDivider } from '@/components/group-divider';
 import { DataRowSkeleton } from '@/components/ui/data-row-skeleton';
+import { PageEyebrow, PageEyebrowSkeleton } from '@/components/ui/page-eyebrow';
 import { bucketLabel, bucketTransition } from '@/lib/format/group-bucket';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { getRecentPriceDrops } from '@/lib/queries/listings';
@@ -63,27 +19,14 @@ export const metadata: Metadata = {
 
 const DIVIDER_THRESHOLD = 12;
 
-// Request-scoped dedup so the eyebrow + feed Suspense boundaries share one
-// query roundtrip (single-derivation discipline per site.md Decision Q).
 const dropsCached = cache(() => getRecentPriceDrops());
 
 async function Eyebrow() {
   const drops = await dropsCached();
-  if (drops.length === 0) return null; // empty-branch suppresses eyebrow per Decision Q.
-  const latestObservedAt = drops[0]!.observedAt; // drops ordered DESC by observed_at; first row is max.
-  const latestRelative = formatRelativeTime(latestObservedAt, new Date()).toUpperCase();
+  if (drops.length === 0) return null;
+  const latestRelative = formatRelativeTime(drops[0]!.observedAt, new Date()).toUpperCase();
   const countNoun = drops.length === 1 ? 'PRICE DROP' : 'PRICE DROPS';
-  return (
-    <p className="text-xs uppercase tracking-[0.08em] font-mono text-ink mb-4">
-      {drops.length} {countNoun}
-      <span className="text-forest"> · </span>
-      LATEST {latestRelative}
-    </p>
-  );
-}
-
-function EyebrowSkeleton() {
-  return <div className="h-4 mb-4 bg-ink/5" aria-hidden="true" />;
+  return <PageEyebrow chunks={[`${drops.length} ${countNoun}`, `LATEST ${latestRelative}`]} />;
 }
 
 async function PriceDropsFeed() {
@@ -159,7 +102,7 @@ function FeedSkeleton() {
 export default function DealsPage() {
   return (
     <section className="px-6 py-12 max-w-3xl mx-auto">
-      <Suspense fallback={<EyebrowSkeleton />}>
+      <Suspense fallback={<PageEyebrowSkeleton />}>
         <Eyebrow />
       </Suspense>
       <h1 className="text-3xl md:text-4xl font-bold mb-8">

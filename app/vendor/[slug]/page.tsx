@@ -1,30 +1,9 @@
-// /vendor/[slug] — per-vendor inventory per site.md §4.5
+// Retired vendors (vendor.active === false) short-circuit before any inventory
+// query — row stays in `vendors` per architecture-v1.md §1.3 row-retention rule
+// but the page renders a back-link instead of inventory.
 //
-// Server Component with two-render-branch logic:
-//   - Active vendor (vendor.active !== false): page H1 + vendor-link + section
-//     transition + Suspense-wrapped inventory list (or empty-state line).
-//   - Retired vendor (vendor.active === false): page H1 + voice-aligned
-//     "I'm not tracking them anymore." fallback + back-link. NO inventory
-//     query — short-circuit. Row preserved per architecture-v1.md §1.3
-//     row-retention rule.
-//   - Slug missing from vendors table: notFound() → app/vendor/[slug]/not-found.tsx.
-//
-// generateStaticParams() returns active vendors.slug; retired vendors are
-// excluded from prerender but still reachable at runtime via dynamicParams.
-//
-// Section transition is single-state ("Current inventory.") across populated +
-// empty — NOT the state-dynamic flip used at /coral/[slug]'s "Currently
-// available." / "Currently unavailable." pair. /brand-manager Session 6 lock.
-//
-// Auction listings (currentPrice = null) flow through to <VendorInventoryRow>
-// and render "price on request" per project_auctions_in_scope.md — getVendorInventory()
-// deliberately does NOT filter `current_price IS NOT NULL`.
-//
-// ISR revalidate = 600 per site.md §1.2 + §4.5 lock (10 min).
-//
-// Cite: architecture-v1.md §1.3 (vendors), §1.4 (vendor_listings), §1.7
-// (named_corals LEFT JOIN); site.md §4.5; branding-guide.md lines 98, 122,
-// 165, 207.
+// Auction listings (currentPrice = null) reach <VendorInventoryRow> and render
+// "price on request" per project_auctions_in_scope.md.
 
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -43,6 +22,7 @@ import {
 } from '@/lib/queries/listings';
 import { getLatestScrapeFinishedAt } from '@/lib/queries/scraper-runs';
 import { DataRowSkeleton } from '@/components/ui/data-row-skeleton';
+import { PageEyebrow } from '@/components/ui/page-eyebrow';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { VendorInventoryRow } from './_components/vendor-inventory-row';
 import { PaginationNav } from './_components/pagination-nav';
@@ -60,10 +40,6 @@ interface PageProps {
   }>;
 }
 
-// CTK-046: parse ?page=N URL-state. Default 1; clamp NaN / < 1 / non-integer
-// inputs to 1. Upper-bound clamp happens at the view layer once totalPages
-// is computed — keeps malformed-but-positive ?page=999 graceful (renders last
-// page) without notFound() drama.
 function parsePage(raw: string | undefined): number {
   if (!raw) return 1;
   const n = parseInt(raw, 10);
@@ -71,9 +47,6 @@ function parsePage(raw: string | undefined): number {
   return n;
 }
 
-// CTK-053: parse ?sort= URL-state against the 3-value allowlist. Invalid
-// inputs silently fall back to the default 'newest' per plan §Scope #3
-// default-as-absent canonical-chain discipline.
 const SORT_ALLOWLIST: readonly ListingSort[] = [
   'newest',
   'price-asc',
@@ -86,10 +59,8 @@ function parseSort(raw: string | undefined): ListingSort {
     : 'newest';
 }
 
-// CTK-053: parse ?category= URL-state against the 8-value coral-filter
-// allowlist. Schema enum has 12 values; fish / invert / equipment / other
-// are excluded from the filter UI per plan §Out-of-scope and silently fall
-// back to null here.
+// Schema enum has 12 values; fish / invert / equipment / other are excluded
+// from the filter UI and silently fall back to null here.
 const CATEGORY_ALLOWLIST: readonly ListingCategory[] = [
   'sps',
   'lps',
@@ -107,9 +78,6 @@ function parseCategory(raw: string | undefined): ListingCategory | null {
     : null;
 }
 
-// CTK-053: parse ?in-stock=1 URL-state. Any non-'1' value (including absent)
-// reads as OFF — preserves the 14d-window mixed in-stock + recently-out
-// default render shape.
 function parseInStock(raw: string | undefined): boolean {
   return raw === '1';
 }
@@ -127,11 +95,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       description: "That vendor isn't on CoralTicker yet.",
     };
   }
-  // Metadata wording verbatim from site.md §6.1 line 1708.
-  // CTK-046: canonical = bare route per site.md §6 (no ?page query); paginated
-  // pages still resolve to the bare-route SERP card. <link rel="prev"/"next">
-  // emitted from the page body via React 19 link hoisting (Next.js Metadata
-  // API has no first-class prev/next slot).
+  // Canonical = bare route (no ?page query); paginated pages still resolve to
+  // the bare-route SERP card. <link rel="prev"/"next"> emitted from the page
+  // body via React 19 link hoisting (Next.js Metadata API has no first-class
+  // prev/next slot).
   return {
     title: `${vendor.display_name} — coral inventory — CoralTicker`,
     description: `Current coral inventory at ${vendor.display_name} — listing count, pricing, recency. Cross-vendor drop alerts.`,
@@ -240,39 +207,25 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
   const category = parseCategory(sp.category);
   const inStock = parseInStock(sp['in-stock']);
   const rawPage = parsePage(sp.page);
-  const total = await getVendorInventoryTotal(vendor.id, category, inStock);
+  const [total, latestScrapeAt] = await Promise.all([
+    getVendorInventoryTotal(vendor.id, category, inStock),
+    getLatestScrapeFinishedAt(vendor.id),
+  ]);
   const totalPages = Math.max(1, Math.ceil(total / 50));
   const page = Math.min(rawPage, totalPages);
 
-  // CTK-070: per-page eyebrow per branding-guide.md L217 + site.md §4.5 step 1.
-  // Populated: `N CORALS · UPDATED X AGO` — count = `total` (the full filtered
-  // inventory count at page level, NOT listings.length per-page) for honest
-  // count semantics under pagination; freshness = max(scraper_runs.finished_at)
-  // via getLatestScrapeFinishedAt (scrape-cadence, NOT first_seen_at-max per
-  // Decision Q rationale). Count-semantic divergence from site.md L1448
-  // ("listings.length post-pagination") flagged for /lead-frontend review-
-  // results: total > listings.length when paginated; "50 CORALS" on page 1 of
-  // 7 would mislead. Single derivation page-level — no second inventory query.
-  // Empty branch (total === 0): comment-stubbed below — /brand-manager weigh-
-  // in pending on empty-state eyebrow register per directive.
-  const latestScrapeAt = total > 0 ? await getLatestScrapeFinishedAt(vendor.id) : null;
-  const eyebrow = total > 0 ? (
-    <p className="text-xs uppercase tracking-[0.08em] font-mono text-ink mb-4">
-      {total} {total === 1 ? 'CORAL' : 'CORALS'}
-      {latestScrapeAt !== null ? (
-        <>
-          <span className="text-forest"> · </span>
-          UPDATED {formatRelativeTime(latestScrapeAt, new Date()).toUpperCase()}
-        </>
-      ) : null}
-    </p>
-  ) : null;
-  // Empty-branch eyebrow stub: when total === 0, the eyebrow does NOT render
-  // at v1 per site.md §4.5 step 1 deferral — /brand-manager weighs in on the
-  // empty-state register (lean placeholder: `INACTIVE · LAST UPDATE X AGO`),
-  // then a follow-up engineer session wires the empty-branch render. Until
-  // then, the empty-state body line ("Nothing in stock from {vendor} right
-  // now…" at Inventory below) owns the surface alone.
+  // Empty branch (total === 0): eyebrow suppressed pending /brand-manager
+  // empty-state register call; until then the empty-state body line below owns
+  // the surface alone.
+  const eyebrowChunks =
+    total > 0
+      ? latestScrapeAt !== null
+        ? [
+            `${total} ${total === 1 ? 'CORAL' : 'CORALS'}`,
+            `UPDATED ${formatRelativeTime(latestScrapeAt, new Date()).toUpperCase()}`,
+          ]
+        : [`${total} ${total === 1 ? 'CORAL' : 'CORALS'}`]
+      : null;
 
   // <link rel="prev"/"next"> emitted via React 19 link hoisting (auto-promoted
   // to document head when rendered without a `precedence` attribute). Next.js
@@ -297,7 +250,7 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
     <main className="px-6 py-12 max-w-3xl mx-auto">
       {page > 1 && <link rel="prev" href={prevHref} />}
       {page < totalPages && <link rel="next" href={nextHref} />}
-      {eyebrow}
+      {eyebrowChunks && <PageEyebrow chunks={eyebrowChunks} />}
       <h1 className="text-3xl md:text-4xl font-bold mb-4">
         {vendor.display_name}
       </h1>

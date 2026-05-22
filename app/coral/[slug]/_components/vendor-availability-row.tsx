@@ -1,29 +1,11 @@
-// §4.1 <VendorAvailabilityRow> — single-view co-located composition
-//
-// Per site.md §4.1 + Decision K (single-view co-located; inverse first-field
-// semantics from /vendor/[slug]'s <VendorInventoryRow>). Renders one vendor's
-// current listing for a named coral: thumbnail + <DataRow fields={[Vendor, Price,
-// Listed]}> + conditional <CaveatLabel> when match is name-based.
-//
-// NO event lead. The page H1 carries the coral name; this row is bare data +
-// caveat. That structural difference from <ListingCard> earned the co-location.
-//
-// Alt text derived inside: `${vendorDisplayName} listing of ${namedCoralCanonicalName}`.
-// Every row on /coral/[slug] has named_coral_id != null by query filter, so
-// canonicalName is always available.
-//
-// CTK-070: live OOS render branch. /coral/[slug] is an inventory-reconciliation
-// surface — getCoralAvailability() passes in_stock through without filtering
-// (rows can be currently OOS but still tied to this coral within the 7-day
-// last_seen_at window). When listing.inStock === false, render the mono-
-// uppercase OUT OF STOCK label in the row state-marker slot (above the row,
-// mirrors WISHLIST MATCH prefix shape per branding-guide.md L207) AND
-// strikethrough the Price field via {kind: 'invalidated'} per the new L197
-// generalized canon. Near-black, NOT forest — preserves the 5-job lock.
+// /coral/[slug] is an inventory-reconciliation surface — getCoralAvailability()
+// passes in_stock through without filtering, so rows can be currently OOS but
+// still tied to this coral within the 7-day last_seen_at window.
 
 import Image from 'next/image';
 import { CaveatLabel } from '@/components/ui/caveat-label';
 import { DataRow, type DataRowField } from '@/components/ui/data-row';
+import { OutOfStockMarker } from '@/components/ui/out-of-stock-marker';
 import type { Listing } from '@/lib/queries/listings';
 
 interface VendorAvailabilityRowProps {
@@ -82,11 +64,7 @@ export function VendorAvailabilityRow({ listing }: VendorAvailabilityRowProps) {
           ) : null}
         </div>
         <div className="flex-1 min-w-0">
-          {isOutOfStock ? (
-            <p className="text-xs uppercase tracking-[0.08em] font-mono text-ink mb-1">
-              Out of stock
-            </p>
-          ) : null}
+          {isOutOfStock ? <OutOfStockMarker /> : null}
           <DataRow fields={fields} />
           {shouldCaveat(listing) ? (
             <div className="mt-1">

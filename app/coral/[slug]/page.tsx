@@ -1,33 +1,3 @@
-// /coral/[slug] — per-named-coral cross-vendor availability per site.md §4.1
-//
-// Server Component rendering:
-//   1. Page H1 (canonical_name) — Plex Sans 700, large
-//   2. Lineage row — <DataRow> with drop-on-NULL field filter over
-//      {coral_type, origin_vendor, year_introduced}. View-level filter
-//      constructs `fields` from the non-null subset; <DataRow> API unchanged.
-//   3. Description <p> — when named_corals.description != null
-//   4. State-dynamic section transition — "Currently available." (>=1 listing)
-//      / "Currently unavailable." (0 listings). 1px under-rule persists both states.
-//      (Round 8 design-tool final 2026-05-13.)
-//   5. Vendor availability list — <VendorAvailabilityRow> per listing,
-//      first_seen_at DESC ordering applied inside getCoralAvailability().
-//   6. Citations footer — when source_urls.length > 0. Voice-aligned introducer
-//      ("Sources.") + body-text-sized link list. Off-domain links carry
-//      target="_blank" rel="noopener noreferrer".
-//
-// generateStaticParams() returns active named_corals.slug. During matcher-dormancy
-// (no seeded slugs yet — CTK-029 populates), returns [] → zero prerendered
-// routes; Next.js 15 default `dynamicParams = true` handles unknown requests at
-// runtime via ISR-on-demand, and not-found.tsx fires for slugs absent from
-// named_corals (graceful 404 per Decision-at-Scaffold (b)).
-//
-// Empty-state vs. not-found are two distinct surfaces:
-//   - not-found.tsx fires when slug is absent from named_corals (dormancy / typo)
-//   - empty state (this file) fires when slug is present but zero current listings
-//     (header flips to "Currently unavailable." + voice-aligned body line)
-//
-// ISR revalidate = 1800 per §1.2 + §4.1 lock (30 min).
-
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import {
@@ -38,6 +8,7 @@ import {
 } from '@/lib/queries/named-corals';
 import { getCoralAvailability } from '@/lib/queries/listings';
 import { DataRow, type DataRowField } from '@/components/ui/data-row';
+import { PageEyebrow } from '@/components/ui/page-eyebrow';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { VendorAvailabilityRow } from './_components/vendor-availability-row';
 
@@ -61,7 +32,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
         "This coral isn't in the seed list yet. I'm working through the long tail.",
     };
   }
-  // Metadata wording verbatim from site.md §6.1 line 1707.
   return {
     title: `${coral.canonical_name} — current vendor availability — CoralTicker`,
     description: `Current vendor availability and pricing for ${coral.canonical_name}. Drop alerts across reef coral vendors.`,
@@ -97,35 +67,20 @@ export default async function CoralPage({ params }: PageProps) {
     ? 'Currently available.'
     : 'Currently unavailable.';
 
-  // CTK-070: per-page eyebrow per branding-guide.md L216 + site.md §4.1 step 1.
-  // Populated: `N VENDORS · LATEST X AGO` — count = listings.length, freshness
-  // = max(firstSeenAt) across the listings (listings ordered DESC by query;
-  // first row carries max). Empty: `NOT LISTED · LAST SEEN X AGO` — freshness
-  // via getCoralLastSeenAt() with no recency cap; bare `NOT LISTED` when zero
-  // historical rows. Single derivation page-level.
   const now = new Date();
   const lastSeenAt = hasListings ? null : await getCoralLastSeenAt(coral.id);
-  const eyebrow = hasListings ? (
-    <p className="text-xs uppercase tracking-[0.08em] font-mono text-ink mb-4">
-      {listings.length} {listings.length === 1 ? 'VENDOR' : 'VENDORS'}
-      <span className="text-forest"> · </span>
-      LATEST {formatRelativeTime(listings[0]!.firstSeenAt, now).toUpperCase()}
-    </p>
-  ) : lastSeenAt === null ? (
-    <p className="text-xs uppercase tracking-[0.08em] font-mono text-ink mb-4">
-      NOT LISTED
-    </p>
-  ) : (
-    <p className="text-xs uppercase tracking-[0.08em] font-mono text-ink mb-4">
-      NOT LISTED
-      <span className="text-forest"> · </span>
-      LAST SEEN {formatRelativeTime(lastSeenAt, now).toUpperCase()}
-    </p>
-  );
+  const eyebrowChunks = hasListings
+    ? [
+        `${listings.length} ${listings.length === 1 ? 'VENDOR' : 'VENDORS'}`,
+        `LATEST ${formatRelativeTime(listings[0]!.firstSeenAt, now).toUpperCase()}`,
+      ]
+    : lastSeenAt === null
+      ? ['NOT LISTED']
+      : ['NOT LISTED', `LAST SEEN ${formatRelativeTime(lastSeenAt, now).toUpperCase()}`];
 
   return (
     <main className="px-6 py-12 max-w-3xl mx-auto">
-      {eyebrow}
+      <PageEyebrow chunks={eyebrowChunks} />
       <h1 className="text-3xl md:text-4xl font-bold mb-4">
         {coral.canonical_name}
       </h1>
