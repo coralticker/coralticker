@@ -22,11 +22,7 @@ export const metadata: Metadata = {
 
 const SKELETON_ROW_COUNT = 6;
 
-// Quiet vs. downtime distinction: zero price-drops in 24h is normal market
-// state (vendors haven't dropped prices), not a scraper-down signal. Voice
-// diverges from DOWNTIME_FALLBACK on / + /new; canon register pending
-// /brand-manager call (F-11).
-const QUIET_DAY_COPY =
+const DOWNTIME_FALLBACK =
   "No price drops in the last 24 hours. I'll surface them as vendors update.";
 
 const dropsCached = cache(() => getRecentPriceDrops());
@@ -54,7 +50,7 @@ async function PriceDropsFeed() {
   if (drops.length === 0) {
     return (
       <p role="status" className="text-base text-ink py-6">
-        {QUIET_DAY_COPY}
+        {DOWNTIME_FALLBACK}
       </p>
     );
   }

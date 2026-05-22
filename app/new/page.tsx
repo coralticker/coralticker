@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 const SKELETON_ROW_COUNT = 6;
 
 const DOWNTIME_FALLBACK =
-  'Scrapers are catching up. New arrivals will surface here when they land.';
+  "No new arrivals in the last 24 hours. I'll surface them as vendors list.";
 
 const arrivalsCached = cache(() => getRecentArrivals());
 

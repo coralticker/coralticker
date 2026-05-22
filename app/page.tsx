@@ -30,7 +30,7 @@ export const metadata: Metadata = {
 };
 
 const DOWNTIME_FALLBACK =
-  'Scrapers are catching up. Recent drops will surface here when they land.';
+  "No recent drops to show. I'll surface them as scrapers report in.";
 
 export default async function HomePage() {
   const drops = await getRecentDrops();
