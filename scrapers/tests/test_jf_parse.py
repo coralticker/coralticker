@@ -49,7 +49,6 @@ Coverage:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 import traceback
@@ -116,7 +115,6 @@ def test_html_hash_first_product_keys(products):
     """
     first = products[0]
     keys = sorted(first.keys())
-    expected = hashlib.sha256(",".join(keys).encode("utf-8")).hexdigest()
     # Empirical anchor: 13 keys per smoke 2026-05-11. PE+WWC+TSA also have 13.
     assert len(keys) == 13, (
         f"expected 13 keys on first product (matches PE+WWC+TSA empirical "
@@ -132,7 +130,6 @@ def test_html_hash_first_product_keys(products):
         f"If a key was added/removed, the html_hash sentinel will flip and "
         f"scraper_runs.error_class='html_schema_change' will fire next scrape."
     )
-    assert len(expected) == 64, f"SHA256 hex digest is 64 chars; got {len(expected)}"
 
 
 # ─── Test 2: JF-prefix coral — normalize PRESERVES prefix per decision #18 ────

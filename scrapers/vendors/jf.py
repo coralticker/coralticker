@@ -62,9 +62,3 @@ Test fixture regen path (CTK-024/025/026 convention):
   # scrapers/tests/fixtures/jf/products.sample.json. See test_jf_parse.py for
   # the expected shape assertions the fixture must continue to satisfy.
 """
-
-# This file is intentionally code-light. The orchestrator dispatches by
-# vendors.platform ('shopify') — no per-vendor function needs to be called.
-# When future vendors require pre-parse / post-parse hooks (Tidal Gardens
-# custom HTML, ReefnBid auctions), define them here as module-level callables
-# that scrapers.common.run.run() looks up by slug.
