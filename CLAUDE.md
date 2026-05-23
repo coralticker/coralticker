@@ -12,7 +12,7 @@
 | `.claude/architecture-v1.md` | Technical design (data model, scrapers, matcher, notifier, deploy, observability) |
 | `.claude/branding-guide.md` | Voice principles + before/after copy examples |
 | `.claude/plans/tickets/index.md` | All CTK tickets — status, phase, gate |
-| `.claude/plans/tickets/CTK-XXX/{plan,results}.md` | Per-ticket plan + session log |
+| `.claude/plans/tickets/CTK-XXX/{plan,results}.md` | Per-ticket plan + session log; `plan.md` includes explicit `**Tier:**` field per Ticket severity rubric |
 | `.claude/coordination-invariants.md` | Cross-CTK constraints; `/reef-lead` + `/lead-frontend` enforce per scope (channel parity, brand-mockup gate, shared-primitive rules) |
 | `.claude/open-items.md` | Cross-CTK / cross-session hygiene items below CTK threshold; `/reef-lead` reads + maintains. Items graduate to CTKs when scope grows past ~5-min hygiene. |
 | `.claude/commands/` + `.claude/commands-guide.md` | Slash commands and how to use them |
@@ -89,6 +89,43 @@ These rules apply to lead/synthesis roles (same scope as the Forward Action bloc
 **Independent judgment until decision; execute-support after.** Lead roles earn keep by being the second voice that catches things from a different angle *while a recommendation is forming*. Once Jon has chosen, switch to execute-support — list blockers for the path he named, route the work, surface honest tradeoffs once for the record, then stop pitching the rejected option. "Don't be a yes-man" applies pre-decision; "don't re-litigate" applies post.
 
 **Routing isn't a relitigation tool.** When Jon has named an override himself, "route to /lead-X for re-evaluation" is delay dressed up as procedure unless he's asking for the re-eval. Execute on the override; let the affected lane absorb the decision retroactively via the normal results.md / decision-register channels.
+
+## Ticket severity rubric
+
+Every CTK has an explicit tier. Tier determines whether a ticket blocks launch, lands at launch, lands post-launch, or stays asleep until a trigger fires. Five tiers:
+
+- **Tier 1A — CORRECTNESS BLOCKER.** User sees wrong info, broken interaction, or data is corrupted. Ship-stops.
+- **Tier 1B — EXPERIENCE FLOOR.** User can't form a mental model, can't navigate, can't find what they came for, or hits a moment that makes them close the tab. Test: *would a thoughtful reefer clicking the link from Reef2Reef close the tab and not come back?* Yes = Tier 1B. Nav, signup-form friction, empty-states-with-no-copy live here.
+- **Tier 2 — LAUNCH-MOMENT.** Only matters at the moment of public launch. SEO / OG cards / first-impression posture. Lands before launch day, never blocks deploy.
+- **Tier 3 — POST-LAUNCH POLISH.** Code quality, refactors, accessibility-beyond-baseline, perf-at-baseline-traffic, test coverage, primitive extractions. Lands when there's a slot.
+- **Tier 4 — TRIGGER-GATED.** Only matters if X happens (signup volume >50/day, edge-CDN variance, sibling CTK ships, etc.). Doesn't open as DRAFT until trigger fires. Doesn't count against any queue.
+
+### Tiebreaker
+
+If a finding is uncertain between BLOCKER (1A/1B) and POST-LAUNCH (3), default to POST-LAUNCH and flag for /reef-lead reconsideration. Reviewers always over-rate the issue they're staring at; the bias toward deferral is structurally correct.
+
+### Cost-to-fix-later filter
+
+Before promoting anything to Tier 1 or 2: does this get cheaper or more expensive to fix once users exist? Things that get expensive (URL structure, data model, anything users bookmark or link to) belong in Tier 1 or 2 even if cosmetic. Things that stay the same cost (refactors, comment sweeps, test coverage) belong in Tier 3 even if they feel important now.
+
+### Authority — which command does what
+
+- `/code-review` tier-labels every finding at source per this rubric. Output template: `**Tier:** [1A/1B/2/3/4] — [one-line rationale]` on every finding. No tier = invalid output; re-run.
+- `/reef-lead` requires explicit tier at ticket intake — no defaulting to pre-launch. Standard orient output includes a Tier audit pass — scans queue for tickets aging in a tier that feels wrong, surfaces as 🟧 weigh-in. Recommendations for "next up" pull from Tier 1A + 1B + 2 only; never recommends a Tier 3 as next-up.
+- `/lead-architect`, `/lead-frontend`, `/lead-backend`, `/brand-manager` audit the active ticket's tier as part of session-entry orient brief: one line — `Tier audit: CTK-XXX currently [tier] — [orient confirms / flag for re-tier]`. Flag for re-tier before work starts if it feels wrong.
+- `/lead-review` checks every `plan.md` has an explicit `**Tier:**` field before approving structurally.
+- `/coo-review` whole-project sweep includes tier sanity — drift between index.md tier and plan.md tier, tickets aging wrong-tiered, etc.
+- Jon is the final arbiter on Tier 1B (subjective: "would a reefer close the tab?"). Agents propose; Jon decides.
+
+### Re-tier mechanism
+
+No new slash command needed. Jon says "CTK-XXX is tier X — [rationale]" in any conversation; /reef-lead updates the index and re-sequences the queue. Periodic sweeps happen via /reef-lead's standard orient (above). When a Tier 4 ticket's trigger fires, /reef-lead surfaces it for re-tier based on what the trigger revealed.
+
+### Tracked in
+
+- `.claude/plans/tickets/index.md` Tier column
+- Each CTK's `plan.md` includes `**Tier:** [1A/1B/2/3/4]` field
+- `.claude/coordination-invariants.md` INV-03 enforces presence
 
 ## Hard rules (compliance)
 

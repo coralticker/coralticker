@@ -17,7 +17,7 @@ type SocialLink = {
 
 const links: SocialLink[] = [
   {
-    href: 'https://discord.gg/',
+    href: 'https://discord.gg/DbGnQTfzC',
     label: 'Discord',
     ariaLabel: 'Discord',
     iconPaths: (
