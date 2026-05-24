@@ -90,9 +90,14 @@ function rowToListing(row: VendorListingRow): Listing {
 // Plain JOIN with LEFT JOIN named_corals; JS-side dedup on named_coral_id
 // preserved from the Supabase impl (rather than pushing DISTINCT ON into SQL,
 // which complicates the LIMIT semantics).
+// CTK-080: first_seen_at > now() - 7d bound added 2026-05-24 — strip's
+// just-listed lead-verb hardcode (recent-drops-strip.tsx L43) was rendering
+// stale restocks as "just listed at $vendor" (Session 5 F-4). 7d matches
+// CORAL_RECENCY_DAYS canon at L25.
 export async function getRecentDrops(limit = 10): Promise<Listing[]> {
   const sql = getNeonSql();
   const overFetch = limit * 3;
+  const sevenDaysAgo = new Date(Date.now() - CORAL_RECENCY_DAYS * MS_PER_DAY).toISOString();
   const rows = (await sql`
     SELECT
       vl.id,
@@ -113,6 +118,7 @@ export async function getRecentDrops(limit = 10): Promise<Listing[]> {
     JOIN vendors v ON v.id = vl.vendor_id
     LEFT JOIN named_corals nc ON nc.id = vl.named_coral_id
     WHERE vl.in_stock = true
+      AND vl.first_seen_at > ${sevenDaysAgo}
     ORDER BY vl.first_seen_at DESC
     LIMIT ${overFetch}
   `) as unknown as VendorListingRow[];

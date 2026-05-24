@@ -12,10 +12,13 @@
 // iterates the array as passed.
 //
 // Event derivation: v1 default hardcodes event='just-listed' for every strip
-// card per §4.2 event-derivation rule — homepage shows recent surfacings under
-// the broad "drop" semantic. Per-listing event-type derivation lives in /new
-// + /deals which have the data shape (UNION two-arm CTE / LAG window) to
-// distinguish just-listed vs. back-in-stock vs. price-dropped.
+// card per §4.2 event-derivation rule. CTK-080 bound getRecentDrops() to
+// first_seen_at > now() - 7d (lib/queries/listings.ts), so the hardcode is
+// now genuinely accurate — restock-then-relist listings with old
+// first_seen_at no longer surface here. Per-listing event-type derivation
+// still lives in /new + /deals which have the data shape (UNION two-arm CTE
+// / LAG window) to distinguish just-listed vs. back-in-stock vs.
+// price-dropped.
 //
 // No empty-state slot, no children, no styling slot — content shape is closed
 // per Decision E + Decision G #4. Empty-state semantics are view-level.
