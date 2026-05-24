@@ -8,20 +8,31 @@
 // onClick surfaced at Session 1b — app/error.tsx retry button is the first
 // type="button" consumer per site.md §3.4.1 "first consumer surfaces the API".
 // Submit consumers continue to omit it (form action target via <form action>).
+//
+// aria-busy surfaced at CTK-065 — <SignupForm> SubmitButton is the first
+// submit-pending consumer (WCAG 2.1 §4.1.3 SR-layer announcement).
 
 interface ButtonProps {
   type: 'button' | 'submit';
   children: React.ReactNode;
   disabled?: boolean;
   onClick?: () => void;
+  'aria-busy'?: boolean;
 }
 
-export function Button({ type, children, disabled, onClick }: ButtonProps) {
+export function Button({
+  type,
+  children,
+  disabled,
+  onClick,
+  'aria-busy': ariaBusy,
+}: ButtonProps) {
   return (
     <button
       type={type}
       disabled={disabled}
       onClick={onClick}
+      aria-busy={ariaBusy}
       className="inline-flex items-center justify-center px-4 py-2 bg-ink text-cream font-sans font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
     >
       {children}

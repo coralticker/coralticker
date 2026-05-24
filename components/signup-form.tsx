@@ -43,7 +43,7 @@ const INITIAL_STATE: SignupActionResult | null = null;
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" disabled={pending}>
+    <Button type="submit" disabled={pending} aria-busy={pending}>
       {SUBMIT_LABEL}
     </Button>
   );
