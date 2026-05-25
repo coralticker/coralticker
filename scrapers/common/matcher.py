@@ -22,11 +22,15 @@ Cascade (arch §3.4, first hit wins):
     7. null                    no match
 
 Category-2 guard (arch §3.5) applies at every stage that returns a
-named_coral_id (stages 1, 2, 3, 4, 6). Stage 5 (cluster) returns null
-named_coral_id so no guard is needed there. Guard rejects matches whose
-title does not start with the implied prefix (canonical_name's first word,
-lowercased) — "Miyagi Tort" without "UC " falls through to the next stage
-rather than auto-linking.
+named_coral_id (stages 1, 2, 3, 6). Stage 4 (alias auto-link) BYPASSES
+the guard per /lead-architect ruling 2026-05-25 (CTK-030 v1 B3 Q-A
+resolution): explicit alias rows are the curator-vetted disambiguation
+signal — the alias row IS the prefix-required carve-out. Stage 5
+(cluster) returns null named_coral_id so no guard is needed there.
+Guard rejects matches whose title does not start with the implied
+prefix (canonical_name's first word, lowercased) — "Miyagi Tort"
+without "UC " falls through canonical stages rather than auto-linking
+on the canonical path.
 
 ============================================================================
 F3 fold (CTK-025 lead-review-2026-05-04-pre-implementation §F3) —
@@ -252,14 +256,17 @@ def match_listing(
                 if _category_2_passes(nc, synthesized):
                     return _hit(nc.id, "exact", "canonical-implicit-prefix")
 
-    # Stage 4 — alias auto-link
+    # Stage 4 — alias auto-link. Bypasses the §3.5 cat-2 guard per
+    # /lead-architect ruling 2026-05-25 (CTK-030 v1 B3 Q-A): an explicit
+    # alias row is the curator-vetted disambiguation; gating it on the
+    # prefix-required flag defeats the cross-vendor matching the seed
+    # was curated for.
     for al in cache.auto_link_aliases:
         if al.alias_text and al.alias_text in normalized_title:
             nc = cache.nc_by_id.get(al.named_coral_id) if al.named_coral_id is not None else None
             if nc is None:
                 continue
-            if _category_2_passes(nc, normalized_title):
-                return _hit(nc.id, "alias", "alias-hit")
+            return _hit(nc.id, "alias", "alias-hit")
 
     # Stage 5 — cluster flag-review (no category-2 guard; named_coral_id stays null)
     for al in cache.flag_review_aliases:
