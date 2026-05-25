@@ -90,6 +90,12 @@ BC_CATEGORY_FILTER = {
     "tag_denylist": [],
 }
 
+# Source title carries a double space ('grow out  2025'), faithful to the
+# vendor's products.json verbatim. Centralized so a future single-space
+# mistype on one of the four _by_title call sites doesn't fail with a
+# diffuse 'fixture missing product titled' error.
+BC_GROWOUT_TITLE = "BC All stars grow out  2025!!!"
+
 
 def _load_fixture() -> list[dict]:
     with FIXTURE_PATH.open("r", encoding="utf-8") as f:
@@ -223,7 +229,7 @@ def test_first_sku_pick_falls_back_when_empty_string(products):
     TRUTHY SKU — empty string falls through. All 5 variants here have empty
     SKUs, so vendor_sku=None at the row level. Validates the
     truthy-pick-not-not-null behavior."""
-    p = _by_title(products, "BC All stars grow out  2025!!!")
+    p = _by_title(products, BC_GROWOUT_TITLE)
     out = _normalize(p)
     assert out["vendor_sku"] is None, (
         f"all-empty-string-SKU variants should yield vendor_sku=None (truthy "
@@ -293,7 +299,7 @@ def test_lineage_flag_cross_vendor_prefix_vendor_named(products):
     ALL-CAPS-throughout shape where no title ever fires."""
     tsa = _by_title(products, "TSA Bill Murray")
     ora = _by_title(products, "ORA Pearlberry")
-    bc_outlier = _by_title(products, "BC All stars grow out  2025!!!")
+    bc_outlier = _by_title(products, BC_GROWOUT_TITLE)
     bc_merch = _by_title(products, "BC Tee Shirt")
     assert _normalize(tsa)["lineage_flag"] == "vendor-named"
     assert _normalize(ora)["lineage_flag"] == "vendor-named"
@@ -336,7 +342,7 @@ def test_category_inference(products):
     ora = _by_title(products, "ORA Pearlberry")                      # Acropora
     genie = _by_title(products, "Genie of Death")                    # Acropora Tenuis
     love_sky = _by_title(products, "Love SKY")                       # Acropora sp
-    bc_outlier = _by_title(products, "BC All stars grow out  2025!!!")  # live coral
+    bc_outlier = _by_title(products, BC_GROWOUT_TITLE)  # live coral
     battlebox = _by_title(products, "2000.00 Battlebox Ships free")  # ""
     bc_merch = _by_title(products, "BC Tee Shirt")                   # ""
 
@@ -395,7 +401,7 @@ def test_filter_keeps_live_coral_growout(products):
     """BC All stars grow out 2025!!! has product_type='live coral' — in
     allowlist = KEEP. 'live coral' bucket carries 4 grow-out announcement
     entries on Battlecorals' catalog."""
-    p = _by_title(products, "BC All stars grow out  2025!!!")
+    p = _by_title(products, BC_GROWOUT_TITLE)
     assert _should_keep(p, BC_CATEGORY_FILTER) is True
 
 
