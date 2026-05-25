@@ -1,0 +1,524 @@
+{
+  "products": [
+    {
+      "id": 16009473327407,
+      "title": "UC Burnt Orange OG Jawbreaker-WYSIWYG",
+      "handle": "uc-burnt-orange-og-jawbreaker-wysiwyg-7",
+      "body_html": "<p dir=\"ltr\"><span>Unique Corals Aqua-cultured, healthy and colorful!\u00a0</span></p>\n<p dir=\"ltr\"><span>HUSBANDRY NOTES: Softie-Beginner- We keep our corals under Dalua/Illumagic X4 LED lights with an intensity of approximately 100 PAR and feed regularly with Polyp Lab Reef Roids and BenePets.NOTE: This is a WYSIWYG item. You will be purchasing the actual coral shown in the photo.</span></p>\n<p>\u00a0</p>",
+      "published_at": "2026-05-22T16:39:38-07:00",
+      "created_at": "2026-05-22T16:22:45-07:00",
+      "updated_at": "2026-05-25T07:39:07-07:00",
+      "vendor": "UniqueCorals ",
+      "product_type": "CORAL",
+      "tags": [
+        "beginners",
+        "coral",
+        "just frags!",
+        "softy",
+        "WYSIWYG"
+      ],
+      "variants": [
+        {
+          "id": 57970454200623,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "5-22-26",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "169.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 16009473327407,
+          "created_at": "2026-05-22T16:22:45-07:00",
+          "updated_at": "2026-05-25T07:39:07-07:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 60805960696111,
+          "created_at": "2026-05-22T16:21:29-07:00",
+          "position": 1,
+          "updated_at": "2026-05-22T16:21:30-07:00",
+          "product_id": 16009473327407,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/2172/7975/files/903A4579_08a51912-c2e9-4f64-b288-c3ca405d0a62.jpg?v=1779492090",
+          "width": 800,
+          "height": 800
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 14231654891823,
+      "title": "Unique Corals Rainbow Hyacinthus",
+      "handle": "unique-corals-rainbow-hyacinthus",
+      "body_html": "<p><em><strong><span>This is a \"Frag to Order\" item.\u00a0 Sold as a single frag directly from our mother colonies.</span></strong></em></p>\n<p dir=\"ltr\"><em><strong>What to expect?\u00a0</strong></em></p>\n<p dir=\"ltr\"><em><strong><span>Our signature line of coral are farmed under our care in multiple tanks.</span></strong></em></p>\n<p dir=\"ltr\">Besides getting little clones of our favorite corals, you can expect an email with an expected ship date for you to approve as well as a picture of the actual WYSIWYG frags you are going to receive.\u00a0 Housed in perfect conditions, inspected daily and cared for by coral lovers- that is the formula we use so shop with confidence.\u00a0\u00a0</p>\n<p dir=\"ltr\">Shown is one of our mother colonies which frags are taken from.\u00a0 While sizing varies from piece to piece, rest assured that we are fully aware that everyone would love as big of a frag as possible.\u00a0 These are typically a minimum of 1\" when cut.\u00a0 We do aim to please!</p>",
+      "published_at": "2026-03-31T15:41:44-07:00",
+      "created_at": "2026-03-31T15:13:34-07:00",
+      "updated_at": "2026-05-25T07:39:07-07:00",
+      "vendor": "UniqueCorals ",
+      "product_type": "",
+      "tags": [
+        "acro",
+        "Acropora",
+        "sps",
+        "UC signature"
+      ],
+      "variants": [
+        {
+          "id": 56036181999919,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "Frag to Order",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "109.99",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 14231654891823,
+          "created_at": "2026-03-31T15:13:34-07:00",
+          "updated_at": "2026-05-25T07:39:07-07:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 58694463226159,
+          "created_at": "2026-03-31T15:12:11-07:00",
+          "position": 1,
+          "updated_at": "2026-03-31T15:12:12-07:00",
+          "product_id": 14231654891823,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/2172/7975/files/UCRainbowHyacinthus109.993stock.jpg?v=1774995132",
+          "width": 800,
+          "height": 800
+        },
+        {
+          "id": 58694492717359,
+          "created_at": "2026-03-31T15:13:05-07:00",
+          "position": 2,
+          "updated_at": "2026-03-31T15:13:07-07:00",
+          "product_id": 14231654891823,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/2172/7975/files/903A2998_4d2f92f9-f522-4578-ae8e-73f90e1de19d.jpg?v=1774995187",
+          "width": 800,
+          "height": 800
+        },
+        {
+          "id": 60777063907631,
+          "created_at": "2026-05-20T11:11:00-07:00",
+          "position": 3,
+          "updated_at": "2026-05-20T11:11:02-07:00",
+          "product_id": 14231654891823,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/2172/7975/files/UC_Rainbow_Hyacinthus.jpg?v=1779300662",
+          "width": 800,
+          "height": 800
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 16008520073519,
+      "title": "Strawberry Shortcake Colony 2.5 -WYSIWYG",
+      "handle": "strawberry-shortcake-colony-2-5-wysiwyg-1",
+      "body_html": "<p dir=\"ltr\"><span>Unique Corals Aqua-cultured, healthy and colorful!\u00a0</span></p>\n<p dir=\"ltr\"><span>HUSBANDRY NOTES: SPS- We keep our corals under Dalua/Illumagic X4 LED lights with an intensity of approximately 200-250 PAR and feed regularly with Polyp Lab Reef Roids and BenePets.</span><span>This is a WYSIWYG item. You will be purchasing the actual coral shown in the photo.</span></p>\n<p>\u00a0</p>",
+      "published_at": "2026-05-21T09:32:50-07:00",
+      "created_at": "2026-05-21T09:19:11-07:00",
+      "updated_at": "2026-05-25T07:39:07-07:00",
+      "vendor": "UniqueCorals ",
+      "product_type": "",
+      "tags": [
+        "acro",
+        "Acropora",
+        "coral",
+        "just colonies!",
+        "most popular",
+        "sps",
+        "WYSIWYG"
+      ],
+      "variants": [
+        {
+          "id": 57967439741231,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "5-20-26",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": false,
+          "price": "250.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 16008520073519,
+          "created_at": "2026-05-21T09:19:12-07:00",
+          "updated_at": "2026-05-25T07:39:07-07:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 60789462466863,
+          "created_at": "2026-05-21T09:18:34-07:00",
+          "position": 1,
+          "updated_at": "2026-05-21T09:18:37-07:00",
+          "product_id": 16008520073519,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/2172/7975/files/2.5-3minicolony250.jpg?v=1779380317",
+          "width": 800,
+          "height": 800
+        },
+        {
+          "id": 60789464203567,
+          "created_at": "2026-05-21T09:19:26-07:00",
+          "position": 2,
+          "updated_at": "2026-05-21T09:19:27-07:00",
+          "product_id": 16008520073519,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/2172/7975/files/903A4500.jpg?v=1779380367",
+          "width": 800,
+          "height": 800
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 16008512766255,
+      "title": "TSA Bill Murray Acropora-WYSIWYG",
+      "handle": "uc-bill-murray-acropora-wysiwyg",
+      "body_html": "<p dir=\"ltr\"><span>Unique Corals Aqua-cultured, healthy and colorful!\u00a0</span></p>\n<p dir=\"ltr\"><span>HUSBANDRY NOTES: SPS- We keep our corals under Dalua/Illumagic X4 LED lights with an intensity of approximately 200-250 PAR and feed regularly with Polyp Lab Reef Roids and BenePets.</span><span>This is a WYSIWYG item. You will be purchasing the actual coral shown in the photo.</span></p>\n<p>\u00a0</p>",
+      "published_at": "2026-05-21T09:32:44-07:00",
+      "created_at": "2026-05-21T09:11:02-07:00",
+      "updated_at": "2026-05-25T07:39:07-07:00",
+      "vendor": "UniqueCorals ",
+      "product_type": "",
+      "tags": [
+        "acro",
+        "Acropora",
+        "coral",
+        "just frags!",
+        "most popular",
+        "sps",
+        "WYSIWYG"
+      ],
+      "variants": [
+        {
+          "id": 57967410872623,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "5-20-26",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "89.99",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 16008512766255,
+          "created_at": "2026-05-21T09:11:02-07:00",
+          "updated_at": "2026-05-25T07:39:07-07:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 60789438120239,
+          "created_at": "2026-05-21T09:10:32-07:00",
+          "position": 1,
+          "updated_at": "2026-05-21T09:10:34-07:00",
+          "product_id": 16008512766255,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/2172/7975/files/UCBillMurray.jpg?v=1779379834",
+          "width": 800,
+          "height": 800
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 16008511750447,
+      "title": "WWC Grafted Firewalker Montipora-WYSIWYG",
+      "handle": "wwc-grafted-firewalker-montipora-wysiwyg",
+      "body_html": "<p dir=\"ltr\"><span>Unique Corals Aqua-cultured, healthy and colorful!\u00a0</span></p>\n<p dir=\"ltr\"><span>HUSBANDRY NOTES: SPS- We keep our corals under Dalua/Illumagic X4 LED lights with an intensity of approximately 200-250 PAR and feed regularly with Polyp Lab Reef Roids and BenePets.</span><span>This is a WYSIWYG item. You will be purchasing the actual coral shown in the photo.</span></p>\n<p>\u00a0</p>",
+      "published_at": "2026-05-21T09:32:44-07:00",
+      "created_at": "2026-05-21T09:09:33-07:00",
+      "updated_at": "2026-05-25T07:39:07-07:00",
+      "vendor": "UniqueCorals ",
+      "product_type": "",
+      "tags": [
+        "coral",
+        "just frags!",
+        "monti",
+        "montipora",
+        "most popular",
+        "sps",
+        "WYSIWYG"
+      ],
+      "variants": [
+        {
+          "id": 57967406055727,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "5-20-26",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "49.99",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 16008511750447,
+          "created_at": "2026-05-21T09:09:33-07:00",
+          "updated_at": "2026-05-25T07:39:07-07:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 60789434417455,
+          "created_at": "2026-05-21T09:09:01-07:00",
+          "position": 1,
+          "updated_at": "2026-05-21T09:09:02-07:00",
+          "product_id": 16008511750447,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/2172/7975/files/WWCGraftedFirewalkerMonti49.99.jpg?v=1779379742",
+          "width": 800,
+          "height": 800
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 16009472606511,
+      "title": "UC Mystic Montipora-WYSIWYG",
+      "handle": "uc-mystic-montipora-wysiwyg-1",
+      "body_html": "<p dir=\"ltr\"><span>Unique Corals Aqua-cultured, healthy and colorful!\u00a0</span></p>\n<p dir=\"ltr\"><span>HUSBANDRY NOTES: SPS- We keep our corals under Dalua/Illumagic X4 LED lights with an intensity of approximately 200-250 PAR and feed regularly with Polyp Lab Reef Roids and BenePets.</span><span>This is a WYSIWYG item. You will be purchasing the actual coral shown in the photo.</span></p>\n<p><b><br></b></p>\n<p dir=\"ltr\"><span>NOTE: This is a WYSIWYG coral. You will be purchasing the actual coral shown in the photo.</span></p>\n<p>\u00a0</p>",
+      "published_at": "2026-05-22T16:39:36-07:00",
+      "created_at": "2026-05-22T16:14:51-07:00",
+      "updated_at": "2026-05-25T07:39:07-07:00",
+      "vendor": "UniqueCorals ",
+      "product_type": "CORAL",
+      "tags": [
+        "coral",
+        "just frags!",
+        "sps",
+        "WYSIWYG"
+      ],
+      "variants": [
+        {
+          "id": 57970451120431,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "5-22-26",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": false,
+          "price": "39.99",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 16009472606511,
+          "created_at": "2026-05-22T16:14:51-07:00",
+          "updated_at": "2026-05-25T07:39:07-07:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 60805936873775,
+          "created_at": "2026-05-22T16:14:10-07:00",
+          "position": 1,
+          "updated_at": "2026-05-22T16:14:12-07:00",
+          "product_id": 16009472606511,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/2172/7975/files/UCMysticMonti.jpg?v=1779491652",
+          "width": 800,
+          "height": 800
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 8808105935151,
+      "title": "PNS Deep Cycle (16 oz)",
+      "handle": "pns-substrate-sauce-live-starter-bacteria-16-oz",
+      "body_html": "<h1 class=\"font_2 wixui-rich-text__text classyunicodedone\"><span class=\"wixui-rich-text__text\">A\u00a0Functional Cohort\u00a0of\u00a0Real Reef Bacteria</span></h1>\n<div id=\"comp-m4bzcgd31\" class=\"HcOXKn c9GqVL QxJLC3 lq2cno YQcXTT comp-m4bzcgd31 wixui-rich-text\" data-testid=\"richTextElement\">\n<p class=\"font_8 wixui-rich-text__text\"><span class=\"wixui-rich-text__text\">Restore key anaerobic microbial genera for\u00a0</span><span class=\"wixui-rich-text__text\">enhanced carbon, nitrogen and sulfur cycling.</span></p>\n<p class=\"font_8 wixui-rich-text__text\"><strong><span class=\"wixui-rich-text__text\">Conditions &amp; Stabilizes</span></strong></p>\n<p class=\"font_8 wixui-rich-text__text\">Phototrophic diazotrophs are ecologically integral, and indeed well represented, in natural coral reef microbiomes. This group includes\u00a0<span class=\"wixui-rich-text__text\">purple nonsulfur bacteria (PNSB), purple sulfur bacteria (PSB) and green sulfur bacteria (GSB)</span>\u00a0which play critical roles in carbon, nitrogen and sulfur cycling. Many form symbiotic associations with corals. They even act as keystone species within microbial communities, promoting diverse and dynamic ecosystems overall.</p>\n<p class=\"font_8 wixui-rich-text__text\">Despite their ubiquitous presence on wild reefs, these beneficial bacteria are not often abundant in reef aquaria. PNS Deep Cycle\u2122 contains a functional consortium of anaerobes, including PNSB, PSB and GSB. Originating from a wild reef, the indigenous microorganisms in this unique product help restore the aquarium microbiome to a more naturally healthful state.</p>\n<p class=\"font_8 wixui-rich-text__text\"><strong><span class=\"wixui-rich-text__text\">DIRECTIONS</span></strong></p>\n<p class=\"font_8 wixui-rich-text__text\">Store at room temperature. Treats 400 gallons. Disperse 1.25 mL/gal broadly into an area of moderate flow; may also be injected or soaked into substrate or biomedia for maximal efficacy (scan QR code to review instructions for special applications); multiple doses can be safely applied and may increase likelihood of permanent colonization. For optimal results,\u00a0<span class=\"wixui-rich-text__text\">cut protein skimmer, UV sterilizer and ozone generator</span>\u00a0for one hour following each dose.</p>\n<p class=\"font_8 wixui-rich-text__text\"><strong><span class=\"wixui-rich-text__text\">CONTAINS</span></strong></p>\n<p class=\"font_8 wixui-rich-text__text\">Wildcrafted marine anaerobes featuring\u00a0<span class=\"wixui-rich-text__text\">Rhodovolum</span>\u00a0sp.,\u00a0<span class=\"wixui-rich-text__text\">Marichromatium purpuratum</span>\u00a0and\u00a0<span class=\"wixui-rich-text__text\">Prosthecochloris</span>\u00a0sp. in a proprietary growth medium. All contents formulated for aquarium use only;\u00a0<span class=\"wixui-rich-text__text\">not for human consumption!</span></p>\n</div>",
+      "published_at": "2026-05-19T17:21:31-07:00",
+      "created_at": "2023-08-14T13:24:27-07:00",
+      "updated_at": "2026-05-25T07:39:07-07:00",
+      "vendor": "Hydrospace",
+      "product_type": "",
+      "tags": [
+        "goods",
+        "PNS"
+      ],
+      "variants": [
+        {
+          "id": 46577842225455,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "PNS-DC",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "34.99",
+          "grams": 454,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 8808105935151,
+          "created_at": "2023-08-14T13:24:27-07:00",
+          "updated_at": "2026-05-25T07:39:07-07:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 49301518811439,
+          "created_at": "2025-03-27T12:17:40-07:00",
+          "position": 1,
+          "updated_at": "2025-03-27T12:17:41-07:00",
+          "product_id": 8808105935151,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/2172/7975/files/PNS-DeepCycle.png?v=1743103061",
+          "width": 1024,
+          "height": 1024
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 12582740819,
+      "title": "Activated Carbon 1000ml",
+      "handle": "activated-carbon-1000ml",
+      "body_html": "<h3><span>Description</span></h3>\n<p><span>Activated carbon for removal of toxins and other unwanted molecules. \u00a0</span></p>\n<p><span>TRITON Treatments have been developed to fix specific problems commonly faced by aquarists. Unlike many products on the market TRITON Treatments are quality controlled and free from contamination by unwanted / unknown elements.</span></p>\n<p><br></p>\n<p><span><a href=\"https://www.triton-reagents.de/fileadmin/user_upload/support-uploads/Manuals/Manual_Activated_Carbon_EN.pdf\"><strong>https://www.triton-reagents.de/fileadmin/user_upload/support-uploads/Manuals/Manual_Activated_Carbon_EN.pdf</strong></a></span></p>",
+      "published_at": "2026-03-04T13:46:52-08:00",
+      "created_at": "2017-10-18T14:34:25-07:00",
+      "updated_at": "2026-05-25T07:39:07-07:00",
+      "vendor": "Triton Labs",
+      "product_type": "Drygoods",
+      "tags": [
+        "25-50",
+        "goods",
+        "triton"
+      ],
+      "variants": [
+        {
+          "id": 53015834451,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "TCARBON-1L",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "24.65",
+          "grams": 114,
+          "compare_at_price": "29.00",
+          "position": 1,
+          "product_id": 12582740819,
+          "created_at": "2017-10-18T14:34:25-07:00",
+          "updated_at": "2026-05-25T07:39:07-07:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 46036396507439,
+          "created_at": "2024-06-07T14:33:34-07:00",
+          "position": 1,
+          "updated_at": "2024-06-07T14:33:35-07:00",
+          "product_id": 12582740819,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/2172/7975/files/activated_carbon_1000ml_front_edited.jpg?v=1717796015",
+          "width": 1620,
+          "height": 1620
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    }
+  ]
+}

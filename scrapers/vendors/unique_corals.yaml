@@ -1,0 +1,181 @@
+# Unique Corals scraper config (CTK-085 Session 3).
+#
+# Authoritative platform/method fields live on the vendors row (migration
+# 0011_add_unique_corals_vendor.sql, vendor_id=6). YAML carries scrape-tuning
+# per arch §2.3 — values that may change without a code edit (delay, page
+# size, max pages, hash anchor, originator prefix, category filter). DB row
+# wins on conflict.
+
+slug: unique-corals
+platform: shopify
+base_url: https://uniquecorals.com
+
+# Standard Shopify endpoint; pre-flight 2026-05-25 — HTTP 200, Content-Type
+# application/json; charset=utf-8; 524-product catalog (page 1 returns 250,
+# page 2 returns 250, page 3 returns 24). Pagination terminates on first
+# under-full page per parse_shopify.py page loop.
+#
+# Five-signal Shopify confirmation pre-flight (vendor-scan false-positive
+# precedent invariant per CTK-085 Session 1c AquaSD split to CTK-090):
+#   (1) /products.json HTTP 200 + application/json Content-Type
+#   (2) window.Shopify + Shopify.theme + Shopify.shop + Shopify.cdnHost
+#       + Shopify.shopJsCdnBaseUrl present in homepage HTML
+#   (3) cdn.shopify.com + shopifycloud CDN URL shape in homepage HTML; no
+#       BigCommerce / WooCommerce / custom-platform deviation signals
+#   (4) robots.txt explicit "Shopify storefront. Public product, collection,
+#       page, blog, policy, cart, and localized HTML is crawlable." preamble
+#       + extension-less Allow paths; UCP/MCP endpoint at /api/ucp/mcp +
+#       agents.md advertised (Shopify agent-aware storefront posture)
+#   (5) /products.json payload carries canonical top-level products array
+#       with 13-key first-product shape (body_html / created_at / handle /
+#       id / images / options / product_type / published_at / tags / title /
+#       updated_at / variants / vendor) matching PE+WWC+TSA+JF+Battlecorals
+#       empirical anchor
+#
+# Cookies confirm Shopify session backing: _shopify_y / _shopify_s /
+# _shopify_essential / _shopify_analytics / _shopify_marketing +
+# shopify-complexity-score-v2: 101 response header.
+products_path: /products.json
+
+# Page size at Shopify's max (250) — fewer round-trips for the 524-product
+# catalog. 3 pages cover steady-state (250 + 250 + 24); the parser short-
+# circuits on the first under-full page.
+page_size: 250
+
+# Inherits PE+WWC+TSA+JF+Battlecorals empirical request_delay_sec=2 lock.
+# 524 products / 250 per page = 3 pages × 2s = ~6s total scrape time, trivial
+# vs. 60-min workflow timeout. Hourly cadence at :29 puts the fire well
+# outside any top-of-hour GH Actions schedule degradation window (open-items.md
+# L53 off-minute discipline; 2026-05-12 incident anchored the rule). Bump to
+# 3-4s per arch §2.4 retry-policy outcome only if 429s appear in observation
+# window.
+request_delay_sec: 2
+
+# Belt-and-suspenders ceiling. UC's 524-product catalog at 250/page = 3 pages
+# today; 5 leaves room for catalog growth + drop-spike inventory without re-
+# tuning. Matches Battlecorals 5-cap inverse-load posture.
+max_pages: 5
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object.
+# Same hash_anchor as PE+WWC+TSA+JF+Battlecorals per parse_shopify.py shape
+# stability. F5 fold (sort-before-hash) prevents Shopify JSON key emission-
+# order changes from spuriously flipping the sentinel. Empirical anchor
+# (pre-flight 2026-05-25): 13 keys = body_html, created_at, handle, id,
+# images, options, product_type, published_at, tags, title, updated_at,
+# variants, vendor.
+hash_anchor: first_product_keys
+
+# D1 originator_prefix='uc' (medium confidence, 2026-05-25).
+#
+# UC catalog carries DUAL self-prefix shapes (distinct from all prior Phase
+# 1+2 vendors): 'Unique Corals X' full-word (80 / 524 = 15.3%) AND 'UC X'
+# abbreviation (49 / 524 = 9.3%). Combined self-prefix bearing rate ~24.6%;
+# bare-title (no caps prefix) 63.7%; cross-vendor ALL-CAPS prefix ~11.6%.
+#
+# Seed-list (.claude/research/named-coral-seed-list.md) attributes 21
+# canonical lineages to Unique Corals. ALL 21 seed-list entries use the
+# 'UC X' abbreviation shape (e.g., UC Strawberry Shortcake OG, UC Burnt
+# Orange OG Jawbreaker, UC Stranger Tort, UC Cookie Monster Acropora, UC
+# Pikachu, UC Aquaman, UC Fallen Phoenix). Matcher §3.4 stage 3 synthesizes
+# 'originator_prefix + " " + normalized_title' and looks up the synthesized
+# name in canonical_index. To hit seed-list canonical names, originator_prefix
+# MUST normalize to 'uc' (lowercased, matching seed-list canonical_name
+# normalization output).
+#
+# Convention divergence from Battlecorals: Battlecorals YAML uses
+# originator_prefix='battlecorals' (slug form) because seed-list uses
+# 'Battlecorals X' full-word shape there. UC YAML uses 'uc' (abbreviation
+# form) because seed-list uses 'UC X' shape. The principle is:
+# originator_prefix matches the seed-list canonical_name normalization
+# output, not the slug.
+#
+# Dual-shape limitation: 'Unique Corals X' titles (80 listings, 15.3%) do
+# NOT synthesize cleanly against seed-list 'UC X' canonicals via matcher
+# stage 3 alone. Stage 2 vendor-prefix stripping would need to handle
+# 'Unique Corals' as a vendor noun-phrase to bridge — out-of-scope for
+# CTK-085 scraper-side config. Flagged for /lead-architect awareness as
+# CTK-085 Session 3 Q-1 sibling to Battlecorals Session 2 Q-1 (stage 3
+# primary-path documentation ask): UC raises the multi-prefix matcher
+# question explicitly.
+#
+# Cross-vendor propagation: UC catalog carries cross-vendor lineages with
+# non-UC prefixes — ARID (10), WWC (8), JF (6), TSA (6), ECM (5), PC (2),
+# PNS (2), REAR (2), DI (2), CPC (2) prefixes observed. These match at
+# matcher stages 1-2 directly without synthesis IF the seed-list has the
+# right cross-vendor canonical entries; no special YAML config needed —
+# cross-vendor coverage is a seed-list-side concern, not scraper-side.
+originator_prefix: uc
+
+# Category filter: structural-class granularity (CORAL bucket + Drygoods
+# variants + niche buckets), distinct from Battlecorals taxonomic-genus
+# (~70 entries) and JF bucket shape (SPS / LPS / WYSIWYG / Frag / etc.).
+#
+# Empirical 2026-05-25 full-catalog walk (524 products, 13 distinct
+# product_types):
+#   - 'CORAL'     239 items (definitive coral; primary allowlist target)
+#   - 'Drygoods'  114 items (equipment; reject)
+#   - 'DRYGOODS'   59 items (case-variant of Drygoods; reject)
+#   - ''           51 items (empty bucket — MIXED: ~38 coral [UC signature
+#                  WYSIWYG, bare-name WYSIWYG, cross-vendor TSA/WWC frags]
+#                  + ~13 equipment leaks [PNS supplements, Ecotech Radion,
+#                  AQUARIUM PIXEL LED bundles]; ~25% contamination rate.
+#                  Battlecorals' Q-8 (a) precedent applies, but
+#                  contamination ratio is materially higher than Battlecorals'
+#                  <1% — empty-PT bucket inclusion REQUIRES tag_denylist
+#                  belt-and-suspenders to suppress equipment leaks)
+#   - 'Panta Rhei' 42 items (equipment brand-name PT; reject)
+#   - 'shipping'    6 items (shipping items; reject)
+#   - 'Coral'       3 items (case-variant of CORAL; allowlist as separate
+#                   entry per CTK-037 exact-string discipline)
+#   - 'drygoods'    2 items (case-variant lowercase; reject)
+#   - 'FLASHSALE'   2 items (rotating-promotional bucket: 1 coral
+#                   ["Beginner's Star Polyp"] + 1 obvious miss ["Bed sheet"].
+#                   Per feedback_rotating_bucket_allowlist.md discipline —
+#                   sales-bucket entries require multi-day sampling OR
+#                   mandatory tag_denylist belt-and-suspenders. At 2 items
+#                   the bucket has insufficient sample depth + structural
+#                   rotating-promotional shape; EXCLUDED from allowlist.
+#                   Net loss ~1 coral row; flagged as Q-2 to re-evaluate
+#                   on multi-day observation post-launch.)
+#   - 'live rock'   2 items (reef substrate, NOT coral per CTK-037 scope;
+#                   reject)
+#   - 'CLEANUP'     2 items (Chaetomorpha macro algae + Coral Rx treatment;
+#                   neither coral; reject)
+#   - 'Merch'       1 item  (merchandise; reject)
+#   - 'Gift'        1 item  (gift card; reject)
+#
+# Empty-bucket disposition (51 items, 9.7% of catalog) per CTK-027 Session 5
+# Q-8 path (a) precedent EXTENDED: keep "" in allowlist + REQUIRE tag_denylist
+# belt-and-suspenders. Battlecorals applied Q-8 (a) without denylist because
+# the empty-bucket was <1% non-coral. UC's empty-bucket is ~25% non-coral
+# (PNS supplements + Ecotech Radion LED + AQUARIUM PIXEL LED + similar) —
+# denylist closes the gap. The kept ~38 corals (UC signature WYSIWYG frags
+# + bare-name WYSIWYG + cross-vendor TSA/WWC pieces) materially expand UC
+# launch coverage; losing them entirely (allowlist-only) would gut UC's
+# signature-piece visibility.
+#
+# Rotating-bucket discipline per feedback_rotating_bucket_allowlist.md:
+# allowlist entries classified as either (a) structural-taxonomy stable —
+# CORAL, Coral, "" — locked immediately at first observation; or (b) sales-
+# bucket / rotating — FLASHSALE — excluded pending multi-day sample.
+# Q-2 surfaces this for /lead-backend close-monitor pickup.
+#
+# Tag denylist (10 entries, alphabetized per PE CTK-041 convention): catches
+# equipment / supplement / non-coral leaks in empty-PT bucket. Each tag was
+# verified at 2026-05-25 walk against actual catalog items.
+category_filter:
+  product_type_allowlist:
+    - ""                          # 51 items mixed; ~38 coral [UC signature WYSIWYG + bare-name WYSIWYG + cross-vendor TSA/WWC] + ~13 equipment leaks covered by tag_denylist (CTK-037 Session 5 Q-8 path (a) + Battlecorals D3 precedent extended with tag_denylist) (2026-05-25)
+    - CORAL                       # 239 items; primary coral bucket; UC signature pieces + cross-vendor distributions (2026-05-25)
+    - Coral                       # 3 items; case-variant of CORAL per CTK-037 exact-string convention (2026-05-25)
+  tag_denylist:
+    - Dalua                       # 38 items; LED/equipment brand catalog-wide; appears on AQUARIUM PIXEL LED BUNDLE (CTK-085 Session 3 2026-05-25)
+    - goods                       # 146 items catalog-wide; universal dry-goods signal; appears on PNS supplements + Dalua/illumagic equipment in empty-PT bucket (CTK-085 Session 3 2026-05-25)
+    - illumagic                   # LED brand; co-tagged with Dalua on AQUARIUM PIXEL LED equipment (CTK-085 Session 3 2026-05-25)
+    - maintenance                 # 76 items; supplements / dosing / additive equipment; never observed on coral listings at 2026-05-25 walk (CTK-085 Session 3 2026-05-25)
+    - openbox                     # used / refurbished equipment marker (e.g., Ecotech Marine Radion XR30 G5 LED Light Fixture - Used) (CTK-085 Session 3 2026-05-25)
+    - Other DG                    # 34 items; explicit dry-goods miscellaneous (CTK-085 Session 3 2026-05-25)
+    - Panta Rhei                  # 50 items; equipment brand (pumps, surge devices); same as Panta Rhei PT for some, tagged on cross-PT equipment for others (CTK-085 Session 3 2026-05-25)
+    - PNS                         # 2 items; supplements brand (Deep Cycle / ProBio Live Bacteria) co-tagged with 'goods' (CTK-085 Session 3 2026-05-25)
+    - shipping                    # tagged on shipping items + Australian Branching Live Rock equipment-adjacent (CTK-085 Session 3 2026-05-25)
+    - used                        # used / refurbished equipment marker (e.g., Ecotech Marine Radion XR30 G5 LED) (CTK-085 Session 3 2026-05-25)
