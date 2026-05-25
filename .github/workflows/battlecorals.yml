@@ -1,0 +1,94 @@
+name: battlecorals
+
+on:
+  schedule:
+    # CTK-085 cadence lock per plan §Scope L54-55 + arch §2.7 decision #15
+    # + .claude/open-items.md L53 off-minute discipline.
+    #
+    # 23 8 * * * UTC = 3:23am EST / 4:23am EDT — daily 03-05 ET window.
+    # 23-minute-past-the-hour off-minute lock per L53 top-of-hour degradation
+    # discipline (2026-05-12 incident).
+    #
+    # Battlecorals is daily-cadence ('daily' cadence_label per vendor_id=5
+    # vendors row). No drop-day-aware second-workflow path (Battlecorals
+    # doesn't have an announced-drop-day pattern at vendor-scan §4 — SPS
+    # listings flow continuously, not in event-drop bursts).
+    #
+    # Runner-contention note: AquaSD (split to CTK-090, future) and any
+    # other future daily-cadence vendor firing in the 8:00-8:59 UTC band
+    # would share the runner pool. Spread to 23 9 * * * UTC available at
+    # /lead-backend judgment call if contention surfaces; non-blocking for
+    # CTK-085 Session 2 ship.
+    - cron: '23 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Concurrency: queue (don't cancel) per JF cascade-repair shape (CTK-027
+# 2026-05-08 disposition). Phase 2 vendors ship with explicit concurrency
+# blocks from day one; latent PE/WWC/TSA gap stays parked at open-items.md
+# L51 as separate sub-CTK hygiene per CTK-085 plan §Out of scope.
+#
+# (a) cancel-in-progress: false rationale — operator-trigger landing during
+#     in-flight cron fire queues behind the running fire (≤60-min latency
+#     given timeout-minutes: 60). Cancelling would risk truncating a running
+#     Phase B mirror loop mid-write — vendor_listings / price_history / R2
+#     image-mirror double-write avoidance. Block also resolves GH-Actions-
+#     default silent-drop behavior on workflow_dispatch overlap (open-items.md
+#     L50 schedule-suppression) — explicit group converts silent-drop into
+#     queue-with-pending-replacement; queue depth never exceeds 1 at
+#     Battlecorals' ≤5-min combined Phase-A + Phase-B run length on the
+#     499-product catalog.
+concurrency:
+  group: battlecorals-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # 60-min cap inherits PE+WWC+TSA+JF Phase 1 carve-out. Battlecorals'
+    # 499-product catalog at ~500-600ms per mirror = ~5 min Phase B max on
+    # first run; steady-state daily fires (handful of new + Phase B catch-
+    # up for prior NULL image_url rows) finish in under 2 min. Substantial
+    # headroom inside the 60-min ceiling; first-run image mirror absorbed
+    # cleanly inside a single fire (no 2-fire span needed at Battlecorals
+    # scale). 60 absorbs first-run + future catalog growth.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Run Battlecorals scraper
+        id: scrape
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: python -m scrapers.common.run battlecorals
+
+      - name: Cleanup stale running rows
+        if: always()
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python -m scrapers.common.run battlecorals --cleanup
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"battlecorals scraper failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"

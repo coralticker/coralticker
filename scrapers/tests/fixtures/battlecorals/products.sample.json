@@ -1,0 +1,1073 @@
+{
+  "products": [
+    {
+      "id": 440723793,
+      "title": "Hyperberry",
+      "handle": "hyperberry",
+      "body_html": "<div class=\"qsc-html-content\">\n<p>Perhaps the sweetest shortcake variant I  have ever seen.  Makes other cakes seem just ok by comparison.</p>\n<p> </p>\n<p>1st two pics are T5 grown</p>\n<p> </p>\n<p>2nd pic is halide grown</p>\n</div>",
+      "published_at": "2015-03-28T12:19:00-05:00",
+      "created_at": "2015-03-28T12:19:38-05:00",
+      "updated_at": "2026-05-25T07:48:55-05:00",
+      "vendor": "Battlecorals",
+      "product_type": "Acropora Microclados",
+      "tags": [],
+      "variants": [
+        {
+          "id": 1157542409,
+          "title": "1\" / Halide",
+          "option1": "1\"",
+          "option2": "Halide",
+          "option3": null,
+          "sku": "61345",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "159.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 440723793,
+          "created_at": "2015-03-28T12:19:38-05:00",
+          "updated_at": "2026-05-25T07:48:55-05:00"
+        },
+        {
+          "id": 1207781777,
+          "title": "1\" / T5",
+          "option1": "1\"",
+          "option2": "T5",
+          "option3": null,
+          "sku": "61346",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "159.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 2,
+          "product_id": 440723793,
+          "created_at": "2015-04-18T14:16:20-05:00",
+          "updated_at": "2026-05-25T07:48:55-05:00"
+        },
+        {
+          "id": 1207781785,
+          "title": "1\" / LED",
+          "option1": "1\"",
+          "option2": "LED",
+          "option3": null,
+          "sku": "61347",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "159.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 3,
+          "product_id": 440723793,
+          "created_at": "2015-04-18T14:16:20-05:00",
+          "updated_at": "2026-05-25T07:48:55-05:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 1239402921,
+          "created_at": "2015-04-18T14:15:28-05:00",
+          "position": 1,
+          "updated_at": "2015-04-18T14:15:32-05:00",
+          "product_id": 440723793,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/products/IMG_0866.jpg?v=1429384532",
+          "width": 1000,
+          "height": 1000
+        },
+        {
+          "id": 1239402893,
+          "created_at": "2015-04-18T14:15:27-05:00",
+          "position": 2,
+          "updated_at": "2015-04-18T14:15:32-05:00",
+          "product_id": 440723793,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/products/IMG_0866-2.jpg?v=1429384532",
+          "width": 1000,
+          "height": 1000
+        },
+        {
+          "id": 1250968481,
+          "created_at": "2015-04-23T19:05:21-05:00",
+          "position": 3,
+          "updated_at": "2015-04-23T19:05:21-05:00",
+          "product_id": 440723793,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/products/IMG_2492.jpg?v=1429833921",
+          "width": 1000,
+          "height": 1000
+        }
+      ],
+      "options": [
+        {
+          "name": "Size",
+          "position": 1,
+          "values": [
+            "1\""
+          ]
+        },
+        {
+          "name": "Grown under",
+          "position": 2,
+          "values": [
+            "Halide",
+            "T5",
+            "LED"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7457304281190,
+      "title": "TSA Bill Murray",
+      "handle": "tsa-bill-murray",
+      "body_html": "<p>Definitely one of the nicer looking  and faster growing orange tables out there.  </p>",
+      "published_at": "2024-10-29T08:05:42-05:00",
+      "created_at": "2024-10-29T08:03:22-05:00",
+      "updated_at": "2026-05-25T07:48:54-05:00",
+      "vendor": "Battlecorals",
+      "product_type": "Acropora sp.",
+      "tags": [],
+      "variants": [
+        {
+          "id": 42217210347622,
+          "title": "1\" / Halide",
+          "option1": "1\"",
+          "option2": "Halide",
+          "option3": null,
+          "sku": "DD101918",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "99.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 7457304281190,
+          "created_at": "2024-10-29T08:03:22-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 42217210380390,
+          "title": "1\" / T5",
+          "option1": "1\"",
+          "option2": "T5",
+          "option3": null,
+          "sku": "DD101919",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "99.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 2,
+          "product_id": 7457304281190,
+          "created_at": "2024-10-29T08:03:22-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 42217210413158,
+          "title": "1\" / LED",
+          "option1": "1\"",
+          "option2": "LED",
+          "option3": null,
+          "sku": "DD101920",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "99.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 3,
+          "product_id": 7457304281190,
+          "created_at": "2024-10-29T08:03:22-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 31805327376486,
+          "created_at": "2024-10-29T08:04:39-05:00",
+          "position": 1,
+          "updated_at": "2024-10-29T08:04:41-05:00",
+          "product_id": 7457304281190,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/files/Untitled-336.jpg?v=1730207081",
+          "width": 2048,
+          "height": 2048
+        },
+        {
+          "id": 31805327409254,
+          "created_at": "2024-10-29T08:04:40-05:00",
+          "position": 2,
+          "updated_at": "2024-10-29T08:04:41-05:00",
+          "product_id": 7457304281190,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/files/Untitled-337.jpg?v=1730207081",
+          "width": 2048,
+          "height": 2048
+        }
+      ],
+      "options": [
+        {
+          "name": "Size",
+          "position": 1,
+          "values": [
+            "1\""
+          ]
+        },
+        {
+          "name": "Grown Under",
+          "position": 2,
+          "values": [
+            "Halide",
+            "T5",
+            "LED"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 440723345,
+      "title": "ORA Pearlberry",
+      "handle": "pearlberry",
+      "body_html": "<div class=\"qsc-html-content\">\n<p>Nice, nice classic ORA acro.</p>\n</div>",
+      "published_at": "2023-05-04T09:23:38-05:00",
+      "created_at": "2015-03-28T12:19:27-05:00",
+      "updated_at": "2026-05-25T07:48:54-05:00",
+      "vendor": "Battlecorals",
+      "product_type": "Acropora",
+      "tags": [],
+      "variants": [
+        {
+          "id": 40079701606502,
+          "title": "1\" / halide",
+          "option1": "1\"",
+          "option2": "halide",
+          "option3": null,
+          "sku": "4644",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "129.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 440723345,
+          "created_at": "2023-03-18T16:22:03-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 40079701639270,
+          "title": "1\" / LED",
+          "option1": "1\"",
+          "option2": "LED",
+          "option3": null,
+          "sku": "4645",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": false,
+          "price": "129.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 2,
+          "product_id": 440723345,
+          "created_at": "2023-03-18T16:22:03-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 40079701672038,
+          "title": "1\" / T5",
+          "option1": "1\"",
+          "option2": "T5",
+          "option3": null,
+          "sku": "4646",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "129.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 3,
+          "product_id": 440723345,
+          "created_at": "2023-03-18T16:22:03-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 29609546809446,
+          "created_at": "2023-05-04T08:31:53-05:00",
+          "position": 1,
+          "updated_at": "2023-05-04T08:32:49-05:00",
+          "product_id": 440723345,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/files/IMG_1973-2.jpg?v=1683207169",
+          "width": 1000,
+          "height": 1000
+        },
+        {
+          "id": 29609546842214,
+          "created_at": "2023-05-04T08:31:53-05:00",
+          "position": 2,
+          "updated_at": "2023-05-04T08:32:49-05:00",
+          "product_id": 440723345,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/files/IMG_1973-3.jpg?v=1683207169",
+          "width": 1000,
+          "height": 1000
+        },
+        {
+          "id": 29609546776678,
+          "created_at": "2023-05-04T08:31:53-05:00",
+          "position": 3,
+          "updated_at": "2023-05-04T08:31:54-05:00",
+          "product_id": 440723345,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/files/IMG_1973.jpg?v=1683207114",
+          "width": 1000,
+          "height": 1000
+        }
+      ],
+      "options": [
+        {
+          "name": "Size",
+          "position": 1,
+          "values": [
+            "1\""
+          ]
+        },
+        {
+          "name": "Grown under",
+          "position": 2,
+          "values": [
+            "halide",
+            "LED",
+            "T5"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 6877868818534,
+      "title": "BC All stars grow out  2025!!!",
+      "handle": "bc-all-stars-grow-out-2025",
+      "body_html": "<p><strong>This product is for the all stars!   You guys earned your spot in this contest with your markable  accomplishments!</strong></p>\n<p><strong>Good news is this frag is on me minus  actual shipping, which will total 55.00 once you added the frag to your cart.</strong></p>\n<p><strong style=\"font-size: 0.875rem;\">I added some Pack options for you guys if you want to add anything. </strong><br></p>\n<p><strong>You know this drill by now. I will contact you personally to set up a ship date and go over any selection specifics if you upgraded. </strong></p>\n<p><strong></strong> </p>",
+      "published_at": "2025-01-23T08:32:33-06:00",
+      "created_at": "2023-09-28T08:50:47-05:00",
+      "updated_at": "2026-05-25T07:48:54-05:00",
+      "vendor": "Battlecorals",
+      "product_type": "live coral",
+      "tags": [],
+      "variants": [
+        {
+          "id": 40240132259942,
+          "title": "Contest Frag Only",
+          "option1": "Contest Frag Only",
+          "option2": null,
+          "option3": null,
+          "sku": "",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "10.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 6877868818534,
+          "created_at": "2023-09-28T08:50:47-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 40240132325478,
+          "title": "4 piece Upgrade",
+          "option1": "4 piece Upgrade",
+          "option2": null,
+          "option3": null,
+          "sku": null,
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "199.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 2,
+          "product_id": 6877868818534,
+          "created_at": "2023-09-28T08:50:47-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 40240132358246,
+          "title": "6 piece Upgrade",
+          "option1": "6 piece Upgrade",
+          "option2": null,
+          "option3": null,
+          "sku": null,
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "299.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 3,
+          "product_id": 6877868818534,
+          "created_at": "2023-09-28T08:50:47-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 40240132391014,
+          "title": "8 piece Upgrade",
+          "option1": "8 piece Upgrade",
+          "option2": null,
+          "option3": null,
+          "sku": null,
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "399.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 4,
+          "product_id": 6877868818534,
+          "created_at": "2023-09-28T08:50:47-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 40240132423782,
+          "title": "10 piece Upgrade",
+          "option1": "10 piece Upgrade",
+          "option2": null,
+          "option3": null,
+          "sku": null,
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "455.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 5,
+          "product_id": 6877868818534,
+          "created_at": "2023-09-28T08:50:47-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 32243372851302,
+          "created_at": "2025-01-27T08:15:21-06:00",
+          "position": 1,
+          "updated_at": "2025-01-27T08:15:27-06:00",
+          "product_id": 6877868818534,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/files/2024-8.png?v=1737987327",
+          "width": 1080,
+          "height": 1080
+        },
+        {
+          "id": 32233607463014,
+          "created_at": "2025-01-23T07:41:08-06:00",
+          "position": 2,
+          "updated_at": "2025-01-27T08:15:27-06:00",
+          "product_id": 6877868818534,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/files/Untitled-319.jpg?v=1737987327",
+          "width": 2048,
+          "height": 2048
+        },
+        {
+          "id": 32233607987302,
+          "created_at": "2025-01-23T07:41:24-06:00",
+          "position": 3,
+          "updated_at": "2025-01-27T08:15:27-06:00",
+          "product_id": 6877868818534,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/files/Untitled-317.jpg?v=1737987327",
+          "width": 2048,
+          "height": 2048
+        }
+      ],
+      "options": [
+        {
+          "name": "Pack Upgrade",
+          "position": 1,
+          "values": [
+            "Contest Frag Only",
+            "4 piece Upgrade",
+            "6 piece Upgrade",
+            "8 piece Upgrade",
+            "10 piece Upgrade"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7657121022054,
+      "title": "Genie of Death",
+      "handle": "genie-of-death",
+      "body_html": "<p>Here in this<em> Vase...</em></p>",
+      "published_at": "2025-06-01T10:58:07-05:00",
+      "created_at": "2025-06-01T10:55:19-05:00",
+      "updated_at": "2026-05-25T07:48:54-05:00",
+      "vendor": "Battlecorals",
+      "product_type": "Acropora Tenuis",
+      "tags": [],
+      "variants": [
+        {
+          "id": 42798179680358,
+          "title": "1\" / Halide",
+          "option1": "1\"",
+          "option2": "Halide",
+          "option3": null,
+          "sku": "DD101918",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": false,
+          "price": "199.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 7657121022054,
+          "created_at": "2025-06-01T10:55:19-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 42798179713126,
+          "title": "1\" / T5",
+          "option1": "1\"",
+          "option2": "T5",
+          "option3": null,
+          "sku": "DD101919",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": false,
+          "price": "199.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 2,
+          "product_id": 7657121022054,
+          "created_at": "2025-06-01T10:55:19-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 42798179745894,
+          "title": "1\" / LED",
+          "option1": "1\"",
+          "option2": "LED",
+          "option3": null,
+          "sku": "DD101920",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": false,
+          "price": "199.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 3,
+          "product_id": 7657121022054,
+          "created_at": "2025-06-01T10:55:19-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 33262179450982,
+          "created_at": "2025-06-01T11:40:12-05:00",
+          "position": 1,
+          "updated_at": "2025-06-01T11:40:33-05:00",
+          "product_id": 7657121022054,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/files/Untitled-425.jpg?v=1748796033",
+          "width": 1446,
+          "height": 1446
+        },
+        {
+          "id": 33262179483750,
+          "created_at": "2025-06-01T11:40:12-05:00",
+          "position": 2,
+          "updated_at": "2025-06-01T11:40:33-05:00",
+          "product_id": 7657121022054,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/files/Untitled-424.jpg?v=1748796033",
+          "width": 2091,
+          "height": 2091
+        },
+        {
+          "id": 33262179516518,
+          "created_at": "2025-06-01T11:40:12-05:00",
+          "position": 3,
+          "updated_at": "2025-06-01T11:40:33-05:00",
+          "product_id": 7657121022054,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/files/Untitled-423.jpg?v=1748796033",
+          "width": 3246,
+          "height": 3246
+        }
+      ],
+      "options": [
+        {
+          "name": "Size",
+          "position": 1,
+          "values": [
+            "1\""
+          ]
+        },
+        {
+          "name": "Grown Under",
+          "position": 2,
+          "values": [
+            "Halide",
+            "T5",
+            "LED"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 6694073368678,
+      "title": "2000.00 Battlebox Ships free",
+      "handle": "2000-00-battlebox-ships-free",
+      "body_html": "<p data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">Choose from 15 to 30 pieces. As you may imagine, the quality of frags will increase as quantity lowers. Please don't hesitate to let me know if you have any specific requests in color, structure, or species either. I am more than happy to†tailor the pack to your interests the very best I can.</span></p>\n<p data-mce-fragment=\"1\"><span data-mce-fragment=\"1\"><br></span></p>\n<p data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">I will contact you after the order is placed to go over any specifics you may be interested</span></p>",
+      "published_at": "2022-02-10T07:43:46-06:00",
+      "created_at": "2022-02-10T07:43:43-06:00",
+      "updated_at": "2026-05-25T07:48:54-05:00",
+      "vendor": "Battlecorals",
+      "product_type": "",
+      "tags": [],
+      "variants": [
+        {
+          "id": 39553807614054,
+          "title": "15 Piece / Yes please",
+          "option1": "15 Piece",
+          "option2": "Yes please",
+          "option3": null,
+          "sku": "",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "2000.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 6694073368678,
+          "created_at": "2022-02-10T07:43:43-06:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 39553807646822,
+          "title": "15 Piece / Nah don't Care",
+          "option1": "15 Piece",
+          "option2": "Nah don't Care",
+          "option3": null,
+          "sku": "",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "2000.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 2,
+          "product_id": 6694073368678,
+          "created_at": "2022-02-10T07:43:43-06:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 39553807679590,
+          "title": "20 piece / Yes please",
+          "option1": "20 piece",
+          "option2": "Yes please",
+          "option3": null,
+          "sku": "",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": false,
+          "price": "2000.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 3,
+          "product_id": 6694073368678,
+          "created_at": "2022-02-10T07:43:43-06:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 39553807712358,
+          "title": "20 piece / Nah don't Care",
+          "option1": "20 piece",
+          "option2": "Nah don't Care",
+          "option3": null,
+          "sku": "",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "2000.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 4,
+          "product_id": 6694073368678,
+          "created_at": "2022-02-10T07:43:43-06:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 39553807745126,
+          "title": "25 piece / Yes please",
+          "option1": "25 piece",
+          "option2": "Yes please",
+          "option3": null,
+          "sku": "",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": false,
+          "price": "2000.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 5,
+          "product_id": 6694073368678,
+          "created_at": "2022-02-10T07:43:43-06:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 39553807777894,
+          "title": "25 piece / Nah don't Care",
+          "option1": "25 piece",
+          "option2": "Nah don't Care",
+          "option3": null,
+          "sku": "",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": false,
+          "price": "2000.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 6,
+          "product_id": 6694073368678,
+          "created_at": "2022-02-10T07:43:43-06:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 39553807810662,
+          "title": "30 piece / Yes please",
+          "option1": "30 piece",
+          "option2": "Yes please",
+          "option3": null,
+          "sku": "",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": false,
+          "price": "2000.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 7,
+          "product_id": 6694073368678,
+          "created_at": "2022-02-10T07:43:43-06:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 39553807843430,
+          "title": "30 piece / Nah don't Care",
+          "option1": "30 piece",
+          "option2": "Nah don't Care",
+          "option3": null,
+          "sku": "",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": false,
+          "price": "2000.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 8,
+          "product_id": 6694073368678,
+          "created_at": "2022-02-10T07:43:43-06:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 28709722226790,
+          "created_at": "2022-02-10T07:43:43-06:00",
+          "position": 1,
+          "updated_at": "2022-02-10T07:43:47-06:00",
+          "product_id": 6694073368678,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/products/2000.00.png?v=1644500627",
+          "width": 1000,
+          "height": 861
+        }
+      ],
+      "options": [
+        {
+          "name": "Size",
+          "position": 1,
+          "values": [
+            "15 Piece",
+            "20 piece",
+            "25 piece",
+            "30 piece"
+          ]
+        },
+        {
+          "name": "Names",
+          "position": 2,
+          "values": [
+            "Yes please",
+            "Nah don't Care"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7318525870182,
+      "title": "Love SKY",
+      "handle": "love-sky",
+      "body_html": "<p>Say what you will, I still love Blue acros!  </p>\n<!---->",
+      "published_at": "2024-06-15T10:03:25-05:00",
+      "created_at": "2024-06-15T10:02:17-05:00",
+      "updated_at": "2026-05-25T07:48:54-05:00",
+      "vendor": "Battlecorals",
+      "product_type": "Acropora sp",
+      "tags": [],
+      "variants": [
+        {
+          "id": 41667735486566,
+          "title": "1\" / Halide",
+          "option1": "1\"",
+          "option2": "Halide",
+          "option3": null,
+          "sku": "DD101918",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "159.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 7318525870182,
+          "created_at": "2024-06-15T10:02:17-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 41667735519334,
+          "title": "1\" / T5",
+          "option1": "1\"",
+          "option2": "T5",
+          "option3": null,
+          "sku": "DD101919",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "159.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 2,
+          "product_id": 7318525870182,
+          "created_at": "2024-06-15T10:02:17-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 41667735552102,
+          "title": "1\" / LED",
+          "option1": "1\"",
+          "option2": "LED",
+          "option3": null,
+          "sku": "DD101920",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "159.00",
+          "grams": 45,
+          "compare_at_price": null,
+          "position": 3,
+          "product_id": 7318525870182,
+          "created_at": "2024-06-15T10:02:17-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 30907932180582,
+          "created_at": "2024-06-15T17:07:27-05:00",
+          "position": 1,
+          "updated_at": "2024-06-15T17:09:38-05:00",
+          "product_id": 7318525870182,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/files/Untitled-1512.jpg?v=1718489378",
+          "width": 1024,
+          "height": 1024
+        },
+        {
+          "id": 30907931852902,
+          "created_at": "2024-06-15T17:07:20-05:00",
+          "position": 2,
+          "updated_at": "2024-06-15T17:09:38-05:00",
+          "product_id": 7318525870182,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/files/Untitled-1482.jpg?v=1718489378",
+          "width": 1024,
+          "height": 1024
+        }
+      ],
+      "options": [
+        {
+          "name": "Size",
+          "position": 1,
+          "values": [
+            "1\""
+          ]
+        },
+        {
+          "name": "Grown Under",
+          "position": 2,
+          "values": [
+            "Halide",
+            "T5",
+            "LED"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 6778939113574,
+      "title": "BC Tee Shirt",
+      "handle": "bc-tee-shirt",
+      "body_html": "Custom Branded BC tee shirts",
+      "published_at": "2022-08-22T13:55:53-05:00",
+      "created_at": "2022-08-22T13:55:52-05:00",
+      "updated_at": "2026-05-25T07:48:54-05:00",
+      "vendor": "Battlecorals",
+      "product_type": "",
+      "tags": [],
+      "variants": [
+        {
+          "id": 39784193622118,
+          "title": "Xlarge",
+          "option1": "Xlarge",
+          "option2": null,
+          "option3": null,
+          "sku": "BCtee",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "25.00",
+          "grams": 227,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 6778939113574,
+          "created_at": "2022-08-22T13:55:52-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 39784193654886,
+          "title": "Large",
+          "option1": "Large",
+          "option2": null,
+          "option3": null,
+          "sku": "BCtee-2",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "25.00",
+          "grams": 227,
+          "compare_at_price": null,
+          "position": 2,
+          "product_id": 6778939113574,
+          "created_at": "2022-08-22T13:55:52-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 39784193687654,
+          "title": "Medium",
+          "option1": "Medium",
+          "option2": null,
+          "option3": null,
+          "sku": "BCtee-3",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "25.00",
+          "grams": 227,
+          "compare_at_price": null,
+          "position": 3,
+          "product_id": 6778939113574,
+          "created_at": "2022-08-22T13:55:52-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        },
+        {
+          "id": 39784193720422,
+          "title": "Small",
+          "option1": "Small",
+          "option2": null,
+          "option3": null,
+          "sku": "BCtee-4",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "25.00",
+          "grams": 227,
+          "compare_at_price": null,
+          "position": 4,
+          "product_id": 6778939113574,
+          "created_at": "2022-08-22T13:55:52-05:00",
+          "updated_at": "2026-05-25T07:48:54-05:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 29110734651494,
+          "created_at": "2022-08-22T13:55:52-05:00",
+          "position": 1,
+          "updated_at": "2022-08-22T13:55:54-05:00",
+          "product_id": 6778939113574,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0756/8419/products/ScreenShot2022-08-21at3.31.34PM.png?v=1661194554",
+          "width": 656,
+          "height": 426
+        }
+      ],
+      "options": [
+        {
+          "name": "Style",
+          "position": 1,
+          "values": [
+            "Xlarge",
+            "Large",
+            "Medium",
+            "Small"
+          ]
+        }
+      ]
+    }
+  ]
+}

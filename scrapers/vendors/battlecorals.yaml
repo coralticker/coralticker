@@ -1,0 +1,207 @@
+# Battlecorals scraper config (CTK-085 Session 2).
+#
+# Authoritative platform/method fields live on the vendors row (migration
+# 0010_add_battlecorals_vendor.sql, vendor_id=5). YAML carries scrape-tuning
+# per arch §2.3 — values that may change without a code edit (delay, page
+# size, max pages, hash anchor, originator prefix, category filter). DB row
+# wins on conflict.
+
+slug: battlecorals
+platform: shopify
+base_url: https://battlecorals.com
+
+# Standard Shopify endpoint; pre-flight 2026-05-25 — HTTP 200, Content-Type
+# application/json; charset=utf-8; 499-product catalog (page 1 returns 250,
+# page 2 returns 249, page 3 empty). Pagination terminates on first under-
+# full page per parse_shopify.py page loop. Comparable to JF's 452-row floor
+# — second small-catalog vendor in Phase 1+2 inventory.
+#
+# Five-signal Shopify confirmation pre-flight (vendor-scan false-positive
+# precedent invariant per CTK-085 Session 1c AquaSD split to CTK-090):
+#   (1) /products.json HTTP 200 + application/json Content-Type
+#   (2) window.Shopify + Shopify.theme + cdn.shopify.com/shopifycloud CDN
+#       in homepage HTML
+#   (3) no platform-deviation headers (Cloudflare in front; standard Shopify)
+#   (4) robots.txt explicit "Shopify storefront." boilerplate comment +
+#       extension-less paths (no .php)
+#   (5) /products.json payload carries canonical top-level products array
+#       with id/title/handle/body_html/variants/images/tags/product_type/
+#       vendor/published_at/created_at/updated_at/options keys
+products_path: /products.json
+
+# Page size at Shopify's max (250) — fewer round-trips for the 499-product
+# catalog. 2 pages cover steady-state; the parser short-circuits on the
+# first under-full page.
+page_size: 250
+
+# Inherits PE+WWC+TSA+JF empirical request_delay_sec=2 lock. 499 products /
+# 250 per page = 2 pages × 2s = ~4s total scrape time, trivial vs. 60-min
+# workflow timeout. Daily cadence at 8:23 UTC (3:23am EST / 4:23am EDT) puts
+# the fire well outside any Battlecorals-side traffic peak. Bump to 3-4s per
+# arch §2.4 retry-policy outcome only if 429s appear in observation window.
+request_delay_sec: 2
+
+# Belt-and-suspenders ceiling. Battlecorals' 499-product catalog at 250/page
+# = 2 pages today; 5 leaves room for drop-day spikes without re-tuning.
+# Matches JF's 5-cap inverse-load posture for small-catalog vendors.
+max_pages: 5
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object.
+# Same hash_anchor as PE+WWC+TSA+JF per parse_shopify.py shape stability.
+# F5 fold (sort-before-hash) prevents Shopify JSON key emission-order
+# changes from spuriously flipping the sentinel. Empirical anchor (pre-
+# flight 2026-05-25): 13 keys = body_html, created_at, handle, id, images,
+# options, product_type, published_at, tags, title, updated_at, variants,
+# vendor (matches PE+WWC+TSA+JF).
+hash_anchor: first_product_keys
+
+# D1 originator_prefix='battlecorals' (medium confidence, 2026-05-25).
+#
+# Title-shape walk (full 499-product catalog 2026-05-25): ZERO Battlecorals
+# self-prefix bearing rate — no "BC " / "Battlecorals " prefix observed on
+# any product title. Distinct from JF (60% "JF " bearing), WWC (~30% "WWC "
+# bearing), TSA (~36% "TSA " bearing).
+#
+# However: Battlecorals IS a named-coral originator vendor per
+# .claude/research/named-coral-seed-list.md (6 canonical Battlecorals-
+# attributed lineages: Hyperberry, PC Rainbow, Joker 2.0, Tricolor Secale,
+# Honeybee Table, Poletti Yellow Tip, Shockwave — all canonical_name shape
+# "Battlecorals X"). Battlecorals' own catalog titles drop the "Battlecorals"
+# prefix entirely ("Hyperberry", "Joker 2.0") — exactly the case matcher
+# §3.4 stage 3 (canonical-implicit-prefix) was designed for: synthesize
+# "battlecorals " + normalized_title, then look up canonical_index for
+# stage 1/2 hits.
+#
+# Stage 3 is the load-bearing match path for Battlecorals (vs. JF where
+# stage 1/2 covers 60% directly + stage 3 covers the remaining 40%). Sets
+# originator_prefix to full word (lowercase, per matcher.match_listing
+# stage 3 f-string at scrapers/common/matcher.py:246) so synthesis matches
+# seed-load canonical_name normalization output.
+#
+# Cross-vendor propagation note: Battlecorals also sells cross-vendor
+# lineages with non-Battlecorals prefixes — AV (Aquaforest), RR (?), LRO,
+# TSA, WWC, ORA prefixes observed in 2026-05-25 walk (e.g., "TSA Bill
+# Murray", "WWC Purple Candle", "ORA Pearlberry", "AV Orange Crush"). These
+# match at stages 1-2 directly without synthesis IF the seed-list has the
+# right cross-vendor canonical entries; no special YAML config needed —
+# cross-vendor coverage is a seed-list-side concern, not scraper-side.
+#
+# Flag for /lead-architect awareness: Battlecorals is the first vendor where
+# originator_prefix is non-null + title-prefix-bearing rate is 0%. Distinct
+# from JF (#23 originator vendor + 60% bearing) and PE (no prefix + null
+# config). Aligns with arch §3.4 stage 3 design intent; no parse-layer
+# behavior change.
+originator_prefix: battlecorals
+
+# Category filter: taxonomic-granularity (genus + species) product_types,
+# distinct from JF's bucket shape (SPS/LPS/WYSIWYG/etc.).
+#
+# Empirical 2026-05-25 full-catalog walk (499 products):
+#   - 'Acropora sp.' (137) + 121 empty bucket dominate; ~70 distinct
+#     product_types total.
+#   - All non-empty product_types are coral-genus/species (Acropora-genus
+#     90%+, Montipora ~4%, Seriatopora/Stylophora/Psammacora/Spathulata
+#     singletons, 'live coral' / 'Unknown' singletons).
+#   - ZERO non-coral product_types observed (no fish/inverts/merch/equipment).
+#
+# Enumerate observed verbatim per CTK-037 precedent (exact-string match
+# in parse_shopify._should_keep). Verbose but explicit.
+#
+# Rotating-out watch: this taxonomic-granularity shape sets up the inverse
+# of CTK-037's rotating-IN bucket problem — a new species_type string
+# Battlecorals admin lands tomorrow (e.g., 'Acropora Gemmifera' not in the
+# 2026-05-25 walk) silently drops from the catalog. Mitigation: scraper_runs.
+# listings_seen count drift watch at /lead-backend per-vendor close-monitor.
+# A real category-count miss surfaces as a 5-15% catalog count drop in the
+# next firing; allowlist amendment is the recovery path. Documented per
+# feedback_rotating_bucket_allowlist.md sibling-shape (rotating-OUT case).
+#
+# Empty-bucket disposition (121 items, 24% of catalog) per CTK-027 Session 5
+# Q-8 path (a) precedent: keep "" in allowlist. Page 1+2 sample shows mostly
+# coral content (Battlebox grab-bags like '1000.00 Battlebox Ships free' +
+# named house lineages 'Blue Cyclobs', 'Genie of Death', 'Nexus Burst' +
+# grow-out contest entries 'Copps Calacali Grow out 2025!'). One non-coral
+# leak observed (Team Mermaid Bubble Tip anemone); frontend has_image filter
+# is downstream gate. Net recovery > non-coral leak.
+#
+# Tag denylist: empty per JF precedent. Top tags ('acropora' 54, 'battlecorals'
+# 53, 'last-image-as-thumb' 9, 'blue light special' 5) carry no rotating-
+# bucket signal — 'blue light special' verified 100% Acropora Tenuis coral
+# at 2026-05-25 walk. Sales-bucket discipline per feedback_rotating_bucket_
+# allowlist.md: if 'blue light special' rotates to non-coral content, surface
+# at vendor close-monitor and amend.
+category_filter:
+  product_type_allowlist:
+    - ""                          # 121 items; mostly Battlebox grab-bags + house lineages + grow-out entries; ~1 non-coral leak (BTA anemone) excluded by frontend has_image filter; per CTK-027 Session 5 Q-8 path (a) (2026-05-25)
+    - Acropora                    # 11 items (2026-05-25)
+    - Acropora Abrolhosensis      # 1 item (2026-05-25)
+    - Acropora Anthocercis        # 3 items (2026-05-25)
+    - Acropora Austera            # 6 items (2026-05-25)
+    - Acropora Caraliniana        # 2 items (2026-05-25)
+    - Acropora Cardus             # 2 items (2026-05-25)
+    - Acropora Clathratta         # 2 items (2026-05-25)
+    - Acropora donei              # 1 item (2026-05-25)
+    - Acropora Echinatta          # 1 item (2026-05-25)
+    - Acropora efflorescens       # 3 items (2026-05-25)
+    - Acropora Exquisita          # 2 items (2026-05-25)
+    - Acropora Florida            # 1 item (2026-05-25)
+    - Acropora Formosa            # 1 item (2026-05-25)
+    - Acropora Granulosa          # 6 items (2026-05-25)
+    - Acropora hoeksemai          # 1 item (2026-05-25)
+    - Acropora Horrida            # 1 item (2026-05-25)
+    - Acropora Humilis            # 4 items (2026-05-25)
+    - Acropora Hyacinthus         # 4 items (2026-05-25)
+    - Acropora insignis           # 3 items (2026-05-25)
+    - Acropora Kimbeensis         # 2 items (2026-05-25)
+    - Acropora latistella         # 1 item (2026-05-25)
+    - Acropora Listeri            # 1 item (2026-05-25)
+    - Acropora Loisetteae         # 1 item (2026-05-25)
+    - Acropora Lokani             # 1 item (2026-05-25)
+    - Acropora Loripes            # 4 items (2026-05-25)
+    - Acropora Maryae             # 1 item (2026-05-25)
+    - Acropora Microclados        # 7 items (2026-05-25)
+    - Acropora Millipora          # 24 items (2026-05-25)
+    - Acropora Nasuta             # 12 items (2026-05-25)
+    - Acropora Navini             # 1 item (2026-05-25)
+    - Acropora Nobilis            # 1 item (2026-05-25)
+    - Acropora paniculata         # 2 items (2026-05-25)
+    - Acropora Parahemprichii     # 1 item (2026-05-25)
+    - Acropora Parilis            # 1 item (2026-05-25)
+    - Acropora Pectinatus         # 1 item (2026-05-25)
+    - Acropora Plantaginea        # 1 item (2026-05-25)
+    - Acropora Prostrata          # 2 items (2026-05-25)
+    - Acropora Pulchra            # 1 item (2026-05-25)
+    - Acropora Sarmentosa         # 2 items (2026-05-25)
+    - Acropora Schmitti           # 1 item (2026-05-25)
+    - Acropora Secale             # 2 items (2026-05-25)
+    - Acropora Solitaryensis      # 1 item (2026-05-25)
+    - Acropora Speciosa           # 3 items (2026-05-25)
+    - Acropora sp                 # 6 items; period-less variant of Acropora sp. (2026-05-25)
+    - Acropora sp.                # 137 items; dominant catalog bucket (2026-05-25)
+    - Acropora Subulata           # 4 items (2026-05-25)
+    - Acropora Tabling            # 18 items (2026-05-25)
+    - Acropora Tenuis             # 25 items (2026-05-25)
+    - Acropora Tortuosa           # 2 items (2026-05-25)
+    - Acropora Turoki             # 3 items (2026-05-25)
+    - Acropora Valida             # 4 items (2026-05-25)
+    - Acropora Vermiculata        # 3 items (2026-05-25)
+    - acropora hyacinth           # 1 item; lowercase variant (2026-05-25)
+    - Digitifera                  # 1 item (2026-05-25)
+    - live coral                  # 4 items; grow-out entries (2026-05-25)
+    - Millipora                   # 13 items; period-less Montipora? — kept verbatim (2026-05-25)
+    - Montipora                   # 7 items (2026-05-25)
+    - Montipora Aequiterberculata # 1 item (2026-05-25)
+    - Montipora capricornis       # 1 item (2026-05-25)
+    - Montipora Digitata          # 2 items (2026-05-25)
+    - Montipora Palawanesis       # 1 item (2026-05-25)
+    - Montipora Setosa            # 2 items (2026-05-25)
+    - Montipora Staletta          # 1 item (2026-05-25)
+    - Montipora Undata            # 1 item (2026-05-25)
+    - Montipora Verrucosa         # 1 item (2026-05-25)
+    - Psammacora                  # 1 item (2026-05-25)
+    - Seriatopora                 # 1 item (2026-05-25)
+    - Spathulata                  # 4 items (2026-05-25)
+    - Stylophora                  # 1 item (2026-05-25)
+    - Tenuis                      # 3 items (2026-05-25)
+    - Unknown                     # 1 item (2026-05-25)
+  tag_denylist: []  # Battlecorals not needed: no fish/inverts/merch/equipment product_types observed; 'blue light special' verified 100% coral (CTK-085 Session 2 2026-05-25)
