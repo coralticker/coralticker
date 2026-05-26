@@ -17,6 +17,7 @@ smoke from Session 1 to durable on-disk evidence:
   Stage 2 sub-prefix collision (longest-name-first sort)  (CTK-025 Session 2 ← Fold 3)
   Stage 3 canonical-implicit-prefix                       (Session 1 carry)
   Stage 4 alias auto-link                                 (CTK-025 Session 2 ← Fold 3)
+  Stage 4 cat-2 bypass + canonical-stage scope guard      (CTK-030 v1 B3 Path A fold)
   Stage 5 cluster flag-review                             (CTK-025 Session 2 ← Fold 3)
   Stage 6 fuzzy fallback (sub-threshold returns null)     (Session 1 carry)
   Stage 7 no match (empty cache + unrelated listing)      (Session 1 carry)
@@ -221,6 +222,82 @@ def test_stage_4_alias_auto_link_miss_no_alias_text():
     assert result.match_method is None
 
 
+# ─── Stage 4 cat-2 bypass — CTK-030 v1 B3 Path A ─────────────────────────────
+def test_stage_4_alias_bypasses_cat2_guard():
+    """Per /lead-architect ruling 2026-05-25 (CTK-030 v1 B3 Q-A): stage-4
+    auto-link bypasses the cat-2 guard. An explicit alias row is the
+    curator-vetted disambiguation; gating it on requires_vendor_prefix
+    defeated the cross-vendor matching the seed was curated for.
+
+    Regression-discriminator for the matcher edit at matcher.py stage-4
+    loop. Pre-edit: this case returned None (the guard demoted the hit
+    because 'hellfire torch' doesn't start with 'wwc '). Post-edit:
+    returns the named_coral_id via alias-hit. A future refactor that
+    re-introduces the guard at stage 4 fails here first.
+
+    Mirrors the live CTK-030 prod case: bare 'hellfire torch' (a
+    documented rebrand of the WWC Dragon Soul Torch lineage per
+    `.claude/research/named-coral-launch-seed.md`) listed at any vendor
+    matches named_coral_id=3 via alias-hit."""
+    nc = NamedCoral(
+        id=3, canonical_name="WWC Dragon Soul Torch",
+        normalized_name="wwc dragon soul torch",
+        requires_vendor_prefix=True, category=1,
+    )
+    al = Alias(
+        alias_text="hellfire torch",
+        named_coral_id=3,
+        cluster_label=None,
+        match_behavior="auto-link",
+    )
+    cache = MatchCache(
+        named_corals=[nc],
+        canonical_index={nc.normalized_name: nc},
+        nc_by_id={nc.id: nc},
+        auto_link_aliases=[al],
+    )
+    result = match_listing(cache, "hellfire torch wysiwyg")
+    assert result.named_coral_id == 3, (
+        f"stage-4 cat-2 bypass should hit nc.id=3; got id={result.named_coral_id} "
+        f"method={result.match_method}"
+    )
+    assert result.match_confidence == "alias"
+    assert result.match_method == "alias-hit"
+
+
+def test_stage_4_bypass_does_not_leak_to_canonical_stages():
+    """Bypass is scoped to stage 4 only — stages 1/2/3/6 still apply the
+    cat-2 guard per /lead-architect ruling 2026-05-25. Same cat-2 nc
+    with an alias present in the cache, but the listing matches the
+    canonical-name pattern (bare 'dragon soul torch', no 'wwc ' prefix)
+    rather than the alias. Stage 4 doesn't fire (no alias substring
+    match); stages 2/3/6 all still guard against the missing prefix.
+    Discriminates accidental widening of the bypass into other cascade
+    stages."""
+    nc = NamedCoral(
+        id=3, canonical_name="WWC Dragon Soul Torch",
+        normalized_name="wwc dragon soul torch",
+        requires_vendor_prefix=True, category=1,
+    )
+    al = Alias(
+        alias_text="hellfire torch",  # present but does NOT match the listing under test
+        named_coral_id=3,
+        cluster_label=None,
+        match_behavior="auto-link",
+    )
+    cache = MatchCache(
+        named_corals=[nc],
+        canonical_index={nc.normalized_name: nc},
+        nc_by_id={nc.id: nc},
+        auto_link_aliases=[al],
+    )
+    result = match_listing(cache, "dragon soul torch wysiwyg")
+    assert result.named_coral_id is None, (
+        f"stage-4 bypass must NOT widen to canonical stages; got id={result.named_coral_id} "
+        f"method={result.match_method}"
+    )
+
+
 # ─── Stage 5: cluster flag-review ─────────────────────────────────────────────
 def test_stage_5_cluster_flag_review():
     """Cluster alias 'homewrecker' substring-matches → returns
@@ -401,6 +478,8 @@ TESTS = [
     test_stage_3_implicit_prefix_skip_when_no_originator,
     test_stage_4_alias_auto_link_match,
     test_stage_4_alias_auto_link_miss_no_alias_text,
+    test_stage_4_alias_bypasses_cat2_guard,
+    test_stage_4_bypass_does_not_leak_to_canonical_stages,
     test_stage_5_cluster_flag_review,
     test_stage_6_fuzzy_below_threshold,
     test_stage_7_no_match_empty_cache,
