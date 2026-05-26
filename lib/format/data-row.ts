@@ -29,9 +29,15 @@ function formatValue(value: DataRowField['value'], now: Date): string {
       return value.value;
     case 'price-drop-new':
       return `was ${value.oldValue}, now ${value.newValue}`;
+    case 'italic':
+      // DOM-only emphasis (<em>). Non-DOM channels carry the bare text;
+      // channel-adapters wanting italic in-channel (markdown asterisks for
+      // Discord, <i> for HTML email, etc.) re-process at the adapter layer.
+      return value.value;
     default: {
-      // Exhaustiveness check: adding a 5th DataRowFieldValue kind fails
-      // typecheck here, forcing the new branch to be handled explicitly.
+      // Exhaustiveness check — `_exhaustive: never` fails typecheck if a new
+      // DataRowFieldValue kind lands without a branch here, forcing explicit
+      // handling.
       const _exhaustive: never = value;
       throw new Error(`formatDataRow: unhandled value kind ${JSON.stringify(_exhaustive)}`);
     }

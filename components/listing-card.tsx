@@ -4,7 +4,7 @@
 
 import { type DataRowField } from '@/components/ui/data-row';
 import { ListingRowFrame } from '@/components/ui/listing-row-frame';
-import { formatLineage } from '@/lib/format/lineage';
+import { resolveOriginVendor } from '@/lib/format/origin-vendor';
 import type { Listing } from '@/lib/queries/listings';
 
 type ListingCardProps =
@@ -67,17 +67,15 @@ function buildFields(props: ListingCardProps, isOutOfStock: boolean): DataRowFie
     value: { kind: 'relative-time', timestamp: listedTimestamp },
   });
 
-  if (
-    listing.namedCoralCanonicalName !== null &&
-    (listing.namedCoralOriginVendor !== null ||
-      listing.namedCoralYearIntroduced !== null)
-  ) {
-    const lineage = formatLineage({
-      origin_vendor: listing.namedCoralOriginVendor,
-      year_introduced: listing.namedCoralYearIntroduced,
-    });
-    if (lineage.length > 0) {
-      fields.push({ label: 'Lineage', value: lineage });
+  // Lineage. field carries origin-only post-CTK-092 (year_introduced dropped
+  // per Q-040-11 hold-position path-a). Sentinel suppression — community/
+  // canonical → field omitted entirely; <DataRow>'s em-dash interleaving
+  // skips the slot automatically. Truthy guards rule out null AND empty-
+  // string drift in one boundary.
+  if (listing.namedCoralCanonicalName && listing.namedCoralOriginVendor) {
+    const originRender = resolveOriginVendor(listing.namedCoralOriginVendor);
+    if (!('suppress' in originRender && originRender.suppress)) {
+      fields.push({ label: 'Lineage', value: originRender.display });
     }
   }
 

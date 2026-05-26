@@ -1,19 +1,17 @@
 import { unstable_cache } from 'next/cache';
 import { getNeonSql } from '@/lib/db/neon';
 
-// year_introduced + description stay on NamedCoral so downstream view +
-// formatter consumers don't shift, but the SELECT clause omits both columns:
-// hosted named_corals lacks them (the spec at architecture-v1.md §1.7 + site.md
-// §3.5.1 diverges from hosted reality). Coerced to null at the cast site below
-// pending the broader hosted-vs-spec audit. Production impact: /coral/[slug]
-// description-<p> branch + lineage-Year field always skip (null).
+// description stays on NamedCoral with a null-coerce at the cast site —
+// hosted named_corals lacks the column; the description-<p> branch on
+// /coral/[slug] always skips. year_introduced removed entirely per CTK-092 /
+// Q-040-11 hold-position path-a (Tier 4 trigger-gated revisit CTK absorbs
+// schema-add when seed-data populability + year-shape ratify).
 export interface NamedCoral {
   id: number;
   slug: string;
   canonical_name: string;
   coral_type: string | null;
   origin_vendor: string | null;
-  year_introduced: number | null;
   description: string | null;
   source_urls: string[] | null;
   requires_vendor_prefix: boolean;
@@ -51,7 +49,7 @@ export async function getNamedCoralBySlug(slug: string): Promise<NamedCoral | nu
 
   const row = rows[0];
   if (!row) return null;
-  return { ...row, year_introduced: null, description: null };
+  return { ...row, description: null };
 }
 
 export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {

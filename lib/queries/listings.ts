@@ -39,17 +39,15 @@ export interface Listing {
   matchConfidence: 'exact' | 'alias' | 'fuzzy' | 'manual' | null;
   namedCoralCanonicalName: string | null;
   namedCoralSlug: string | null;
-  // Lineage fields per site.md §3.5.1 Lineage field rendering — only populated
+  // Lineage origin per site.md §3.5.1 Lineage field rendering — only populated
   // when namedCoralCanonicalName is non-null (LEFT JOIN named_corals).
+  // year_introduced removed per CTK-092 / Q-040-11 hold-position path-a.
   namedCoralOriginVendor: string | null;
-  namedCoralYearIntroduced: number | null;
 }
 
 // Flat row shape returned by the JOIN below. PostgREST's nested-relation
 // shape (vendors: {...}, named_corals: {...}) is gone post-cut-4; columns
-// flatten with vendor_/named_coral_ prefixes. year_introduced still omitted
-// per Q-040-11 hold-position (hosted named_corals lacks the column per
-// 2026-05-14 probe).
+// flatten with vendor_/named_coral_ prefixes.
 interface VendorListingRow {
   id: number;
   raw_title: string;
@@ -82,7 +80,6 @@ function rowToListing(row: VendorListingRow): Listing {
     namedCoralCanonicalName: row.named_coral_canonical_name,
     namedCoralSlug: row.named_coral_slug,
     namedCoralOriginVendor: row.named_coral_origin_vendor,
-    namedCoralYearIntroduced: null,
   };
 }
 
@@ -376,9 +373,6 @@ interface RpcPriceDropRow {
   vendor_display_name: string;
   named_coral_canonical_name: string | null;
   named_coral_slug: string | null;
-  // named_coral_year_introduced omitted from RPC projection per Q-040-11
-  // hold-position; PriceDropListing.namedCoralYearIntroduced always null
-  // until Q-040-12 audit + schema migration restore.
   named_coral_origin_vendor: string | null;
 }
 
@@ -397,7 +391,6 @@ function rpcRowToPriceDrop(row: RpcPriceDropRow): PriceDropListing {
     namedCoralCanonicalName: row.named_coral_canonical_name,
     namedCoralSlug: row.named_coral_slug,
     namedCoralOriginVendor: row.named_coral_origin_vendor,
-    namedCoralYearIntroduced: null,
     priorPrice: Number(row.prior_price),
     observedAt: row.observed_at,
   };
@@ -434,9 +427,6 @@ interface RpcArrivalRow {
   vendor_display_name: string;
   named_coral_canonical_name: string | null;
   named_coral_slug: string | null;
-  // named_coral_year_introduced omitted from RPC projection per Q-040-11
-  // hold-position; ArrivalListing.namedCoralYearIntroduced always null until
-  // Q-040-12 audit + schema migration restore.
   named_coral_origin_vendor: string | null;
 }
 
@@ -455,7 +445,6 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
     namedCoralCanonicalName: row.named_coral_canonical_name,
     namedCoralSlug: row.named_coral_slug,
     namedCoralOriginVendor: row.named_coral_origin_vendor,
-    namedCoralYearIntroduced: null,
     event: row.event,
     eventAt: row.event_at,
   };

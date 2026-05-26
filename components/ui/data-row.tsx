@@ -10,7 +10,8 @@ export type DataRowFieldValue =
   | string
   | { kind: 'relative-time'; timestamp: string }
   | { kind: 'price-drop-new'; oldValue: string; newValue: string }
-  | { kind: 'invalidated'; value: string };
+  | { kind: 'invalidated'; value: string }
+  | { kind: 'italic'; value: string };
 
 export interface DataRowField {
   label: string;
@@ -37,6 +38,16 @@ function RenderValue({ value }: { value: DataRowFieldValue }) {
     return (
       <span className="font-mono">
         <del className="font-normal">{value.value}</del>
+      </span>
+    );
+  }
+  // Italic per branding-guide.md §"Content emphasis pattern" — scientific
+  // binomial carve-out. <em> over a styling class so screen readers announce
+  // emphasis honestly; mono register preserved for data-row consistency.
+  if (value.kind === 'italic') {
+    return (
+      <span className="font-mono">
+        <em>{value.value}</em>
       </span>
     );
   }

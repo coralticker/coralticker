@@ -4,12 +4,12 @@ import {
   getAllNamedCoralSlugs,
   getCoralLastSeenAt,
   getNamedCoralBySlug,
-  type NamedCoral,
 } from '@/lib/queries/named-corals';
 import { getCoralAvailability } from '@/lib/queries/listings';
-import { DataRow, type DataRowField } from '@/components/ui/data-row';
+import { DataRow } from '@/components/ui/data-row';
 import { PageEyebrow } from '@/components/ui/page-eyebrow';
 import { formatRelativeTime } from '@/lib/format/relative-time';
+import { buildLineageFields } from '@/lib/format/lineage-fields';
 import { VendorAvailabilityRow } from './_components/vendor-availability-row';
 
 export const revalidate = 1800;
@@ -36,20 +36,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     title: `${coral.canonical_name} — current vendor availability — CoralTicker`,
     description: `Current vendor availability and pricing for ${coral.canonical_name}. Drop alerts across reef coral vendors.`,
   };
-}
-
-function buildLineageFields(coral: NamedCoral): DataRowField[] {
-  const fields: DataRowField[] = [];
-  if (coral.coral_type !== null) {
-    fields.push({ label: 'Type', value: coral.coral_type });
-  }
-  if (coral.origin_vendor !== null) {
-    fields.push({ label: 'Origin', value: coral.origin_vendor });
-  }
-  if (coral.year_introduced !== null) {
-    fields.push({ label: 'Year', value: String(coral.year_introduced) });
-  }
-  return fields;
 }
 
 const EMPTY_FALLBACK =
