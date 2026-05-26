@@ -36,7 +36,7 @@ from pathlib import Path
 
 import yaml
 
-from scrapers.common import db, diff, matcher, parse_shopify
+from scrapers.common import db, diff, matcher, parse_bigcommerce, parse_shopify
 from scrapers.common.diff import Counters
 
 log = logging.getLogger(__name__)
@@ -102,8 +102,14 @@ def run(slug: str) -> int:
         platform = vendor_row["platform"]
         if platform == "shopify":
             result = parse_shopify.fetch_and_parse(config)
+        elif platform == "bigcommerce":
+            # CTK-090 decision register row #66 — BigCommerce Stencil platform
+            # class. Shared parser raises the same SchemaChangeError /
+            # BlockedError / FetchError shapes as parse_shopify (imported
+            # directly in parse_bigcommerce); no new except clauses needed.
+            result = parse_bigcommerce.fetch_and_parse(config)
         else:
-            raise RuntimeError(f"platform {platform!r} not implemented (Phase 1 = shopify only)")
+            raise RuntimeError(f"platform {platform!r} not implemented (v1 = shopify + bigcommerce)")
 
         items = result.items
         html_hash = result.html_hash
