@@ -1,0 +1,32 @@
+{
+  "_comment": "CTK-086 Session 2 — Q-4 fixture for parse_shopify._should_keep tag_allowlist extension. Three synthetic Shopify-shaped products exercising tag_allowlist hit (product_type='' + ['Coral', ...] tags — RC-shape) / tag_allowlist miss (product_type='' + ['Fish', ...] tags — RC fish-bucket leak shape) / cross-axis interaction (tag_allowlist hit + tag_denylist hit — denylist short-circuit). product_type='' across all three mirrors Reef Chasers' empty-product_type universal canon per CTK-086 plan §Decisions Q-2.",
+  "products": [
+    {
+      "id": 1001,
+      "title": "Synthetic Coral Frag — tag_allowlist hit",
+      "product_type": "",
+      "tags": ["Coral", "SPS", "Acropora"],
+      "handle": "synthetic-coral-frag-tag-allowlist-hit",
+      "variants": [{"sku": "SYN-CORAL-1", "available": true}],
+      "images": []
+    },
+    {
+      "id": 1002,
+      "title": "Synthetic Fish — tag_allowlist miss",
+      "product_type": "",
+      "tags": ["Fish", "Tang"],
+      "handle": "synthetic-fish-tag-allowlist-miss",
+      "variants": [{"sku": "SYN-FISH-1", "available": true}],
+      "images": []
+    },
+    {
+      "id": 1003,
+      "title": "Synthetic Coral with denylist tag — denylist short-circuit",
+      "product_type": "",
+      "tags": ["Coral", "shipping"],
+      "handle": "synthetic-coral-with-denylist-tag",
+      "variants": [{"sku": "SYN-MIX-1", "available": true}],
+      "images": []
+    }
+  ]
+}

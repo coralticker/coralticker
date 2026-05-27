@@ -117,20 +117,34 @@ def fetch_and_parse(config: dict) -> ParseResult:
 
 def _should_keep(product: dict, category_filter: dict | None) -> bool:
     """CTK-037 category-filter gate. Returns True if product passes; False if
-    rejected by allowlist or tag-denylist. None or empty dict = no gate
+    rejected by either allowlist or tag-denylist. None or empty dict = no gate
     (permissive default for Phase 2 vendor onboarding inheritance).
 
-    Allowlist primary + tag-denylist secondary per CTK-037 Q-B lock — allowlist
-    miss is short-circuit reject; tag-denylist evaluates only on allowlist hit.
+    Three filter axes, AND-semantics when more than one is configured:
+      - product_type_allowlist (CTK-037 Q-B lock) — product_type must be in the
+        list. Skipped when unset.
+      - tag_allowlist (CTK-086 Q-4) — at least one product tag must intersect
+        the list. Skipped when unset. Use for vendors whose taxonomy lives in
+        tags rather than product_type (Reef Chasers: product_type='' universal,
+        every coral row tagged 'Coral').
+      - tag_denylist (CTK-041) — no product tag may appear in the list.
+
+    Each axis short-circuits to False on miss; permissive when unset (so a
+    config carrying only one axis behaves identically to the pre-Q-4 single-
+    axis shape for that axis's consumers).
     """
     if not category_filter:
         return True
     allowlist = category_filter.get("product_type_allowlist") or []
+    tag_allowlist = category_filter.get("tag_allowlist") or []
     tag_denylist = category_filter.get("tag_denylist") or []
     product_type = product.get("product_type") or ""  # CTK-037 Session 5.5: normalize None/absent to "" so allowlist entry "" matches both shapes
+    tags = product.get("tags") or []
     if allowlist and product_type not in allowlist:
         return False
-    if tag_denylist and any(t in tag_denylist for t in (product.get("tags") or [])):
+    if tag_allowlist and not any(t in tag_allowlist for t in tags):
+        return False
+    if tag_denylist and any(t in tag_denylist for t in tags):
         return False
     return True
 

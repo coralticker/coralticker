@@ -1,0 +1,189 @@
+{
+  "products": [
+    {
+      "id": 7403370479701,
+      "title": "Vivid's Purple Panther Zoanthids",
+      "handle": "vivids-purple-panther-zoanthids",
+      "body_html": "<p>This is a WYSIWYG (What You See Is What You Get) coral.<br>We strive to make our pictures as accurate as possible to the true color of the coral.</p>",
+      "published_at": "2026-05-17T16:19:11-07:00",
+      "created_at": "2026-05-17T16:18:18-07:00",
+      "updated_at": "2026-05-27T15:29:13-07:00",
+      "vendor": "WYSIWYG",
+      "product_type": "WYSIWYG Coral",
+      "tags": [
+        "50-75",
+        "WYSIWYG Zoos"
+      ],
+      "variants": [
+        {
+          "id": 42507757781077,
+          "title": "#A805 - Size: 8 polyps",
+          "option1": "#A805 - Size: 8 polyps",
+          "option2": null,
+          "option3": null,
+          "sku": "A805",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "54.99",
+          "grams": 0,
+          "compare_at_price": "0.00",
+          "position": 1,
+          "product_id": 7403370479701,
+          "created_at": "2026-05-17T16:18:18-07:00",
+          "updated_at": "2026-05-27T15:29:13-07:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 37197224869973,
+          "created_at": "2026-05-17T16:18:25-07:00",
+          "position": 1,
+          "updated_at": "2026-05-17T16:18:27-07:00",
+          "product_id": 7403370479701,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0855/3388/files/FJ6A7737.jpg?v=1779059907",
+          "width": 1635,
+          "height": 1635
+        }
+      ],
+      "options": [
+        {
+          "name": "Size",
+          "position": 1,
+          "values": [
+            "#A805 - Size: 8 polyps"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 6818611363925,
+      "title": "TGC Cherry Bomb Tenuis Acropora Coral",
+      "handle": "tgc-cherry-bomb-tenuis-acropora-coral-1",
+      "body_html": "<h4>How to Care for TGC Cherry Bomb Tenuis\u00a0Acropora Coral:</h4>\n<meta charset=\"utf-8\"><meta charset=\"utf-8\"><meta charset=\"utf-8\">\n<p><em>(written by Dave Burr)</em></p>\n<p>The TGC Cherry Bomb Tenuis\u00a0... [TRIMMED FOR FIXTURE]",
+      "published_at": "2025-08-16T08:55:28-07:00",
+      "created_at": "2022-08-18T14:35:05-07:00",
+      "updated_at": "2026-05-27T15:29:15-07:00",
+      "vendor": "Acropora Sp.",
+      "product_type": "Corals and Inverts",
+      "tags": [
+        "150-300",
+        "Acropora",
+        "acropora-carduus",
+        "easy-in-sps-tank",
+        "moderate-lighting",
+        "SPS Coral",
+        "Vivid Grown Coral"
+      ],
+      "variants": [
+        {
+          "id": 40246537322581,
+          "title": "Size: 1\" Frag",
+          "option1": "Size: 1\" Frag",
+          "option2": null,
+          "option3": null,
+          "sku": null,
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "169.99",
+          "grams": 1361,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 6818611363925,
+          "created_at": "2022-08-18T14:35:05-07:00",
+          "updated_at": "2026-05-27T15:29:15-07:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 29520016506965,
+          "created_at": "2022-08-18T14:35:21-07:00",
+          "position": 1,
+          "updated_at": "2022-08-18T14:35:46-07:00",
+          "product_id": 6818611363925,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0855/3388/products/FJ6A0412_9e3e4945-769d-4497-82a8-0b920db81d6f.jpg?v=1660858546",
+          "width": 1468,
+          "height": 1468
+        }
+      ],
+      "options": [
+        {
+          "name": "Option(s)",
+          "position": 1,
+          "values": [
+            "Size: 1\" Frag"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 640385153,
+      "title": "Peppermint Shrimp",
+      "handle": "peppermint-shrimp",
+      "body_html": "<h4>How to Care for Peppermint Shrimp</h4>\n<p><em>written by Dave Burr</em></p>\n<p>Peppermint Shrimp will eat the parasitic anemone Aiptasia and help to prevent the spread of it. It is a peaceful aqua... [TRIMMED FOR FIXTURE]",
+      "published_at": "2025-04-30T13:10:08-07:00",
+      "created_at": "2015-05-06T22:33:16-07:00",
+      "updated_at": "2026-05-27T15:29:16-07:00",
+      "vendor": "Lysmata wurdemanni",
+      "product_type": "Invert",
+      "tags": [
+        "10-25",
+        "25-50",
+        "carnivore",
+        "Clean Up Crew",
+        "easy",
+        "lysmata-wurdemanni",
+        "Shrimp"
+      ],
+      "variants": [
+        {
+          "id": 1775713857,
+          "title": "Size: 0.5\" - 1\"",
+          "option1": "Size: 0.5\" - 1\"",
+          "option2": null,
+          "option3": null,
+          "sku": "23000211",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "16.99",
+          "grams": 1361,
+          "compare_at_price": "14.99",
+          "position": 1,
+          "product_id": 640385153,
+          "created_at": "2015-05-07T11:27:22-07:00",
+          "updated_at": "2026-05-27T15:29:16-07:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 29086967890005,
+          "created_at": "2022-03-14T18:00:12-07:00",
+          "position": 1,
+          "updated_at": "2022-03-14T18:00:15-07:00",
+          "product_id": 640385153,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0855/3388/products/PeppermintShrimp1.jpg?v=1647306015",
+          "width": 369,
+          "height": 369
+        }
+      ],
+      "options": [
+        {
+          "name": "Option(s)",
+          "position": 1,
+          "values": [
+            "Size: 0.5\" - 1\"",
+            "3 - pack"
+          ]
+        }
+      ]
+    }
+  ]
+}

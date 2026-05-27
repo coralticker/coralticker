@@ -1,0 +1,111 @@
+name: vivid-aquariums
+
+on:
+  schedule:
+    # CTK-086 cadence lock per plan §Decisions Q-3 + arch §2.7 decision #15
+    # + .claude/open-items.md L53 + L60 off-minute discipline.
+    #
+    # 19 * * * * UTC = every hour at :19 minutes past — off-minute lock per
+    # L53 top-of-hour degradation discipline (2026-05-12 incident anchored
+    # the off-minute rule; :00 cron slots silently degrade under GH Actions
+    # free-tier scheduled-workflow load peaks) + L60 empirical evidence
+    # (2026-05-27 BC fired 3h26m late from :23 08 UTC slot — top-of-hour-
+    # cluster degradation).
+    #
+    # Vivid Aquariums is hourly-cadence ('hourly' cadence_label per
+    # vendor_id=8 vendors row). Hourly per Q-3 disposition (CTK-086 plan
+    # §Decisions): Vivid continuously adds WYSIWYG ("new WYSIWYG daily"
+    # per .claude/research/phase-1.5-vendor-scan.md §9); same posture as
+    # WWC where 24h latency lets hand-monitors beat the alert on first-
+    # buyer-wins single-piece corals. CTK-085 daily-cadence SC carve-out
+    # (BC) does NOT inherit; Q-3 reverts to the hourly default + ≥3
+    # successful scheduled fires SC.
+    #
+    # Runner-contention note: :19 off-minute coincides with WWC :19; the
+    # two workflows fire on the same cron-minute but distinct workflow-
+    # name buckets in GH Actions scheduler pool (no shared concurrency
+    # group; each has its own queue). All hourly-cadence vendors fire on
+    # distinct minutes within the hour (JF :07, TSA :13, WWC :19, Vivid
+    # :19, UC :29, future RC :41) to spread GH Actions runner-pool load;
+    # the WWC + Vivid same-minute pair is the first co-fire and warrants
+    # post-launch watch under open-items.md L60 evidence (no co-fire
+    # neighbors within 5-minute spread was the heuristic — :19 + :19 is
+    # a stricter co-fire and may need re-spread if observed latency
+    # surfaces).
+    - cron: '19 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Concurrency: queue (don't cancel) per JF cascade-repair shape (CTK-027
+# 2026-05-08 disposition). Phase 2 vendors ship with explicit concurrency
+# blocks from day one; latent PE/WWC/TSA gap stays parked at open-items.md
+# L51 as separate sub-CTK hygiene per CTK-086 plan §Out of scope.
+#
+# (a) cancel-in-progress: false rationale — operator-trigger landing during
+#     in-flight cron fire queues behind the running fire. Cancelling would
+#     risk truncating a running Phase B mirror loop mid-write —
+#     vendor_listings / price_history / R2 image-mirror double-write
+#     avoidance. Block also resolves GH-Actions-default silent-drop behavior
+#     on workflow_dispatch overlap (open-items.md L50 schedule-suppression)
+#     — explicit group converts silent-drop into queue-with-pending-
+#     replacement. Hourly cadence (24 fires/day) at Vivid's 1840-product
+#     catalog scale (~16s parse + Phase B mirror loop) means queue depth
+#     never meaningfully accumulates.
+concurrency:
+  group: vivid-aquariums-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # 60-min cap inherits PE+WWC+TSA+JF+Battlecorals+UC Phase 1+2 carve-out.
+    # Vivid's 1840-product catalog at ~500-600ms per mirror = ~15-18 min
+    # Phase B max on first cold-start run; steady-state hourly fires
+    # (handful of new + Phase B catch-up for prior NULL image_url rows)
+    # finish in under 5 min. Substantial headroom inside the 60-min ceiling;
+    # first-run image mirror may span 2 fires at 1840-product scale —
+    # acceptable; second fire absorbs the residual.
+    timeout-minutes: 60
+    steps:
+      # actions/checkout@v4 + actions/setup-python@v5 per fleet alignment
+      # (all 8 existing workflows on @v4/@v5 at CTK-086 ship time;
+      # open-items.md L34 sub-CTK ports all 9 workflows to Node-24-
+      # compatible majors in one pass before 2026-06-02 forced upgrade).
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Run Vivid Aquariums scraper
+        id: scrape
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: python -m scrapers.common.run vivid-aquariums
+
+      - name: Cleanup stale running rows
+        if: always()
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python -m scrapers.common.run vivid-aquariums --cleanup
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"vivid-aquariums scraper failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"

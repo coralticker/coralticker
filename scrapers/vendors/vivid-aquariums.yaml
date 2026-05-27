@@ -1,0 +1,151 @@
+# Vivid Aquariums scraper config (CTK-086 Session 2).
+#
+# Authoritative platform/method fields live on the vendors row (migration
+# 0017_add_vivid_aquariums_vendor.sql, vendor_id=8). YAML carries scrape-tuning
+# per arch §2.3 — values that may change without a code edit (delay, page
+# size, max pages, hash anchor, originator prefix, category filter). DB row
+# wins on conflict.
+
+slug: vivid-aquariums
+platform: shopify
+base_url: https://vividaquariums.com
+
+# Standard Shopify endpoint; pre-flight 2026-05-27 — HTTP 200, Content-Type
+# application/json; 1840-product catalog at page_size=250 across 8 pages
+# (250 × 7 + 90 on page 8). Pagination terminates on first under-full page
+# per parse_shopify.py page loop.
+#
+# Five-signal Shopify confirmation pre-flight (vendor-scan false-positive
+# precedent invariant per CTK-085 Session 1c AquaSD split to CTK-090):
+#   (1) /products.json HTTP 200 + canonical Shopify product-array payload
+#       (1840 products / 8 pages at limit=250)
+#   (2) window.Shopify.shop = "vivid-aquariums.myshopify.com" +
+#       Shopify.shopJsCdnBaseUrl + cdn.shopify.com preconnect in homepage
+#       HTML
+#   (3) cdn.shopify.com preconnect headers (multiple) + shopifycloud CDN
+#       URL shape; no BigCommerce / WooCommerce / custom-platform deviation
+#       signals (no `<meta name='platform'>` BigCommerce marker)
+#   (4) robots.txt explicit "# Shopify storefront. Public product, collection,
+#       page, blog, policy, cart, and localized HTML is crawlable." preamble
+#       + extension-less Allow paths; UCP/MCP endpoint at /api/ucp/mcp +
+#       agents.md advertised (Shopify agent-aware storefront posture)
+#   (5) /products.json payload carries canonical top-level products array
+#       with 13-key first-product shape (body_html / created_at / handle /
+#       id / images / options / product_type / published_at / tags / title /
+#       updated_at / variants / vendor) matching PE+WWC+TSA+JF+Battlecorals+
+#       Unique Corals empirical anchor
+#
+# Cookies confirm Shopify session backing: _shopify_y / _shopify_s /
+# _shopify_essential / _shopify_analytics / _shopify_marketing + shopify-
+# complexity-score-v2: 147 response header.
+products_path: /products.json
+
+# Page size at Shopify's max (250) — fewer round-trips for the 1840-product
+# catalog. 8 pages cover steady-state; the parser short-circuits on the
+# first under-full page.
+page_size: 250
+
+# Inherits PE+WWC+TSA+JF+Battlecorals+UC empirical request_delay_sec=2 lock.
+# 1840 products / 250 per page = 8 pages × 2s = ~16s total scrape time,
+# trivial vs. 60-min workflow timeout. Hourly cadence at :19 puts the fire
+# well outside any top-of-hour GH Actions schedule degradation window
+# (open-items.md L53 + L60 off-minute discipline; :19 distinct from JF :07
+# / TSA :13 / WWC :19 — note same-minute as WWC but distinct hour-pool
+# allocation by workflow name). Bump to 3-4s per arch §2.4 retry-policy
+# outcome only if 429s appear in observation window.
+request_delay_sec: 2
+
+# Belt-and-suspenders ceiling. Vivid's 1840-product catalog at 250/page =
+# 8 pages today; 12 leaves room for catalog growth + drop-spike inventory
+# without re-tuning. Largest Phase 2 catalog observed to date (UC=524,
+# Battlecorals=499, JF=452); 12-cap matches the inverse-load posture
+# scaled for larger catalog.
+max_pages: 12
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object.
+# Same hash_anchor as PE+WWC+TSA+JF+Battlecorals+UC per parse_shopify.py
+# shape stability. F5 fold (sort-before-hash) prevents Shopify JSON key
+# emission-order changes from spuriously flipping the sentinel. Empirical
+# anchor (pre-flight 2026-05-27): 13 keys = body_html, created_at, handle,
+# id, images, options, product_type, published_at, tags, title, updated_at,
+# variants, vendor.
+hash_anchor: first_product_keys
+
+# originator_prefix=null per CTK-024 PE precedent. Seed-list
+# (.claude/research/named-coral-seed-list.md) has ZERO Vivid-attributed
+# canonical entries — Vivid appears only as a dropshipper/distributor for
+# JF / WWC / Tyree / AquaSD lineages (e.g., "JF Burning Banana at Vivid",
+# "WWC Sunkist Bounce at Vivid", "Tyree Pink Lemonade at Vivid"). With no
+# "Vivid X" or "Vivid's X" canonical_name entries to synthesize against,
+# matcher §3.4 stage 3 synthesis is a no-op for Vivid pieces; null prefix
+# is the correct config. Vivid's own house "Vivid's X" possessive titles
+# (e.g., "Vivid's Bounce Chalice Coral", "Vivid's Red Velvet Alveopora
+# Coral") land lineage_flag='unknown' at parse time; cross-vendor JF /
+# WWC / TGC / ASD / ORA prefixes observed on Vivid catalog match via
+# matcher §3.4 stages 1-2 directly without YAML config.
+originator_prefix: null
+
+# Category filter: bucket-shape allowlist (similar to JF SPS/LPS/WYSIWYG
+# pattern), distinct from Battlecorals' taxonomic-genus (~70 entries) and
+# UC's structural-class shape.
+#
+# Empirical 2026-05-27 full-catalog walk (1840 products, 8 distinct
+# product_types):
+#   - 'WYSIWYG Coral'         1323 items (primary coral bucket; WYSIWYG
+#                              individuals + Vivid signature pieces)
+#   - 'Corals and Inverts'     395 items (secondary coral bucket; bucket
+#                              NAME admits inverts but ZERO inverts in this
+#                              bucket at 2026-05-27 walk — all 395 products
+#                              are corals across the same lineage spread
+#                              as WYSIWYG Coral. F1 belt-and-suspenders
+#                              applies to hypothetical future re-curation;
+#                              see tag_denylist below.)
+#   - 'Invert'                  50 items (dedicated invert bucket — anemones,
+#                              shrimp, snails, crabs, clams, cucumbers,
+#                              lobsters, nudibranch, starfish, tube worms,
+#                              urchin, CUC; reject via allowlist exclusion)
+#   - 'Saltwater Fish'          26 items (reject via allowlist exclusion)
+#   - 'Dry Goods'               18 items (reject)
+#   - 'Dry Good'                17 items (case-variant of Dry Goods; reject)
+#   - 'Saltwater'               10 items (reject)
+#   - 'Gift Card'                1 item  (reject)
+#
+# Empty-bucket disposition: ZERO empty-product_type rows at 2026-05-27 walk;
+# no CTK-027 Q-8 (a) carve-out needed.
+#
+# Tag denylist: belt-and-suspenders against future re-curation where Vivid
+# might land an invert in the 'Corals and Inverts' bucket. 2026-05-27 walk
+# confirmed all 395 'Corals and Inverts' rows are coral; the denylist is
+# DORMANT at ship-time. Watch item: denylist-positive rows surfacing in
+# 'Corals and Inverts' on future scrape = vendor re-curation signal, not bug.
+#
+# Empirical tag-shape source: Vivid's actual 'Invert' product_type bucket
+# uses plural tags ('Anemones', 'Clams', 'Crabs', 'Cucumbers', 'Lobsters',
+# 'Nudibranch', 'Shrimp', 'Snails', 'Starfish', 'Tube Worms', 'Urchin') +
+# 'Clean Up Crew'. Denylist values mirror Vivid's actual tag canon (12 tags)
+# rather than singular-form values — empirical revision per /lead-backend
+# ratification 2026-05-27 (CTK-086 plan F1 fold's high-order intent of
+# belt-and-suspenders against future Corals and Inverts re-curation
+# preserved; literal values corrected to Vivid's empirical tag-shape).
+# Singular-form denylist would silently fail to match Vivid's plural-tag
+# convention on a relabeling event — exactly the failure mode F1 was meant
+# to prevent.
+category_filter:
+  product_type_allowlist:
+    - WYSIWYG Coral             # 1323 items (2026-05-27)
+    - Corals and Inverts        # 395 items (2026-05-27); zero inverts in
+                                # this bucket at ship-time; tag_denylist
+                                # below catches future re-curation
+  tag_denylist:
+    - Anemones                  # plural per Vivid's Invert bucket canon (2026-05-27)
+    - Clams                     # plural (2026-05-27)
+    - Clean Up Crew             # exact match to Vivid's CUC tag (2026-05-27)
+    - Crabs                     # plural (2026-05-27)
+    - Cucumbers                 # plural (2026-05-27)
+    - Lobsters                  # plural (2026-05-27)
+    - Nudibranch                # singular per Vivid's canon (2026-05-27)
+    - Shrimp                    # singular per Vivid's canon (2026-05-27)
+    - Snails                    # plural (2026-05-27)
+    - Starfish                  # singular per Vivid's canon (2026-05-27)
+    - Tube Worms                # plural (2026-05-27)
+    - Urchin                    # singular per Vivid's canon (2026-05-27)
