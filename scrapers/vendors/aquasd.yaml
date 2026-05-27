@@ -87,12 +87,18 @@ max_pages: 30
 # schema drift (BC Stencil supports per-category template overrides via
 # `category-<id>.html`) from the all-categories-empty raise that fires at
 # function bottom only when EVERY category is empty (CTK-090 Session 4
-# /code-review finding #3). 5 is the lean default — AquaSD's smallest
-# coral genus path on 2026-05-26 probe (/cynarinas/, /fungias-plates/,
-# /scolys/) held >5 cards comfortably. Per-genus override path is a future
-# yaml field if a real-world catalog rotates a path below 5 in normal
-# operation; not implemented at v1 launch.
-expected_min_per_category: 5
+# /code-review finding #3). 3 tuned at Session 6b 2026-05-27 per small-
+# genera empirical probe — Session 4's "5 lean default" was set on n=1
+# /acropora/-shape sample without exercising the small-bucket tail;
+# /cynarinas/=4 + /scolys/=8 + 3 marker-empty paths (/wilsonis/,
+# /elegances/, /wellsos-and-trachys/) surfaced via 2026-05-27 probe
+# post-Session-6 marker carve-out land. Threshold 3 keeps the per-
+# category drift signal (5+ → 0/1/2 transition still raises) while
+# accommodating AquaSD's legitimate low-stock genera. Marker carve-out
+# absorbs the legitimate-empty case separately. Per-genus override path
+# is a future yaml field if a real-world catalog rotates a path below 3
+# in normal operation; not implemented at v1 launch.
+expected_min_per_category: 3
 
 # Polite default. 21 paths × ~3 pages average × 2s = ~125s/scrape —
 # comfortably under the 10-min workflow ceiling. Bump to 3-4s per arch
