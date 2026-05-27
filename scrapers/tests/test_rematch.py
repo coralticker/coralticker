@@ -71,21 +71,23 @@ TEST_CORAL_BETA_SLUG = "ctk029-betacoral-yyyyy"
 
 
 def _setup_test_vendor(conn) -> dict:
-    """Idempotent test-vendor setup. Returns the row."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT id, slug FROM vendors WHERE slug = %s",
-            (TEST_VENDOR_SLUG,),
-        )
-        existing = cur.fetchall()
-    if existing:
-        return existing[0]
+    """Idempotent test-vendor setup. UPSERT shape — flips active=true on
+    every run so a pre-existing active=false row from earlier sessions
+    (e.g., CTK-029 v1 Session 2 pre-fold-batch state) gets healed.
+
+    active=true is required because rematch.py:170 SELECT JOINs vendors
+    on v.active=TRUE per /code-review fold-batch finding #5. Cron-safety
+    is preserved by the absence of a corresponding workflow YAML at
+    .github/workflows/scrape-_ctk029_test.yml — the test vendor has no
+    cron path even when active=true.
+    """
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO vendors "
             "(slug, display_name, base_url, platform, scrape_method, "
             "cadence_label, image_strategy, active) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (slug) DO UPDATE SET active = EXCLUDED.active "
             "RETURNING id, slug",
             (
                 TEST_VENDOR_SLUG,
@@ -95,7 +97,7 @@ def _setup_test_vendor(conn) -> dict:
                 "products_json",
                 "daily",
                 "mirror",
-                False,
+                True,
             ),
         )
         return cur.fetchone()

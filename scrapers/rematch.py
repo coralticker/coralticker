@@ -26,8 +26,16 @@ Scope (arch §3.8 + plan §B3a):
     in scrapers.common.matcher.match_listing iterates the (one-element)
     named_corals list + (filtered) alias lists; hits against other
     corals are structurally impossible because they're absent from the
-    cache. Reuses the production cascade verbatim — no edits to
-    scrapers/common/matcher.py.
+    cache. No edits to scrapers/common/matcher.py, but the stage-6 fuzzy
+    tie-breaker (matcher.py:293 — `runner_score = scored[1][0] if
+    len(scored) > 1 else 0.0`) is structurally disabled here: with a
+    one-element cache, `runner_score = 0.0`, so the margin guard
+    `(best_score - runner_score) >= PG_TRGM_TIE_BREAKER_MARGIN` trivially
+    passes for any best_score >= PG_TRGM_BASE_THRESHOLD. Stage-6 false-
+    positive envelope is accordingly wider in rematch than in real-time
+    scrape (which has the full cache + the second-best legitimate runner
+    for the guard to compare against). Hand off to CTK-002 eval set per
+    /reef-lead Q-1 lean 2026-05-25.
   - Per-vendor originator_prefix is read from each vendor's YAML at
     `scrapers/vendors/<slug>.yaml` and looked up by vendor_id at match
     time, mirroring the real-time-scrape wiring in scrapers/common/run.py.
@@ -166,9 +174,13 @@ def rematch_one(conn: psycopg.Connection, named_coral_id: int) -> dict:
     ).isoformat()
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, vendor_id, normalized_title "
-            "FROM vendor_listings "
-            "WHERE last_seen_at >= %s AND named_coral_id IS NULL",
+            "SELECT vl.id, vl.vendor_id, vl.normalized_title "
+            "FROM vendor_listings vl "
+            "JOIN vendors v ON v.id = vl.vendor_id "
+            "WHERE vl.last_seen_at >= %s "
+            "AND vl.named_coral_id IS NULL "
+            "AND (vl.match_method IS NULL OR vl.match_method NOT LIKE 'cluster:%%') "
+            "AND v.active = TRUE",
             (cutoff,),
         )
         listings = cur.fetchall()
@@ -188,7 +200,7 @@ def rematch_one(conn: psycopg.Connection, named_coral_id: int) -> dict:
                 "UPDATE vendor_listings SET "
                 "named_coral_id = %s, match_confidence = %s, "
                 "match_method = %s, matched_at = first_seen_at "
-                "WHERE id = %s",
+                "WHERE id = %s AND named_coral_id IS NULL",
                 (result.named_coral_id, result.match_confidence,
                  result.match_method, int(lst["id"])),
             )
