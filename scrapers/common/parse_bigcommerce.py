@@ -62,6 +62,7 @@ def fetch_and_parse(config: dict) -> ParseResult:
     for cpath in category_paths:
         cpath_norm = cpath if cpath.startswith("/") else f"/{cpath}"
         category_item_count = 0
+        category_marker_empty = False
         for page in range(1, max_pages + 1):
             url = f"{base_url}{cpath_norm}?page={page}"
             result = http.fetch(url, request_delay_sec=delay)
@@ -84,12 +85,27 @@ def fetch_and_parse(config: dict) -> ParseResult:
             if result.error_class is not None:
                 raise FetchError(result.error_class, f"{result.error_class}: {result.error_message}")
 
-            page_items, first_card_html = _parse_one_page(
+            page_items, first_card_html, is_empty_category = _parse_one_page(
                 result.body, base_url, cpath_norm, auction_detection, originator_prefix, page,
             )
 
             if not page_items:
-                log.info("%s page %d: 0 cards — pagination terminated", cpath_norm, page)
+                # CTK-090 Session 6 daily-cron empty-category fix: when the
+                # Stencil empty-state marker is present on page 1, the category
+                # is legitimately empty (vendor curated zero stock under this
+                # genus) — record so the threshold raise below skips it. Page
+                # ≥2 marker presence would be anomalous (we'd have already
+                # broken on the page-1 empty); recording only on page 1
+                # preserves the invariant. Log-line branches so grep
+                # discriminates marker-detected empty from natural pagination
+                # end (Q-Backend-7 ratification 2026-05-27 — log-only v1; no
+                # schema column until ≥5 paths marker-empty per scrape becomes
+                # routine).
+                if is_empty_category and page == 1:
+                    category_marker_empty = True
+                    log.info("%s page %d: 0 cards — marker-detected empty category", cpath_norm, page)
+                else:
+                    log.info("%s page %d: 0 cards — pagination terminated", cpath_norm, page)
                 break
 
             # html_hash anchor pin: first li.product outer HTML from first non-empty
@@ -106,8 +122,14 @@ def fetch_and_parse(config: dict) -> ParseResult:
         # Finding #3: per-category min threshold. Opt-in via yaml field. When
         # set, any category producing fewer items than the threshold raises
         # — single-category schema drift surfaces as loud-fail rather than
-        # silent ~5% catalog loss.
-        if expected_min_per_category is not None and category_item_count < expected_min_per_category:
+        # silent ~5% catalog loss. Session 6 fix: skip the raise when the
+        # Stencil empty-state marker was detected on page 1 (legitimate empty
+        # category, not schema drift).
+        if (
+            expected_min_per_category is not None
+            and category_item_count < expected_min_per_category
+            and not category_marker_empty
+        ):
             raise SchemaChangeError(
                 f"{cpath_norm}: {category_item_count} items (expected ≥{expected_min_per_category}) — "
                 "likely per-category template override or schema drift"
@@ -145,20 +167,40 @@ def _parse_one_page(
     auction_detection: dict | None,
     originator_prefix: str | None,
     page_number: int = 1,
-) -> tuple[list[dict], str | None]:
-    """Pure HTML→items. Returns (items, first_card_outer_html_or_None) so the
-    caller can compute html_hash deterministically. Tested directly against
-    locked fixtures in test_aquasd_parse.py — no HTTP layer involved.
+) -> tuple[list[dict], str | None, bool]:
+    """Pure HTML→items. Returns (items, first_card_outer_html_or_None,
+    is_empty_category) so the caller can compute html_hash deterministically
+    AND distinguish legitimate empty categories (Stencil no-products marker
+    present + zero cards) from threshold-undershoot drift. Tested directly
+    against locked fixtures in test_aquasd_parse.py — no HTTP layer involved.
 
     Raises SchemaChangeError when cards are present on the page but ALL fail
     per-card validation (no <article>, no data-name, no href). Distinguishes
     class-rename theme drift from natural pagination end (cards selector
     empty) per CTK-090 Session 4 /code-review finding #2 / #7.
+
+    Also raises SchemaChangeError when the empty-category marker is present
+    alongside product cards — template-engine inconsistency per CTK-090
+    Session 6 (marker + cards is logically contradictory; render bug needs
+    human eyes).
     """
     soup = BeautifulSoup(html_bytes, "html.parser")
     cards = soup.select("li.product")
+    marker_present = _is_empty_category_page(soup)
+
+    if marker_present and cards:
+        # Template inconsistency: Stencil rendered both the empty-state scaffold
+        # AND product cards. Distinct from cards-all-skipped (finding #2/#7) or
+        # threshold-undershoot (finding #3) — this is a render-layer bug, not a
+        # selector / threshold issue. Load-bearing AND-with-zero-cards condition
+        # per CTK-090 Session 6 directive (don't simplify to marker-only).
+        raise SchemaChangeError(
+            f"{category_path} page {page_number}: empty-category marker present alongside "
+            f"{len(cards)} product cards — likely Stencil template inconsistency"
+        )
+
     if not cards:
-        return [], None
+        return [], None, marker_present
 
     is_auction_path = _is_auction_category(category_path, auction_detection)
     items: list[dict] = []
@@ -240,7 +282,19 @@ def _parse_one_page(
             "likely class rename or DOM contract drift (article / data-name / card-figure__link)"
         )
 
-    return items, first_card_html
+    return items, first_card_html, False
+
+
+def _is_empty_category_page(soup: BeautifulSoup) -> bool:
+    """Detect AquaSD's Stencil empty-category marker — `<p
+    data-no-products-notification>` emitted by the BC Stencil category template
+    when a category contains zero products. Anchored on the data-attribute
+    presence (template-engine convention), not text body (drifts across Stencil
+    version bumps). Marker presence alone doesn't imply legitimate empty —
+    caller AND-combines with `len(cards) == 0` per CTK-090 Session 6 directive
+    (marker + cards is a template bug, not an empty category).
+    """
+    return soup.select_one("p[data-no-products-notification]") is not None
 
 
 def _is_auction_category(category_path: str, auction_detection: dict | None) -> bool:

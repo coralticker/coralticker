@@ -52,7 +52,7 @@ def _load(name: str) -> bytes:
 
 # ─── Test 1: 5-card acropora fixture yields 5 items ──────────────────────────
 def test_acropora_5_cards_parsed():
-    items, first_card_html = _parse_one_page(
+    items, first_card_html, _ = _parse_one_page(
         _load("acropora_p1.sample.html"), BASE_URL, "/acropora/", None, None,
     )
     assert len(items) == 5, f"expected 5 items, got {len(items)}"
@@ -64,7 +64,7 @@ def test_acropora_item_shape():
     """Item dict matches diff.py expected keys (mirrors parse_shopify
     _normalize_product output). Pins parser/persist contract — additive shape
     drift on either side breaks the contract loudly."""
-    items, _ = _parse_one_page(
+    items, _, _ = _parse_one_page(
         _load("acropora_p1.sample.html"), BASE_URL, "/acropora/", None, None,
     )
     expected_keys = {
@@ -83,7 +83,7 @@ def test_acropora_first_card_field_extraction():
     """First trimmed card is Strawberry Tort Acropora - 4034CF3F4 ($39.59).
     Pins data-name / data-product-price / card-figure__link href / data-
     product-category extraction shape."""
-    items, _ = _parse_one_page(
+    items, _, _ = _parse_one_page(
         _load("acropora_p1.sample.html"), BASE_URL, "/acropora/", None, None,
     )
     item = items[0]
@@ -109,7 +109,7 @@ def test_product_url_absolute():
     URLs would miss the dict and force-classify every existing listing as
     'new' on the next-day scrape (price_history explosion + redundant
     re-mirroring)."""
-    items, _ = _parse_one_page(
+    items, _, _ = _parse_one_page(
         _load("acropora_p1.sample.html"), BASE_URL, "/acropora/", None, None,
     )
     for item in items:
@@ -123,7 +123,7 @@ def test_category_inference_sps_for_acropora():
     """normalize.infer_category matches against the synthetic product dict
     {product_type=data-product-category, tags=[], title=data-name}. Acropora-
     bearing titles fire \\bacropora\\b → 'sps' per arch §1.4 enum."""
-    items, _ = _parse_one_page(
+    items, _, _ = _parse_one_page(
         _load("acropora_p1.sample.html"), BASE_URL, "/acropora/", None, None,
     )
     for item in items:
@@ -137,7 +137,7 @@ def test_clearance_single_card():
     """clearance_p1.sample.html captures the bucket at the small-bucket-edge
     case (1 card observed at 2026-05-26 probe). Pins parser doesn't choke on
     page with only 1 li.product wrapper."""
-    items, first_card_html = _parse_one_page(
+    items, first_card_html, _ = _parse_one_page(
         _load("clearance_p1.sample.html"), BASE_URL, "/clearance/", None, None,
     )
     assert len(items) == 1, f"expected 1 item from small-bucket fixture, got {len(items)}"
@@ -151,7 +151,7 @@ def test_empty_page_zero_cards():
     """empty.sample.html has 0 li.product cards; parser yields ([], None).
     fetch_and_parse's caller breaks the pagination loop on empty page_items —
     natural terminator alongside HTTP 404."""
-    items, first_card_html = _parse_one_page(
+    items, first_card_html, _ = _parse_one_page(
         _load("empty.sample.html"), BASE_URL, "/acropora/", None, None,
     )
     assert items == []
@@ -162,7 +162,7 @@ def test_empty_page_zero_cards():
 def test_auction_detection_no_op_when_absent():
     """auction_detection=None mirrors parse_shopify's None=no-op shape.
     current_price preserved from data-product-price."""
-    items, _ = _parse_one_page(
+    items, _, _ = _parse_one_page(
         _load("acropora_p1.sample.html"), BASE_URL, "/acropora/", None, None,
     )
     assert items[0]["current_price"] == Decimal("39.59")
@@ -176,7 +176,7 @@ def test_auction_detection_path_match_nulls_price():
     scope), but the plumbing must work for future BC vendors with literal-
     URL auction subpaths."""
     auction = {"category_paths": ["/acropora/"]}
-    items, _ = _parse_one_page(
+    items, _, _ = _parse_one_page(
         _load("acropora_p1.sample.html"), BASE_URL, "/acropora/", auction, None,
     )
     for item in items:
@@ -190,7 +190,7 @@ def test_auction_detection_path_miss_preserves_price():
     """auction_detection.category_paths does NOT match current path →
     current_price preserved. Pins the gate is path-specific, not blanket."""
     auction = {"category_paths": ["/auctions/"]}
-    items, _ = _parse_one_page(
+    items, _, _ = _parse_one_page(
         _load("acropora_p1.sample.html"), BASE_URL, "/acropora/", auction, None,
     )
     assert items[0]["current_price"] == Decimal("39.59")
@@ -242,10 +242,10 @@ def test_html_hash_acropora_fixture_deterministic():
     """Hashing the same fixture twice yields identical hash. Pins the no-
     randomness contract — html_hash flip = real schema change, not test-
     machine entropy."""
-    _, fc1 = _parse_one_page(
+    _, fc1, _ = _parse_one_page(
         _load("acropora_p1.sample.html"), BASE_URL, "/acropora/", None, None,
     )
-    _, fc2 = _parse_one_page(
+    _, fc2, _ = _parse_one_page(
         _load("acropora_p1.sample.html"), BASE_URL, "/acropora/", None, None,
     )
     assert _compute_card_skeleton_hash(fc1) == _compute_card_skeleton_hash(fc2)
@@ -258,7 +258,7 @@ def test_in_stock_all_true_at_parse():
     aquasd.yaml + flagged for /lead-backend Q-N. diff.classify's behavior
     on absent-from-scrape rows is the implicit OOS mechanism (currently
     NOT firing — gap)."""
-    items, _ = _parse_one_page(
+    items, _, _ = _parse_one_page(
         _load("acropora_p1.sample.html"), BASE_URL, "/acropora/", None, None,
     )
     for item in items:
@@ -276,7 +276,7 @@ def test_lineage_flag_unknown_for_bare_titles():
     Unicorn Bubblebath, etc.) — only the BC-prefix ones fire. Pins that the
     regex matches the AquaSD-cross-vendor-prefix shape consistent with the
     JF/WWC/TSA/Battlecorals precedent."""
-    items, _ = _parse_one_page(
+    items, _, _ = _parse_one_page(
         _load("acropora_p1.sample.html"), BASE_URL, "/acropora/", None, None,
     )
     # First card: "Strawberry Tort Acropora - 4034CF3F4" — no ALL-CAPS prefix
@@ -287,7 +287,7 @@ def test_lineage_flag_vendor_named_for_bc_prefix():
     """Cards with 2-4 char ALL-CAPS prefix + Title-cased word fire 'vendor-
     named'. 'BC Unicorn Bubblebath Acropora' matches. AquaSD's own "ASD "
     prefix shape would fire the same way."""
-    items, _ = _parse_one_page(
+    items, _, _ = _parse_one_page(
         _load("acropora_p1.sample.html"), BASE_URL, "/acropora/", None, None,
     )
     # Card 5 in the trimmed fixture is "BC Unicorn Bubblebath Acropora..."
@@ -449,7 +449,7 @@ def test_nan_price_coerced_to_none():
         b'</article></li>'
         b'</ul>'
     )
-    items, _ = _parse_one_page(html, BASE_URL, "/acropora/", None, None)
+    items, _, _ = _parse_one_page(html, BASE_URL, "/acropora/", None, None)
     assert len(items) == 1
     assert items[0]["current_price"] is None, (
         f"NaN price must coerce to None; got {items[0]['current_price']!r}"
@@ -469,7 +469,7 @@ def test_infinity_price_coerced_to_none():
         b'</article></li>'
         b'</ul>'
     )
-    items, _ = _parse_one_page(html, BASE_URL, "/acropora/", None, None)
+    items, _, _ = _parse_one_page(html, BASE_URL, "/acropora/", None, None)
     assert len(items) == 1
     assert items[0]["current_price"] is None, (
         f"Infinity price must coerce to None; got {items[0]['current_price']!r}"
@@ -586,7 +586,7 @@ def test_hash_anchor_skips_malformed_first_card():
         b'</article></li>'
         b'</ul>'
     )
-    items, first_card_html = _parse_one_page(html, BASE_URL, "/acropora/", None, None)
+    items, first_card_html, _ = _parse_one_page(html, BASE_URL, "/acropora/", None, None)
     assert len(items) == 1, "only the valid card should parse"
     assert first_card_html is not None, "hash anchor must capture the valid card"
     assert 'data-name="Valid Card"' in first_card_html, (
@@ -620,6 +620,120 @@ def test_empty_category_paths_raises_config_error():
         raised_schema = True
     assert raised_config, "empty category_paths must raise ConfigError"
     assert not raised_schema, "ConfigError must NOT be a SchemaChangeError subclass"
+
+
+# ─── Test 29: empty-category marker + zero cards → threshold raise skipped ────
+def test_empty_category_marker_skips_threshold():
+    """AquaSD's BC Stencil renders `<p data-no-products-notification>` on
+    categories with zero stock (e.g., /acanthos/ on 2026-05-27 daily-cron run
+    377). Without marker detection, expected_min_per_category:5 trips
+    SchemaChangeError on every legitimate empty category. Marker-present +
+    zero-cards → caller skips the threshold raise for that category; the
+    scrape continues across remaining categories (CTK-090 Session 6 daily-
+    cron empty-category fix)."""
+    original_fetch = parse_bigcommerce.http.fetch
+    empty_cat_body = _load("empty_category.sample.html")
+    acropora_body = _load("acropora_p1.sample.html")
+
+    def stub_fetch(url, request_delay_sec=2.0):
+        if "/acanthos/" in url and "page=1" in url:
+            return FetchResult(body=empty_cat_body, status_code=200, error_class=None, error_message=None)
+        if "/acropora/" in url and "page=1" in url:
+            return FetchResult(body=acropora_body, status_code=200, error_class=None, error_message=None)
+        return FetchResult(body=None, status_code=404, error_class="other", error_message="HTTP 404")
+
+    parse_bigcommerce.http.fetch = stub_fetch
+    try:
+        config = {
+            "base_url": "https://aquasd.com",
+            "category_paths": ["/acanthos/", "/acropora/"],
+            "max_pages": 3,
+            "request_delay_sec": 0,
+            "expected_min_per_category": 5,
+        }
+        result = fetch_and_parse(config)
+        assert len(result.items) == 5, (
+            f"acropora's 5 cards must survive while /acanthos/ marker-empty skips threshold; "
+            f"got {len(result.items)} items"
+        )
+        urls = [it["product_url"] for it in result.items]
+        for url in urls:
+            assert "/acanthos" not in url, (
+                f"marker-empty category must emit zero items; got {url!r}"
+            )
+    finally:
+        parse_bigcommerce.http.fetch = original_fetch
+
+
+# ─── Test 30: marker + cards present → SchemaChangeError (template bug) ──────
+def test_marker_with_cards_still_raises_schema_change():
+    """AND-with-zero-cards is load-bearing per CTK-090 Session 6 directive:
+    a template bug rendering both the empty-state scaffold AND product cards
+    is logically contradictory and must trip SchemaChangeError. Don't
+    simplify marker detection to marker-only — render-layer drift needs
+    human eyes."""
+    html = (
+        b'<html><body>'
+        b'<p data-no-products-notification role="alert">There are no products listed.</p>'
+        b'<ul>'
+        b'<li class="product"><article class="card" data-name="Phantom Card" '
+        b'data-product-category="SPS" data-product-price="10.00" '
+        b'data-entity-id="1">'
+        b'<a class="card-figure__link" href="/phantom/"></a>'
+        b'<img class="card-image" src="https://cdn.example.com/phantom.jpg"/>'
+        b'</article></li>'
+        b'</ul>'
+        b'</body></html>'
+    )
+    raised = False
+    try:
+        _parse_one_page(html, BASE_URL, "/acanthos/", None, None, page_number=1)
+    except SchemaChangeError as e:
+        raised = True
+        assert "marker" in str(e).lower(), f"error should name marker conflict: {e}"
+        assert "/acanthos/" in str(e), f"error should name category path: {e}"
+    assert raised, "marker + cards must raise SchemaChangeError, not silently emit items"
+
+
+# ─── Test 31: no marker + zero cards + threshold → SchemaChangeError ─────────
+def test_no_marker_no_cards_below_threshold_raises():
+    """Preserves CTK-090 Session 4 finding #3 behavior: a category producing
+    zero items WITHOUT the empty-state marker is still suspicious (selector
+    drift, silent catalog wipe, fetch-layer issue masquerading as a 200), so
+    the threshold raise still fires. The Session 6 marker carve-out narrows
+    finding #3 only to vendor-emitted-empty cases, not all-empty cases."""
+    original_fetch = parse_bigcommerce.http.fetch
+    empty_body = _load("empty.sample.html")  # 0 cards, NO marker
+
+    def stub_fetch(url, request_delay_sec=2.0):
+        if "page=1" in url:
+            return FetchResult(body=empty_body, status_code=200, error_class=None, error_message=None)
+        return FetchResult(body=None, status_code=404, error_class="other", error_message="HTTP 404")
+
+    parse_bigcommerce.http.fetch = stub_fetch
+    try:
+        config = {
+            "base_url": "https://aquasd.com",
+            "category_paths": ["/acropora/"],
+            "max_pages": 3,
+            "request_delay_sec": 0,
+            "expected_min_per_category": 5,
+        }
+        raised_schema = False
+        try:
+            fetch_and_parse(config)
+        except SchemaChangeError as e:
+            raised_schema = True
+            # The all-empty-paths raise OR the per-category-undershoot raise
+            # is acceptable here — both surface the same loud-fail signal that
+            # the marker carve-out would otherwise suppress incorrectly.
+            msg = str(e)
+            assert "/acropora/" in msg or "zero items" in msg, (
+                f"error should signal either category undershoot or all-empty: {e}"
+            )
+        assert raised_schema, "no-marker zero-cards must raise SchemaChangeError"
+    finally:
+        parse_bigcommerce.http.fetch = original_fetch
 
 
 def main() -> int:
