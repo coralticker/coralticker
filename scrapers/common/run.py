@@ -44,13 +44,16 @@ log = logging.getLogger(__name__)
 
 
 def _load_yaml(slug: str) -> dict:
-    """Per-vendor YAML lives at scrapers/vendors/<slug>.yaml. Returns {} if
-    absent — vendor row + sensible defaults are enough for the simplest
-    Shopify cases."""
+    """Per-vendor YAML lives at scrapers/vendors/<slug>.yaml. A missing file
+    raises ConfigError (loud-failure per arch §3 invocation contract): the
+    YAML/slug mismatch class (CTK-093: `unique_corals.yaml` underscored vs.
+    DB slug `unique-corals` hyphenated) silently dropped `originator_prefix`
+    on every UC scrape until the rename landed. A present-but-empty file
+    stays valid — `yaml.safe_load(...) or {}` collapses null content to
+    {} so per-key defaults still apply."""
     yaml_path = Path(__file__).parent.parent / "vendors" / f"{slug}.yaml"
     if not yaml_path.exists():
-        log.warning("no YAML at %s — using vendors-row defaults", yaml_path)
-        return {}
+        raise ConfigError(f"no vendor YAML at {yaml_path}")
     return yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
 
 
@@ -70,22 +73,15 @@ def run(slug: str) -> int:
     git_sha = os.getenv("GITHUB_SHA", "local")
     conn = db.get_conn()
 
-    # Stage 1 — Config
+    # Stage 1 — Config (vendors row only). YAML load + match-cache load move
+    # inside the try block below so a ConfigError / connectivity failure routes
+    # to the L213 handler (scraper_runs row finalized with error_class='config'
+    # or 'other', Slack alert fires). Pre-CTK-093 shape ran _load_yaml + match
+    # cache load + originator_prefix lookup before start_scraper_run, so a raise
+    # escaped uncaught — no run row, no normal alert path.
     vendor_row = db.fetch_vendor(conn, slug)
-    yaml_config = _load_yaml(slug)
-    config = {**vendor_row, **yaml_config}  # YAML overrides DB per arch §2.3
-
     run_id = db.start_scraper_run(conn, vendor_row["id"], git_sha)
     log.info("scraper_runs.id=%d started for vendor=%s sha=%s", run_id, slug, git_sha)
-
-    # Stage 1b — Match cache (per CTK-025 F4 contract documented in matcher.py).
-    # Empty cache on Phase 1 (seed loads at CTK-002 / Phase 3) — no-op for now;
-    # same code path lights up at seed-load. Cache-load failure surfaces as a
-    # clean stage-2-prerequisite error; not wrapped in fail-soft because a
-    # match-cache load failure is a connectivity issue, not a per-listing
-    # exception.
-    match_cache = matcher.load_match_cache(conn)
-    originator_prefix = config.get("originator_prefix")
 
     status = "failed"
     error_class: str | None = None
@@ -99,6 +95,21 @@ def run(slug: str) -> int:
     matcher_error_first: str | None = None
 
     try:
+        # Stage 1 (cont.) — YAML config load. CTK-093: _load_yaml raises
+        # ConfigError on missing file (caught at L213 below). YAML overrides
+        # vendors-row per arch §2.3.
+        yaml_config = _load_yaml(slug)
+        config = {**vendor_row, **yaml_config}
+
+        # Stage 1b — Match cache (per CTK-025 F4 contract documented in matcher.py).
+        # Empty cache on Phase 1 (seed loads at CTK-002 / Phase 3) — no-op for now;
+        # same code path lights up at seed-load. Cache-load failure surfaces as a
+        # clean stage-2-prerequisite error; not wrapped in fail-soft because a
+        # match-cache load failure is a connectivity issue, not a per-listing
+        # exception.
+        match_cache = matcher.load_match_cache(conn)
+        originator_prefix = config.get("originator_prefix")
+
         # Stages 2-4 — Fetch + Parse + Normalize (parser yields normalized items)
         platform = vendor_row["platform"]
         if platform == "shopify":
