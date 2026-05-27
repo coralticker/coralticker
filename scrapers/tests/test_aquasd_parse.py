@@ -31,6 +31,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from scrapers.common import parse_bigcommerce
+from scrapers.common.errors import ConfigError
 from scrapers.common.http import FetchResult
 from scrapers.common.parse_bigcommerce import (
     _compute_card_skeleton_hash,
@@ -392,6 +393,233 @@ def test_fetch_and_parse_all_paths_empty_raises():
         assert raised, "all-empty paths must raise SchemaChangeError, not return empty ParseResult"
     finally:
         parse_bigcommerce.http.fetch = original_fetch
+
+
+# ─── Test 21: overlap dedup — duplicate product_urls collapse, first-seen wins ─
+def test_overlap_dedup_collapses_duplicates_first_seen_wins():
+    """Two category_paths return the same fixture; without parser-level dedup
+    each overlap product writes 2 price_history rows per scrape (CTK-090
+    Session 4 /code-review finding #1). Dedup preserves first-seen iteration
+    order — items from the first iterated category_path win the slot."""
+    original_fetch = parse_bigcommerce.http.fetch
+    acropora_body = _load("acropora_p1.sample.html")
+
+    def stub_fetch(url, request_delay_sec=2.0):
+        if "page=1" in url:
+            return FetchResult(body=acropora_body, status_code=200, error_class=None, error_message=None)
+        return FetchResult(body=None, status_code=404, error_class="other", error_message="HTTP 404")
+
+    parse_bigcommerce.http.fetch = stub_fetch
+    try:
+        config = {
+            "base_url": "https://aquasd.com",
+            "category_paths": ["/softies/", "/zoanthids/"],
+            "max_pages": 5,
+            "request_delay_sec": 0,
+        }
+        result = fetch_and_parse(config)
+        assert len(result.items) == 5, (
+            f"two paths × 5 cards each must dedup to 5 unique items; got {len(result.items)}"
+        )
+        urls = [it["product_url"] for it in result.items]
+        assert len(set(urls)) == len(urls), "deduped items must have unique product_urls"
+        # First-seen wins: /softies/ iterates before /zoanthids/, so /softies/'s
+        # first card (acropora_p1 fixture's first item) sits at result.items[0].
+        assert result.items[0]["raw_title"] == "Strawberry Tort Acropora - 4034CF3F4", (
+            f"first-seen ordering broken; first item raw_title={result.items[0]['raw_title']!r}"
+        )
+    finally:
+        parse_bigcommerce.http.fetch = original_fetch
+
+
+# ─── Test 22: NaN price coerced to None ──────────────────────────────────────
+def test_nan_price_coerced_to_none():
+    """Decimal('NaN') succeeds (no InvalidOperation); downstream diff.classify
+    compares old != new and NaN != NaN is always True, so a single NaN-priced
+    card writes one price_history row per scrape forever. is_finite() guard
+    coerces non-finite to None — same shape as a missing data-product-price
+    (CTK-090 Session 4 /code-review finding #6)."""
+    html = (
+        b'<ul>'
+        b'<li class="product"><article class="card" data-name="NaN Test Coral" '
+        b'data-product-category="SPS" data-product-price="NaN" '
+        b'data-entity-id="1">'
+        b'<a class="card-figure__link" href="/nan-test/"></a>'
+        b'<img class="card-image" src="https://cdn.example.com/nan.jpg"/>'
+        b'</article></li>'
+        b'</ul>'
+    )
+    items, _ = _parse_one_page(html, BASE_URL, "/acropora/", None, None)
+    assert len(items) == 1
+    assert items[0]["current_price"] is None, (
+        f"NaN price must coerce to None; got {items[0]['current_price']!r}"
+    )
+
+
+# ─── Test 23: Infinity price coerced to None ─────────────────────────────────
+def test_infinity_price_coerced_to_none():
+    """Sibling to NaN — Decimal('Infinity') is_finite() is False too."""
+    html = (
+        b'<ul>'
+        b'<li class="product"><article class="card" data-name="Inf Test" '
+        b'data-product-category="SPS" data-product-price="Infinity" '
+        b'data-entity-id="2">'
+        b'<a class="card-figure__link" href="/inf-test/"></a>'
+        b'<img class="card-image" src="https://cdn.example.com/inf.jpg"/>'
+        b'</article></li>'
+        b'</ul>'
+    )
+    items, _ = _parse_one_page(html, BASE_URL, "/acropora/", None, None)
+    assert len(items) == 1
+    assert items[0]["current_price"] is None, (
+        f"Infinity price must coerce to None; got {items[0]['current_price']!r}"
+    )
+
+
+# ─── Test 24: cards present but all skipped → SchemaChangeError ──────────────
+def test_cards_present_all_skipped_raises_schema_change():
+    """li.product wrappers in DOM but every per-card validation step skips
+    (no <article>, no data-name, no card-figure__link href) — without the
+    per-page validation-fail raise, parser yields ([], None) and caller
+    treats as natural pagination end. Loud-fail discriminates class-rename
+    theme drift from genuine empty page (CTK-090 Session 4 /code-review
+    finding #2 / #7)."""
+    html = (
+        b'<ul>'
+        b'<li class="product"></li>'
+        b'<li class="product"></li>'
+        b'<li class="product"></li>'
+        b'</ul>'
+    )
+    raised = False
+    try:
+        _parse_one_page(html, BASE_URL, "/acropora/", None, None, page_number=2)
+    except SchemaChangeError as e:
+        raised = True
+        assert "3 cards present" in str(e), f"error should name card count: {e}"
+        assert "page 2" in str(e), f"error should name page number: {e}"
+        assert "/acropora/" in str(e), f"error should name category path: {e}"
+    assert raised, "cards-present-all-skipped must raise SchemaChangeError, not return empty"
+
+
+# ─── Test 25: per-category min raise on undershoot ───────────────────────────
+def test_expected_min_per_category_raises_when_undershoot():
+    """Single category producing fewer items than expected_min_per_category
+    raises SchemaChangeError — surfaces single-category template-override
+    drift that the all-categories-empty raise would silently absorb on a
+    healthy-other-categories scrape (CTK-090 Session 4 /code-review finding
+    #3)."""
+    original_fetch = parse_bigcommerce.http.fetch
+    clearance_body = _load("clearance_p1.sample.html")  # 1 card
+
+    def stub_fetch(url, request_delay_sec=2.0):
+        if "page=1" in url:
+            return FetchResult(body=clearance_body, status_code=200, error_class=None, error_message=None)
+        return FetchResult(body=None, status_code=404, error_class="other", error_message="HTTP 404")
+
+    parse_bigcommerce.http.fetch = stub_fetch
+    try:
+        config = {
+            "base_url": "https://aquasd.com",
+            "category_paths": ["/clearance/"],
+            "max_pages": 3,
+            "request_delay_sec": 0,
+            "expected_min_per_category": 5,
+        }
+        raised = False
+        try:
+            fetch_and_parse(config)
+        except SchemaChangeError as e:
+            raised = True
+            assert "1 items" in str(e), f"error should report actual count: {e}"
+            assert "expected" in str(e) and "5" in str(e), f"error should name threshold: {e}"
+            assert "/clearance/" in str(e), f"error should name violating path: {e}"
+        assert raised, "category under threshold must raise SchemaChangeError"
+    finally:
+        parse_bigcommerce.http.fetch = original_fetch
+
+
+# ─── Test 26: expected_min_per_category absent → no check ────────────────────
+def test_expected_min_absent_skips_check():
+    """expected_min_per_category absent from config → no per-category
+    threshold check fires; current behavior preserved (small-bucket
+    categories like /clearance/ at 1 card don't false-trigger when
+    operator hasn't opted in)."""
+    original_fetch = parse_bigcommerce.http.fetch
+    clearance_body = _load("clearance_p1.sample.html")  # 1 card
+
+    def stub_fetch(url, request_delay_sec=2.0):
+        if "page=1" in url:
+            return FetchResult(body=clearance_body, status_code=200, error_class=None, error_message=None)
+        return FetchResult(body=None, status_code=404, error_class="other", error_message="HTTP 404")
+
+    parse_bigcommerce.http.fetch = stub_fetch
+    try:
+        config = {
+            "base_url": "https://aquasd.com",
+            "category_paths": ["/clearance/"],
+            "max_pages": 3,
+            "request_delay_sec": 0,
+        }
+        result = fetch_and_parse(config)
+        assert len(result.items) == 1, "absent threshold = no check; 1 item returns cleanly"
+    finally:
+        parse_bigcommerce.http.fetch = original_fetch
+
+
+# ─── Test 27: hash anchor captured AFTER per-card validation ─────────────────
+def test_hash_anchor_skips_malformed_first_card():
+    """Pre-validation cards[0] could be an ad slot / promo banner that fails
+    per-card validation; pre-validation anchor capture would flip the hash
+    on theme cosmetic noise. Post-validation anchor sits on first VALIDATED
+    card instead (CTK-090 Session 4 /code-review finding #4)."""
+    html = (
+        b'<ul>'
+        # Malformed: li.product wrapper but no inner <article>. Skipped per-card.
+        b'<li class="product" data-ad="promo"></li>'
+        # Valid card.
+        b'<li class="product"><article class="card" data-name="Valid Card" '
+        b'data-product-category="SPS" data-product-price="42.00" '
+        b'data-entity-id="42">'
+        b'<a class="card-figure__link" href="/valid/"></a>'
+        b'<img class="card-image" src="https://cdn.example.com/valid.jpg"/>'
+        b'</article></li>'
+        b'</ul>'
+    )
+    items, first_card_html = _parse_one_page(html, BASE_URL, "/acropora/", None, None)
+    assert len(items) == 1, "only the valid card should parse"
+    assert first_card_html is not None, "hash anchor must capture the valid card"
+    assert 'data-name="Valid Card"' in first_card_html, (
+        f"hash anchor should sit on the validated card; got first_card_html={first_card_html[:200]!r}"
+    )
+    assert 'data-ad="promo"' not in first_card_html, (
+        f"hash anchor must NOT capture the malformed cards[0]; got {first_card_html[:200]!r}"
+    )
+
+
+# ─── Test 28: empty category_paths → ConfigError, not SchemaChangeError ──────
+def test_empty_category_paths_raises_config_error():
+    """Empty category_paths is a config-side mistake (YAML hand-edit), not
+    vendor-side schema drift. ConfigError routes to error_class='config'
+    in run.py so on-call investigates the YAML, not the vendor surface
+    (CTK-090 Session 4 /code-review finding #13)."""
+    config = {
+        "base_url": "https://aquasd.com",
+        "category_paths": [],
+        "max_pages": 5,
+        "request_delay_sec": 0,
+    }
+    raised_config = False
+    raised_schema = False
+    try:
+        fetch_and_parse(config)
+    except ConfigError as e:
+        raised_config = True
+        assert "category_paths" in str(e), f"error should name the missing field: {e}"
+    except SchemaChangeError:
+        raised_schema = True
+    assert raised_config, "empty category_paths must raise ConfigError"
+    assert not raised_schema, "ConfigError must NOT be a SchemaChangeError subclass"
 
 
 def main() -> int:

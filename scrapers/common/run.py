@@ -38,6 +38,7 @@ import yaml
 
 from scrapers.common import db, diff, matcher, parse_bigcommerce, parse_shopify
 from scrapers.common.diff import Counters
+from scrapers.common.errors import ConfigError
 
 log = logging.getLogger(__name__)
 
@@ -197,6 +198,16 @@ def run(slug: str) -> int:
         )
         status_finalized = True
         log.info("scraper_runs.id=%d finalized status=%s before Phase B", run_id, status)
+
+    except ConfigError as e:
+        # User-side YAML / vendors-row mistake — distinct from vendor-side
+        # HTML drift. Route to error_class='config' so on-call investigates
+        # the config, not the vendor surface (CTK-090 Session 4
+        # /code-review finding #13).
+        status = "failed"
+        error_class = "config"
+        error_message = str(e)
+        log.error("config error: %s", e)
 
     except parse_shopify.SchemaChangeError as e:
         # Best-effort partial: any items already persisted stay; mark partial

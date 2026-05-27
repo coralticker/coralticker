@@ -30,10 +30,16 @@ base_url: https://aquasd.com
 # parent rollups (/sps, /lps, /corals, /other-lps) excluded.
 #
 # Overlap-pair note: /softies/ ∩ /zoanthids/ = 57 cards observed on
-# 2026-05-26 page-1 probe — diff.py product_url dedup absorbs naturally
-# (same product, same URL, second encounter becomes "unchanged"). Cost is
-# ~2 extra HTTP round-trips per scrape vs picking one; benefit is no
-# coverage gap on the 7 cards unique to each side.
+# 2026-05-26 page-1 probe — deduped at parser layer (parse_bigcommerce
+# .fetch_and_parse end-of-function dedup by product_url, first-seen wins).
+# vendor_listings UNIQUE (vendor_id, product_url) prevents the duplicate
+# insert at persist, but price_history is append-only and would otherwise
+# carry two rows per overlap product per scrape forever — the parser-side
+# dedup keeps both the catalog uniqueness AND the append-only price-history
+# contract aligned. Cost is ~2 extra HTTP round-trips per scrape vs picking
+# one; benefit is no coverage gap on the 7 cards unique to each side.
+# Original (CTK-090 Session 1) claim that diff.py absorbed this naturally
+# was corrected at Session 4 /code-review fold-batch 2026-05-27.
 #
 # /wysiwyg/ enumerated in CTK-090 Session 0 plan §Context was a Shopify-
 # vendor-pattern false carry; HTTP 404 on probe 2026-05-26 — does not
@@ -74,6 +80,19 @@ pagination: '?page={n}'
 # probe was /acropora/ at 64 cards/page; estimated full catalog ~10 pages.
 # 30 leaves ample headroom for catalog growth without re-tuning.
 max_pages: 30
+
+# Per-category floor — opt-in raise. parse_bigcommerce raises
+# SchemaChangeError if any single category produces fewer items than this
+# threshold across the full pagination sweep. Distinguishes single-category
+# schema drift (BC Stencil supports per-category template overrides via
+# `category-<id>.html`) from the all-categories-empty raise that fires at
+# function bottom only when EVERY category is empty (CTK-090 Session 4
+# /code-review finding #3). 5 is the lean default — AquaSD's smallest
+# coral genus path on 2026-05-26 probe (/cynarinas/, /fungias-plates/,
+# /scolys/) held >5 cards comfortably. Per-genus override path is a future
+# yaml field if a real-world catalog rotates a path below 5 in normal
+# operation; not implemented at v1 launch.
+expected_min_per_category: 5
 
 # Polite default. 21 paths × ~3 pages average × 2s = ~125s/scrape —
 # comfortably under the 10-min workflow ceiling. Bump to 3-4s per arch
