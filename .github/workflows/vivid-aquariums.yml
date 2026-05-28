@@ -21,17 +21,16 @@ on:
     # (BC) does NOT inherit; Q-3 reverts to the hourly default + ≥3
     # successful scheduled fires SC.
     #
-    # Runner-contention note: :19 off-minute coincides with WWC :19; the
-    # two workflows fire on the same cron-minute but distinct workflow-
-    # name buckets in GH Actions scheduler pool (no shared concurrency
-    # group; each has its own queue). All hourly-cadence vendors fire on
-    # distinct minutes within the hour (JF :07, TSA :13, WWC :19, Vivid
-    # :19, UC :29, future RC :41) to spread GH Actions runner-pool load;
-    # the WWC + Vivid same-minute pair is the first co-fire and warrants
-    # post-launch watch under open-items.md L60 evidence (no co-fire
-    # neighbors within 5-minute spread was the heuristic — :19 + :19 is
-    # a stricter co-fire and may need re-spread if observed latency
-    # surfaces).
+    # Runner-contention note: :19 is a clean off-minute singleton — no other
+    # vendor fires at :19. Actual fleet minutes at CTK-086 close: WWC/TSA/JF
+    # :00 (top-of-hour cluster; off-minute migration still pending per open-
+    # items.md L53), Vivid :19, BC :23 (daily 08 UTC), UC :29, PE :37, RC :41,
+    # AquaSD :47 (daily 09 UTC). The genuine co-fire is WWC+TSA+JF at :00 plus
+    # the GH-Actions top-of-hour congestion peak — that's the open L53 debt,
+    # not anything Vivid introduces. (Earlier draft asserted a JF :07 / TSA
+    # :13 / WWC :19 spread + a WWC+Vivid :19 co-fire; those were the L53
+    # *proposed* migration minutes, not live — corrected at CTK-086
+    # /code-review close 2026-05-28.)
     - cron: '19 * * * *'
   workflow_dispatch:
 

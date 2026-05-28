@@ -94,6 +94,13 @@ def test_tag_allowlist_unset_preserves_pre_q4_behavior(products):
     p = _by_title(products, "Synthetic Coral Frag — tag_allowlist hit")
     # Pre-Q-4 path: product_type='' is in allowlist [''] → pass; no Fish/Tang tags → pass.
     assert _should_keep(p, legacy_filter) is True
+    # Reject case — proves the legacy two-axis path still REJECTS post-Q-4:
+    # Fish (product_type='' passes the empty-PT allowlist) carries 'Fish'/'Tang'
+    # tags that hit tag_denylist → drop. Confirms inserting the tag_allowlist
+    # branch didn't weaken denylist short-circuit for the 8 non-tag_allowlist
+    # vendors (the real no-regression risk, not just the keep case).
+    f = _by_title(products, "Synthetic Fish — tag_allowlist miss")
+    assert _should_keep(f, legacy_filter) is False
 
 
 def main() -> int:

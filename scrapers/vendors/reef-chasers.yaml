@@ -50,9 +50,10 @@ page_size: 250
 # lock. 249 products / 250 per page = 1 page × 2s = ~2s total scrape time,
 # trivial vs. 60-min workflow timeout. Hourly cadence at :41 puts the fire
 # well outside any top-of-hour GH Actions schedule degradation window
-# (open-items.md L53 + L60 off-minute discipline; :41 distinct from JF :07
-# / TSA :13 / WWC :19 / Vivid :19 / UC :29 — no co-fire neighbor within
-# 5-minute spread). Bump to 3-4s per arch §2.4 retry-policy outcome only if
+# (open-items.md L53 + L60 off-minute discipline; :41 is a clean singleton —
+# distinct from Vivid :19 / UC :29 / PE :37; WWC/TSA/JF still fire at :00,
+# off-minute migration pending per L53). Bump to 3-4s per arch §2.4 retry-
+# policy outcome only if
 # 429s appear in observation window.
 request_delay_sec: 2
 

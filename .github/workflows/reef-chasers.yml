@@ -20,10 +20,11 @@ on:
     # out (BC) does NOT inherit; Q-3 reverts to the hourly default + ≥3
     # successful scheduled fires SC.
     #
-    # Runner-contention note: :41 off-minute is distinct from JF :07 / TSA
-    # :13 / WWC :19 / Vivid :19 / UC :29 — no co-fire neighbor within a
-    # 5-minute spread (clears the open-items.md L60 congestion heuristic;
-    # unlike the WWC+Vivid :19 same-minute pair flagged at Vivid ship).
+    # Runner-contention note: :41 is a clean off-minute singleton — no co-fire
+    # neighbor within a 5-minute spread. Actual fleet minutes: WWC/TSA/JF :00
+    # (top-of-hour cluster; off-minute migration pending per open-items.md
+    # L53), Vivid :19, BC :23 (daily), UC :29, PE :37, RC :41, AquaSD :47
+    # (daily). The only genuine co-fire is WWC+TSA+JF at :00.
     - cron: '41 * * * *'
   workflow_dispatch:
 
