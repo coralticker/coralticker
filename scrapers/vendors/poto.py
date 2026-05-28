@@ -29,9 +29,10 @@ products_path block.
 
 CATALOG SHAPE — the defining characteristic (permanent live-sale archive):
 Full-catalog sweep 2026-05-28 = 5,466 products across 22 pages. POTO never
-removes sold-out drops, so the catalog is a growing graveyard — only ~164
-of 5,466 buyable at any moment (the buyable count fluctuates 21-164 with
-POTO's live-sale schedule). This drives two CTK-088 design decisions:
+removes sold-out drops, so the catalog is a growing graveyard — of 5,466
+only ~164 are buyable at any moment (159 kept after the filter; the buyable
+count is a point-in-time figure that fluctuates with POTO's live-sale
+schedule). This drives two CTK-088 design decisions:
 
   (A) in_stock_only=true (framework extension, scrapers/common/
       parse_shopify._should_keep 4th gate). Keeps ONLY buyable items out of

@@ -26,11 +26,12 @@ base_url: https://piecesoftheocean.com
 # CATALOG SHAPE — permanent live-sale archive (the load-bearing fact):
 # Full sweep 2026-05-28 = 5,466 products across 22 pages (250/page; page 22
 # is the short terminator at 216). POTO never removes sold-out drops, so the
-# catalog is a growing graveyard: only ~164 of 5,466 are buyable at any
-# moment (the buyable count fluctuates with POTO's live-sale schedule —
-# observed 21 to 164 across passes). in_stock_only (below) is the real
-# filter: it keeps only currently-buyable items out of the diff, so
-# vendor_listings holds the live buyable count, not the 5,300-row archive.
+# catalog is a growing graveyard: of 5,466 products only ~164 are buyable at
+# any moment (159 kept after the filter; the buyable count is a point-in-time
+# figure that fluctuates with POTO's live-sale schedule). in_stock_only (below)
+# is the real filter: it keeps only currently-buyable items out of the diff, so
+# vendor_listings holds the live buyable count (~159), not the ~5,307-row
+# sold-out archive.
 products_path: /products.json
 
 page_size: 250

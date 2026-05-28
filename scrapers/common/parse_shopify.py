@@ -15,6 +15,29 @@ from scrapers.common import http, normalize
 
 log = logging.getLogger(__name__)
 
+# CTK-088 fold #3: product_types that the POTO allowlist deliberately excludes.
+# A buyable item dropped for one of these is an EXPECTED drop (merch / gift
+# card / addon / auction), not a new-bucket miss — so it must NOT raise the
+# new-bucket WARN. The aggregate skip-count (fetch_and_parse) still tallies it.
+# Auctions are ReefnBid's contract (CTK-007), never POTO Shopify coral.
+_KNOWN_EXCLUDED_PRODUCT_TYPES = frozenset({"merch", "Gift Card", "addon", "auction"})
+
+_TRUE_STRINGS = frozenset({"true", "1", "yes", "on"})
+
+
+def _coerce_bool(value) -> bool:
+    """CTK-088 fold #10: coerce a config value to bool WITHOUT the
+    bool('false') == True footgun. A YAML scalar quoted as "false" loads as
+    the string 'false', and bare bool('false') is True — which would silently
+    flip in_stock_only on. Real bools pass through; recognized string spellings
+    map by value; everything else falls back to truthiness.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in _TRUE_STRINGS
+    return bool(value)
+
 
 class SchemaChangeError(Exception):
     """Shopify /products.json returned a shape we don't recognize. Per arch §2.4
@@ -55,10 +78,11 @@ def fetch_and_parse(config: dict) -> ParseResult:
     image_strategy = config.get("image_strategy", "mirror")
     category_filter = config.get("category_filter")  # CTK-037: None or {} = no gate (permissive default)
     auction_detection = config.get("auction_detection")  # CTK-041: None = no-op (permissive default; WWC only at ship)
-    in_stock_only = bool(config.get("in_stock_only", False))  # CTK-088: POTO live-sale archive — keep only buyable; default False = fleet behavior
+    in_stock_only = _coerce_bool(config.get("in_stock_only", False))  # CTK-088: POTO live-sale archive — keep only buyable; default False = fleet behavior
 
     items: list[dict] = []
-    skipped = 0
+    skipped_unavailable = 0  # CTK-088 fold #4: dropped by the in_stock_only availability gate
+    skipped_category = 0     # CTK-088 fold #4: dropped by product_type_allowlist / tag_allowlist / tag_denylist
     html_hash: str | None = None
     http_status_last: int | None = None
 
@@ -102,7 +126,14 @@ def fetch_and_parse(config: dict) -> ParseResult:
         # default — config without category_filter block bypasses the gate.
         for p in products:
             if not _should_keep(p, category_filter, in_stock_only):
-                skipped += 1
+                # CTK-088 fold #4: attribute the drop. An unavailable item is
+                # short-circuited by the availability gate FIRST, so under
+                # in_stock_only any sold-out row is an availability drop; a
+                # buyable row that still got dropped failed the category filter.
+                if in_stock_only and not any(v.get("available") for v in (p.get("variants") or [])):
+                    skipped_unavailable += 1
+                else:
+                    skipped_category += 1
                 continue
             items.append(_normalize_product(p, base_url, image_strategy, originator_prefix, auction_detection))
 
@@ -110,12 +141,15 @@ def fetch_and_parse(config: dict) -> ParseResult:
             # Short page = last page. Spares one wasted round-trip.
             break
 
-    if category_filter:
-        log.info("category_filter: kept %d, skipped %d products", len(items), skipped)
-    elif in_stock_only:
-        # CTK-088: distinct log line keeps the existing category_filter output
-        # byte-identical for the 9 prior vendors (none set in_stock_only).
-        log.info("in_stock_only: kept %d, skipped %d products", len(items), skipped)
+    # CTK-088 fold #4: split the skip-count so an operator can't read a large
+    # "skipped" total and blame the allowlist — POTO drops ~5,300 rows on
+    # availability and only a handful on the category filter.
+    if category_filter or in_stock_only:
+        log.info(
+            "filter: kept %d, skipped %d (unavailable %d, category-filter %d)",
+            len(items), skipped_unavailable + skipped_category,
+            skipped_unavailable, skipped_category,
+        )
 
     return ParseResult(items=items, html_hash=html_hash, http_status_last=http_status_last)
 
@@ -130,10 +164,10 @@ def _should_keep(product: dict, category_filter: dict | None, in_stock_only: boo
       - in_stock_only (CTK-088) — when True, drop any product with no buyable
         variant (`not any(v.available ...)`). Opt-in per-vendor (default False
         = fleet behavior). For vendors whose catalog is a permanent archive of
-        mostly sold-out items (POTO live-sale archive: ~3,500 published / ~21-41
-        buyable), this keeps only currently-buyable inventory out of the diff.
-        Checked FIRST + independent of category_filter — it gates POTO, which
-        carries no category_filter (coral-pure catalog).
+        mostly sold-out items (POTO live-sale archive: ~5,466 published / ~164
+        buyable / 159 kept after the filter), this keeps only currently-buyable
+        inventory out of the diff. Checked FIRST + short-circuits before the
+        category gate.
       - product_type_allowlist (CTK-037 Q-B lock) — product_type must be in the
         list. Skipped when unset.
       - tag_allowlist (CTK-086 Q-4) — at least one product tag must intersect
@@ -159,13 +193,15 @@ def _should_keep(product: dict, category_filter: dict | None, in_stock_only: boo
     product_type = product.get("product_type") or ""  # CTK-037 Session 5.5: normalize None/absent to "" so allowlist entry "" matches both shapes
     tags = product.get("tags") or []
     if allowlist and product_type not in allowlist:
-        if in_stock_only:
-            # CTK-088 fold: under in_stock_only, reaching this point means the
+        if in_stock_only and product_type not in _KNOWN_EXCLUDED_PRODUCT_TYPES:
+            # CTK-088 fold #3: under in_stock_only, reaching this point means the
             # product is BUYABLE (it passed the availability gate above) but its
-            # product_type isn't in the allowlist — i.e., a buyable item is being
-            # dropped. For POTO this surfaces an additive product_type bucket the
-            # allowlist silently misses (the listings_seen canary can't catch a
-            # new-bucket drop). Converts silent-miss to a visible WARN.
+            # product_type isn't in the allowlist. WARN only when the bucket is
+            # genuinely unknown — a NEW product_type the allowlist silently
+            # misses (the listings_seen canary can't catch an additive bucket).
+            # Buckets in _KNOWN_EXCLUDED_PRODUCT_TYPES (merch / Gift Card /
+            # addon / auction) are EXPECTED drops; they stay silent here so the
+            # WARN keeps its signal (the aggregate skip-count still tallies them).
             log.warning(
                 "in_stock_only: buyable item dropped by product_type_allowlist "
                 "(possible new bucket — check allowlist): product_type=%r title=%r",

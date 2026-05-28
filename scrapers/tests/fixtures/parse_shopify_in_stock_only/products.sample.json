@@ -1,5 +1,5 @@
 {
-  "_comment": "CTK-088 fixture for parse_shopify._should_keep in_stock_only extension. Four synthetic Shopify-shape products exercising the availability gate: a buyable coral (>=1 available variant) / a sold-out coral (all variants available=false) / a buyable product carrying a denylist tag (in_stock_only + tag_denylist AND-interaction) / a sold-out product that would otherwise pass an allowlist (proves in_stock_only short-circuits independent of category_filter). Mirrors POTO's live-sale archive shape: product_type='live sale', per-variant available is the only stock signal.",
+  "_comment": "CTK-088 fixture for parse_shopify._should_keep in_stock_only extension. Synthetic Shopify-shape products exercising the availability gate. Base set (1-4): buyable coral / sold-out coral / buyable+denylist-tag (AND-interaction) / multi-variant sold-out (short-circuit independent of category_filter). Fold-batch additions: (2005) first-variant-sold-out-second-buyable — discriminates any()-over-variants from a variants[0]-only regression (fold #7); (2006) empty variants list + (2007) missing variants key — pin the `or []` guard, must not crash (fold #9); (2008) product_type=null buyable + (2009) product_type='' buyable — pin the `or ''` normalization that makes the '' allowlist entry match both None and '' (fold #9). Mirrors POTO's live-sale archive: product_type drop-state, per-variant available is the only stock signal.",
   "products": [
     {
       "id": 2001,
@@ -38,6 +38,53 @@
         {"sku": "POTO-SO-A", "available": false, "price": "80.00"},
         {"sku": "POTO-SO-B", "available": false, "price": "80.00"}
       ],
+      "images": []
+    },
+    {
+      "id": 2005,
+      "title": "First variant sold out, second buyable",
+      "product_type": "live sale",
+      "tags": ["sps"],
+      "handle": "first-variant-sold-out-second-buyable",
+      "variants": [
+        {"sku": "POTO-FV-A", "available": false, "price": "90.00"},
+        {"sku": "POTO-FV-B", "available": true, "price": "90.00"}
+      ],
+      "images": []
+    },
+    {
+      "id": 2006,
+      "title": "Empty variants list",
+      "product_type": "live sale",
+      "tags": ["sps"],
+      "handle": "empty-variants-list",
+      "variants": [],
+      "images": []
+    },
+    {
+      "id": 2007,
+      "title": "Missing variants key",
+      "product_type": "live sale",
+      "tags": ["sps"],
+      "handle": "missing-variants-key",
+      "images": []
+    },
+    {
+      "id": 2008,
+      "title": "Null product_type buyable",
+      "product_type": null,
+      "tags": ["sps"],
+      "handle": "null-product-type-buyable",
+      "variants": [{"sku": "POTO-NULL-1", "available": true, "price": "60.00"}],
+      "images": []
+    },
+    {
+      "id": 2009,
+      "title": "Empty-string product_type buyable",
+      "product_type": "",
+      "tags": ["sps"],
+      "handle": "empty-string-product-type-buyable",
+      "variants": [{"sku": "POTO-EMPTY-1", "available": true, "price": "60.00"}],
       "images": []
     }
   ]
