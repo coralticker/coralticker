@@ -122,23 +122,36 @@ originator_prefix: null
 # Empirical tag-shape source: Vivid's actual 'Invert' product_type bucket
 # uses plural tags ('Anemones', 'Clams', 'Crabs', 'Cucumbers', 'Lobsters',
 # 'Nudibranch', 'Shrimp', 'Snails', 'Starfish', 'Tube Worms', 'Urchin') +
-# 'Clean Up Crew'. Denylist values mirror Vivid's actual tag canon (12 tags)
-# rather than singular-form values — empirical revision per /lead-backend
+# 'Clean Up Crew'. Denylist values mirror Vivid's actual tag canon rather
+# than singular-form values — empirical revision per /lead-backend
 # ratification 2026-05-27 (CTK-086 plan F1 fold's high-order intent of
 # belt-and-suspenders against future Corals and Inverts re-curation
 # preserved; literal values corrected to Vivid's empirical tag-shape).
 # Singular-form denylist would silently fail to match Vivid's plural-tag
 # convention on a relabeling event — exactly the failure mode F1 was meant
 # to prevent.
+#
+# Anemone/clam-keep policy (CTK-087 sibling fold 2026-05-28): 'Anemones' and
+# 'Clams' are deliberately EXCLUDED from the denylist (10 tags, not 12). The
+# fleet keeps anemones + clams — PE/TSA/AquaSD and CTK-087 (Tidal Gardens,
+# which scrapes named premium BTA morphs directly) all retain them; CTK-037
+# D1 + the named-coral seed list carry BTA entries. Vivid was the lone
+# fleet excluder. Denying 'Anemones' would drop a future named Rainbow/Nexus
+# BTA the moment Vivid re-files it under the allowlisted 'Corals and Inverts'
+# product_type. Vivid's current anemone/clam stock (10 rows at 2026-05-28
+# walk) all sit in the non-allowlisted 'Invert' bucket, so they stay rejected
+# by the product_type gate either way — this removal is forward-protective
+# only (0 newly-kept). Full 'Invert'-bucket capture is a SEPARATE decision,
+# not this fold.
 category_filter:
   product_type_allowlist:
     - WYSIWYG Coral             # 1323 items (2026-05-27)
     - Corals and Inverts        # 395 items (2026-05-27); zero inverts in
                                 # this bucket at ship-time; tag_denylist
                                 # below catches future re-curation
-  tag_denylist:
-    - Anemones                  # plural per Vivid's Invert bucket canon (2026-05-27)
-    - Clams                     # plural (2026-05-27)
+  tag_denylist:                 # Anemones + Clams deliberately omitted — see
+                                # anemone/clam-keep policy note above (CTK-087
+                                # sibling fold 2026-05-28).
     - Clean Up Crew             # exact match to Vivid's CUC tag (2026-05-27)
     - Crabs                     # plural (2026-05-27)
     - Cucumbers                 # plural (2026-05-27)

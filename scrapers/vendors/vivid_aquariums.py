@@ -67,10 +67,17 @@ tag_denylist is a defensive moat against hypothetical future re-curation.
 F1 belt-and-suspenders tag_denylist values revised at Session 2 open per
 /lead-backend ratification 2026-05-27 — empirical full-catalog tag-shape
 sweep surfaced plurality mismatch with /review-plan F1 fold's singular-
-form prescription. Revised to Vivid's empirical 12-tag invert-bucket
-canon (Anemones / Clams / Clean Up Crew / Crabs / Cucumbers / Lobsters /
-Nudibranch / Shrimp / Snails / Starfish / Tube Worms / Urchin). High-
-order intent preserved; literal values corrected.
+form prescription. Revised to Vivid's empirical invert-bucket canon.
+High-order intent preserved; literal values corrected.
+
+Anemone/clam-keep fold (CTK-087 sibling 2026-05-28): 'Anemones' + 'Clams'
+dropped from the denylist (10 tags: Clean Up Crew / Crabs / Cucumbers /
+Lobsters / Nudibranch / Shrimp / Snails / Starfish / Tube Worms / Urchin).
+The fleet keeps anemones + clams (PE/TSA/AquaSD + CTK-087 Tidal Gardens;
+seed-list carries named BTAs), so a future named BTA re-filed under the
+allowlisted 'Corals and Inverts' bucket must not be denied. Vivid's current
+anemone/clam stock all sits in the non-allowlisted 'Invert' bucket, so the
+removal is forward-protective only (0 newly-kept at 2026-05-28 dry-run).
 
 First-variant SKU non-null rate spot-check 2026-05-27: empirical sample
 across page 1 (250 products) shows 100% non-null first-variant SKU rate

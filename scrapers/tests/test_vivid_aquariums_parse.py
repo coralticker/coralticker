@@ -47,21 +47,21 @@ BASE_URL = "https://vividaquariums.com"
 ORIGINATOR_PREFIX = None  # CTK-086 Session 2 — null per seed-list absence (Vivid is a distributor, not an originator)
 IMAGE_STRATEGY = "mirror"
 
-# Mirrors scrapers/vendors/vivid_aquariums.yaml category_filter block.
+# Mirrors scrapers/vendors/vivid-aquariums.yaml category_filter block.
 # product_type_allowlist locked CTK-086 plan §Decisions Q-2; tag_denylist
 # revised at Session 2 open per /lead-backend ratification 2026-05-27
 # (empirical full-catalog tag-shape sweep surfaced singular→plural mismatch
 # vs. /review-plan F1 fold's prescription; revised to Vivid's empirical
-# 12-tag invert-bucket canon).
+# invert-bucket canon). Anemones + Clams dropped at the CTK-087 sibling
+# fold 2026-05-28 (fleet anemone/clam-keep policy) — 10 tags now.
 VIVID_CATEGORY_FILTER = {
     "product_type_allowlist": [
         "WYSIWYG Coral",
         "Corals and Inverts",
     ],
     "tag_denylist": [
-        "Anemones", "Clams", "Clean Up Crew", "Crabs", "Cucumbers",
-        "Lobsters", "Nudibranch", "Shrimp", "Snails", "Starfish",
-        "Tube Worms", "Urchin",
+        "Clean Up Crew", "Crabs", "Cucumbers", "Lobsters", "Nudibranch",
+        "Shrimp", "Snails", "Starfish", "Tube Worms", "Urchin",
     ],
 }
 
