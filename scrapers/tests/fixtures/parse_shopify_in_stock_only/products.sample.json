@@ -1,0 +1,44 @@
+{
+  "_comment": "CTK-088 fixture for parse_shopify._should_keep in_stock_only extension. Four synthetic Shopify-shape products exercising the availability gate: a buyable coral (>=1 available variant) / a sold-out coral (all variants available=false) / a buyable product carrying a denylist tag (in_stock_only + tag_denylist AND-interaction) / a sold-out product that would otherwise pass an allowlist (proves in_stock_only short-circuits independent of category_filter). Mirrors POTO's live-sale archive shape: product_type='live sale', per-variant available is the only stock signal.",
+  "products": [
+    {
+      "id": 2001,
+      "title": "POTO Lightning Bug Torch — buyable",
+      "product_type": "live sale",
+      "tags": ["sps", "ls-052826", "8pm30"],
+      "handle": "poto-lightning-bug-torch-buyable",
+      "variants": [{"sku": "POTO-LB-1", "available": true, "price": "120.00"}],
+      "images": []
+    },
+    {
+      "id": 2002,
+      "title": "Vivids Badfish Acropora — sold out",
+      "product_type": "live sale",
+      "tags": ["sps", "ls-050926"],
+      "handle": "vivids-badfish-acropora-sold-out",
+      "variants": [{"sku": "POTO-BF-1", "available": false, "price": "200.00"}],
+      "images": []
+    },
+    {
+      "id": 2003,
+      "title": "Buyable product with denylist tag",
+      "product_type": "live sale",
+      "tags": ["others", "macroalgae"],
+      "handle": "buyable-with-denylist-tag",
+      "variants": [{"sku": "POTO-MA-1", "available": true, "price": "25.00"}],
+      "images": []
+    },
+    {
+      "id": 2004,
+      "title": "Sold-out product that would pass an allowlist",
+      "product_type": "live sale",
+      "tags": ["sps"],
+      "handle": "sold-out-would-pass-allowlist",
+      "variants": [
+        {"sku": "POTO-SO-A", "available": false, "price": "80.00"},
+        {"sku": "POTO-SO-B", "available": false, "price": "80.00"}
+      ],
+      "images": []
+    }
+  ]
+}

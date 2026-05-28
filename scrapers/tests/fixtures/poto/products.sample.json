@@ -1,0 +1,233 @@
+{
+  "products": [
+    {
+      "id": 8097258340461,
+      "title": "POTO Solar Pop",
+      "handle": "poto-solar-pop",
+      "body_html": "<p><meta charset=\"utf-8\">Picture depicts the mother colony or a good representation of the shape and color of the coral once grown out. You will receive a frag from the colony pict... [TRIMMED]",
+      "published_at": "2026-05-27T17:57:27-04:00",
+      "created_at": "2026-05-27T17:57:27-04:00",
+      "updated_at": "2026-05-28T10:06:16-04:00",
+      "vendor": "Pieces of the Ocean",
+      "product_type": "collection",
+      "tags": [
+        "signature"
+      ],
+      "variants": [
+        {
+          "id": 45241041846381,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "collection-poto-solarpop",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "300.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 8097258340461,
+          "created_at": "2026-05-27T17:57:27-04:00",
+          "updated_at": "2026-05-28T10:06:16-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 38358323691629,
+          "created_at": "2026-05-27T17:57:34-04:00",
+          "position": 1,
+          "updated_at": "2026-05-27T17:57:36-04:00",
+          "product_id": 8097258340461,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0060/0072/files/solar-pop.jpg?v=1779919056",
+          "width": 3744,
+          "height": 2496
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 8080019062893,
+      "title": "CC Banana Hammock Colony",
+      "handle": "c-add-050926-00",
+      "body_html": "",
+      "published_at": "2026-05-09T20:30:35-04:00",
+      "created_at": "2026-05-08T22:53:13-04:00",
+      "updated_at": "2026-05-28T10:06:16-04:00",
+      "vendor": "Pieces of the Ocean",
+      "product_type": "live sale",
+      "tags": [
+        "8pm30",
+        "ls-050926",
+        "sps"
+      ],
+      "variants": [
+        {
+          "id": 45185589313645,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "c-add-050926-00",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": false,
+          "price": "499.00",
+          "grams": 0,
+          "compare_at_price": "1500.00",
+          "position": 1,
+          "product_id": 8080019062893,
+          "created_at": "2026-05-08T22:53:13-04:00",
+          "updated_at": "2026-05-28T10:06:16-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 38186916446317,
+          "created_at": "2026-05-07T15:32:22-04:00",
+          "position": 1,
+          "updated_at": "2026-05-07T15:32:24-04:00",
+          "product_id": 8080019062893,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0060/0072/files/c-add-050926-00.jpg?v=1778182344",
+          "width": 800,
+          "height": 800
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7578100203629,
+      "title": "ReefnBid UV Ink Illustrative Logo T-Shirt",
+      "handle": "reefnbid-uv-ink-illustrative-logo-t-shirt",
+      "body_html": "",
+      "published_at": "2024-12-06T08:29:54-05:00",
+      "created_at": "2024-12-06T08:29:54-05:00",
+      "updated_at": "2026-05-28T10:08:48-04:00",
+      "vendor": "Pieces of the Ocean",
+      "product_type": "merch",
+      "tags": [],
+      "variants": [
+        {
+          "id": 41946280853613,
+          "title": "Small",
+          "option1": "Small",
+          "option2": null,
+          "option3": null,
+          "sku": "reefnbid-uv-tee-sm",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "30.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 7578100203629,
+          "created_at": "2024-12-06T08:29:54-05:00",
+          "updated_at": "2026-05-28T10:08:48-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 33416944975981,
+          "created_at": "2024-12-06T08:33:59-05:00",
+          "position": 1,
+          "updated_at": "2024-12-06T08:34:01-05:00",
+          "product_id": 7578100203629,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0060/0072/files/logo-black_21475de6-7029-4081-98cf-d40d7529e5a3.png?v=1733492041",
+          "width": 4874,
+          "height": 4874
+        }
+      ],
+      "options": [
+        {
+          "name": "Size",
+          "position": 1,
+          "values": [
+            "Small",
+            "Medium",
+            "Large",
+            "XLarge"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 8096965820525,
+      "title": "Atomic Broccoli Macroalgae",
+      "handle": "atomic-brocolli-macroalgae",
+      "body_html": "",
+      "published_at": "2026-05-27T16:55:33-04:00",
+      "created_at": "2026-05-27T16:55:33-04:00",
+      "updated_at": "2026-05-28T10:06:16-04:00",
+      "vendor": "Pieces of the Ocean",
+      "product_type": "live sale",
+      "tags": [],
+      "variants": [
+        {
+          "id": 45240680448109,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "e-ls-122025-025",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": "59.00",
+          "position": 1,
+          "product_id": 8096965820525,
+          "created_at": "2026-05-27T16:55:33-04:00",
+          "updated_at": "2026-05-28T10:06:16-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 36920991547501,
+          "created_at": "2025-12-19T23:43:24-05:00",
+          "position": 1,
+          "updated_at": "2025-12-19T23:43:26-05:00",
+          "product_id": 8096965820525,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0060/0072/files/e-ls-122025-025_c559c4ca-1c71-4eff-af95-b4db66f51141.jpg?v=1766205806",
+          "width": 800,
+          "height": 800
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,93 @@
+name: poto
+
+on:
+  schedule:
+    # CTK-088 cadence per plan §Q2 + arch §2.7 decision #15 + open-items.md
+    # L53 off-minute discipline.
+    #
+    # 53 * * * * UTC = every hour at :53 — off-minute, collision-checked
+    # against the live fleet workflows (.github/workflows/) at 2026-05-28: no
+    # other vendor fires at :53, and :53 has no neighbor within a 5-minute
+    # spread. (Deliberately NOT enumerating a per-vendor minute-list here —
+    # that list rots; the CTK-086 F1 cron-comment drift was a hand-copied
+    # stale minute-list. Re-derive from the workflows if you need the current
+    # picture. One non-obvious fleet fact worth recording: tsa.yml carries a
+    # */15 weekend-window overlay in addition to its base hourly cron.)
+    #
+    # POTO is hourly-cadence ('hourly' cadence_label per vendor_id=10 vendors
+    # row). Hourly per Q2: POTO runs timed live-sale drops; the buyable count
+    # fluctuates with the schedule, so latency matters (a buyable coral may be
+    # available for minutes). in_stock_only keeps only currently-buyable items.
+    - cron: '53 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Concurrency: queue (don't cancel) per JF cascade-repair shape (CTK-027
+# 2026-05-08 disposition). Phase 2 vendors ship with explicit concurrency
+# blocks from day one; latent PE/WWC/TSA gap stays parked at open-items.md
+# L51 as separate sub-CTK hygiene.
+#
+# (a) cancel-in-progress: false rationale — operator-trigger landing during
+#     an in-flight cron fire queues behind the running fire rather than
+#     truncating a running Phase B mirror loop mid-write (vendor_listings /
+#     price_history / R2 image-mirror double-write avoidance). Also converts
+#     GH-Actions-default silent-drop on workflow_dispatch overlap into
+#     queue-with-pending-replacement (open-items.md L50). POTO paginates 22+
+#     pages at 2s delay (~44s fetch) + a small Phase B loop (only ~164
+#     buyable rows under in_stock_only, not the 5,466 archive), so queue
+#     depth never meaningfully accumulates.
+concurrency:
+  group: poto-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # 60-min cap inherits the Phase 1+2 fleet carve-out. POTO fetches 22+
+    # pages (~44s at 2s delay) + Phase B mirrors only the ~164 buyable rows
+    # (in_stock_only drops the 5,300-row sold-out archive before the diff),
+    # so a cold-start run is well under the ceiling.
+    timeout-minutes: 60
+    steps:
+      # actions/checkout@v4 + actions/setup-python@v5 per fleet alignment
+      # (whole fleet on @v4/@v5 at CTK-088 ship time; open-items.md L34
+      # sub-CTK ports all workflows to Node-24-compatible majors in one pass
+      # before 2026-06-02 forced upgrade).
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Run POTO scraper
+        id: scrape
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: python -m scrapers.common.run poto
+
+      - name: Cleanup stale running rows
+        if: always()
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python -m scrapers.common.run poto --cleanup
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"poto scraper failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"

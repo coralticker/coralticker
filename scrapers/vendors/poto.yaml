@@ -1,0 +1,137 @@
+# POTO (Pieces of the Ocean) scraper config (CTK-088).
+#
+# Authoritative platform/method fields live on the vendors row (migration
+# 0019_add_poto_vendor.sql, vendor_id=10). YAML carries scrape-tuning per
+# arch §2.3 — values that may change without a code edit. DB row wins on
+# conflict.
+#
+# COORDINATION ANCHOR (future-Jon at 11pm): this scraper captures POTO's
+# CURRENT BUYABLE live-sale coral inventory off its own Shopify storefront.
+# POTO's primary auction-side capture is ReefnBid (CTK-007) — parked Tier 4
+# (React SPA + Cloudflare WAF + Hanko auth; re-opens on a Hunter-tier ask OR
+# R2R demand >=3). So POTO listings here are the Shopify live-sale surface,
+# NOT the auctions. The two are not merged into one vendor_listings row
+# (CTK-007 decision #69 owns that shape).
+
+slug: poto
+platform: shopify
+base_url: https://piecesoftheocean.com
+
+# Standard Shopify endpoint behind Cloudflare CDN. Pre-flight 2026-05-28:
+# powered-by: Shopify header + Shopify server-timing (theme/pageType) +
+# Shopify.shop = "piecesoftheocean.myshopify.com" + /products.json HTTP 200
+# with canonical 13-key product shape. Homepage 301s to itself (re-probe
+# with -L); not load-bearing given the powered-by header + clean JSON.
+#
+# CATALOG SHAPE — permanent live-sale archive (the load-bearing fact):
+# Full sweep 2026-05-28 = 5,466 products across 22 pages (250/page; page 22
+# is the short terminator at 216). POTO never removes sold-out drops, so the
+# catalog is a growing graveyard: only ~164 of 5,466 are buyable at any
+# moment (the buyable count fluctuates with POTO's live-sale schedule —
+# observed 21 to 164 across passes). in_stock_only (below) is the real
+# filter: it keeps only currently-buyable items out of the diff, so
+# vendor_listings holds the live buyable count, not the 5,300-row archive.
+products_path: /products.json
+
+page_size: 250
+
+# request_delay_sec: 2 — fleet-standard polite delay. At 22 pages that's
+# ~44s of fetch per run; trivial vs. the 60-min workflow timeout. The delay
+# also reduces the chance Cloudflare serves a transient short page mid-sweep
+# (see max_pages note).
+request_delay_sec: 2
+
+# max_pages: 30 — covers the current 22-page archive + growth headroom.
+# CTK-088 impl re-sweep found the catalog had grown 3,500 -> 5,466 since the
+# plan pre-flight (the watch-list "archive grows over time" item materialized
+# early). Two structural consequences worth knowing:
+#
+#   (1) BUYABLE INVENTORY CLUSTERS AT THE TAIL. POTO's permanent signature
+#       stock (product_type 'collection' + 'poto-gems', ~148 buyable) is
+#       ordered LAST in /products.json (pages 21-22). The dated 'live sale' /
+#       'lightning sale' archive (mostly sold-out) fills pages 1-20. So a
+#       created_at EARLY-STOP optimization is CONTRAINDICATED here — it would
+#       stop before reaching the buyable tail. Must paginate the whole archive.
+#
+#   (2) max_pages must stay AHEAD of page-count. As the sold-out archive
+#       grows, buyable 'collection' stock pushes to ever-later pages. If the
+#       archive ever exceeds 30 pages, bump max_pages — the buyable tail would
+#       otherwise be silently truncated. POST-SHIP WATCH (below) tracks this.
+max_pages: 30
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object.
+# Same hash_anchor as the rest of the Shopify fleet. Empirical anchor
+# (2026-05-28): 13 keys = body_html, created_at, handle, id, images, options,
+# product_type, published_at, tags, title, updated_at, variants, vendor.
+hash_anchor: first_product_keys
+
+# originator_prefix=null. POTO runs cross-vendor lineages (WWC / TSA / JF /
+# RRU / QCC prefixes observed) + its own "POTO X" house pieces, but the
+# seed-list has no POTO-attributed canonicals to synthesize against (matcher
+# §3.4 stage 3 would be a no-op). Cross-vendor prefixes match at stages 1-2
+# directly if the seed-list has the canonical. Same disposition as Vivid/RC.
+originator_prefix: null
+
+# in_stock_only: true — CTK-088 framework extension (scrapers/common/
+# parse_shopify._should_keep, 4th gate). Drops any product with no buyable
+# variant BEFORE it enters the diff. This is the load-bearing POTO filter:
+# without it, vendor_listings would hold ~5,300 never-ageing sold-out rows.
+# Opt-in per-vendor; the other 9 vendors leave it unset (default false =
+# fleet behavior, byte-identical).
+in_stock_only: true
+
+# Category filter — RATIFIED 2026-05-28 (/lead-backend) AFTER the impl
+# re-sweep contradicted the plan's "coral-pure, no allowlist" Q1 premise.
+# The grown catalog surfaced BUYABLE non-coral that the plan pre-flight
+# missed: 4 merch (ReefnBid tee / lens filter / POTO viewing glasses / POTO
+# hoodie) + 1 Gift Card — all carry images, so the frontend has_image gate
+# does NOT filter them; a hoodie/gift-card in a coral-drop feed is a Tier-1B
+# credibility ding.
+#
+# product_type_allowlist of the STABLE coral type-names cleanly drops the
+# merch + gift card (keep 159 / drop 5 on the 2026-05-28 buyable set). These
+# are NOT the dated rotating buckets the plan feared — POTO's dating lives in
+# TAGS (ls-050926, poto-gems-052226), which are deliberately NOT allowlisted.
+# The product_type values are stable type-names; a new coral published
+# tomorrow lands in 'live sale' or 'collection', already covered.
+#
+# Empty-string '' is in the allowlist by NECESSITY (fold-1 check 2026-05-28):
+# 5 image-bearing BUYABLE corals carry empty product_type — cross-vendor
+# pieces 'WWC Bob Marley Zoa', 'WWC Illuminatti Paly', 'POTO Skywalker
+# Bowerbanki', 'WWC Blood Suckers Zoa', 'TSA Bill Murray mini Colony'.
+# Dropping '' would lose them. (One empty-PT junk row titled 'Title' with no
+# image rides along but the frontend has_image gate drops it.)
+#
+# ACCEPTED LEAK: 'Atomic Broccoli Macroalgae' (product_type 'live sale',
+# empty tags, has image) is irreducible — it sits in a coral product_type
+# with no distinguishing tag, so neither the allowlist nor a tag_denylist
+# excludes it. 1-item macroalgae leak accepted per the Battlecorals
+# 1-anemone-leak precedent (CTK-085); macroalgae is reef-livestock-adjacent.
+#
+# No tag_allowlist / tag_denylist: the dated tags rotate (rotating-bucket
+# hazard), and there's no stable coral tag (unlike Reef Chasers' 'Coral'
+# umbrella). The PT-allowlist + in_stock_only carry the filter.
+category_filter:
+  product_type_allowlist:
+    - live sale                 # 3,680 total; primary dated-drop coral bucket (2026-05-28)
+    - lightning sale            # 1,436 total; secondary dated-drop coral bucket (2026-05-28)
+    - collection                # 269 total / 132 buyable; POTO permanent signature stock, ordered last in pagination (2026-05-28)
+    - poto-gems                 # 22 total / 16 buyable; POTO signature gems (2026-05-28)
+    - wysiwyg                   # 4 total; explicit WYSIWYG bucket (2026-05-28)
+    - ""                        # NECESSITY: 5 image-bearing buyable corals carry empty product_type (cross-vendor WWC/TSA/POTO pieces) — fold-1 2026-05-28
+  # Excluded by allowlist omission: 'merch' (4 buyable: tee/lens/glasses/hoodie),
+  # 'Gift Card' (1), 'addon' (5), 'auction' (1 — auctions are ReefnBid/CTK-007's
+  # contract, NOT POTO Shopify; auction_end_time stays NULL per plan §INV-05).
+
+# POST-SHIP WATCH (CTK-088 fold-2; /lead-backend per-vendor close-monitor):
+#   (a) NEW-BUCKET DROP — did a new product_type appear that the allowlist
+#       silently drops? The listings_seen canary CANNOT catch an additive
+#       bucket (it watches for drops in total seen, not a new-PT miss). The
+#       in_stock_only WARN log (parse_shopify._should_keep) now surfaces any
+#       BUYABLE item dropped by the PT-allowlist — grep scraper logs for
+#       "buyable item dropped by product_type_allowlist".
+#   (b) PAGE-COUNT vs max_pages — is the archive approaching 30 pages? At
+#       2026-05-28 it's 22. Bump max_pages before it hits 30 or the buyable
+#       tail truncates silently.
+#   (c) MACROALGAE / merch re-surface — if POTO re-tags merch into a coral
+#       product_type, the PT-allowlist stops catching it; revisit.

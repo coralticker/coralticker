@@ -55,6 +55,7 @@ def fetch_and_parse(config: dict) -> ParseResult:
     image_strategy = config.get("image_strategy", "mirror")
     category_filter = config.get("category_filter")  # CTK-037: None or {} = no gate (permissive default)
     auction_detection = config.get("auction_detection")  # CTK-041: None = no-op (permissive default; WWC only at ship)
+    in_stock_only = bool(config.get("in_stock_only", False))  # CTK-088: POTO live-sale archive — keep only buyable; default False = fleet behavior
 
     items: list[dict] = []
     skipped = 0
@@ -100,7 +101,7 @@ def fetch_and_parse(config: dict) -> ParseResult:
         # accumulated across pages and logged at parse-end below. Permissive
         # default — config without category_filter block bypasses the gate.
         for p in products:
-            if not _should_keep(p, category_filter):
+            if not _should_keep(p, category_filter, in_stock_only):
                 skipped += 1
                 continue
             items.append(_normalize_product(p, base_url, image_strategy, originator_prefix, auction_detection))
@@ -111,16 +112,28 @@ def fetch_and_parse(config: dict) -> ParseResult:
 
     if category_filter:
         log.info("category_filter: kept %d, skipped %d products", len(items), skipped)
+    elif in_stock_only:
+        # CTK-088: distinct log line keeps the existing category_filter output
+        # byte-identical for the 9 prior vendors (none set in_stock_only).
+        log.info("in_stock_only: kept %d, skipped %d products", len(items), skipped)
 
     return ParseResult(items=items, html_hash=html_hash, http_status_last=http_status_last)
 
 
-def _should_keep(product: dict, category_filter: dict | None) -> bool:
+def _should_keep(product: dict, category_filter: dict | None, in_stock_only: bool = False) -> bool:
     """CTK-037 category-filter gate. Returns True if product passes; False if
-    rejected by either allowlist or tag-denylist. None or empty dict = no gate
-    (permissive default for Phase 2 vendor onboarding inheritance).
+    rejected by the availability gate, the allowlist, or the tag-denylist.
+    None or empty dict category_filter = no category gate (permissive default
+    for Phase 2 vendor onboarding inheritance).
 
-    Three filter axes, AND-semantics when more than one is configured:
+    Four filter axes, AND-semantics when more than one is configured:
+      - in_stock_only (CTK-088) — when True, drop any product with no buyable
+        variant (`not any(v.available ...)`). Opt-in per-vendor (default False
+        = fleet behavior). For vendors whose catalog is a permanent archive of
+        mostly sold-out items (POTO live-sale archive: ~3,500 published / ~21-41
+        buyable), this keeps only currently-buyable inventory out of the diff.
+        Checked FIRST + independent of category_filter — it gates POTO, which
+        carries no category_filter (coral-pure catalog).
       - product_type_allowlist (CTK-037 Q-B lock) — product_type must be in the
         list. Skipped when unset.
       - tag_allowlist (CTK-086 Q-4) — at least one product tag must intersect
@@ -130,9 +143,14 @@ def _should_keep(product: dict, category_filter: dict | None) -> bool:
       - tag_denylist (CTK-041) — no product tag may appear in the list.
 
     Each axis short-circuits to False on miss; permissive when unset (so a
-    config carrying only one axis behaves identically to the pre-Q-4 single-
-    axis shape for that axis's consumers).
+    config carrying only one axis behaves identically to the prior single-axis
+    shape for that axis's consumers — in_stock_only default False keeps the 9
+    pre-CTK-088 vendors byte-identical).
     """
+    if in_stock_only:
+        variants = product.get("variants") or []
+        if not any(v.get("available") for v in variants):
+            return False
     if not category_filter:
         return True
     allowlist = category_filter.get("product_type_allowlist") or []
@@ -141,6 +159,18 @@ def _should_keep(product: dict, category_filter: dict | None) -> bool:
     product_type = product.get("product_type") or ""  # CTK-037 Session 5.5: normalize None/absent to "" so allowlist entry "" matches both shapes
     tags = product.get("tags") or []
     if allowlist and product_type not in allowlist:
+        if in_stock_only:
+            # CTK-088 fold: under in_stock_only, reaching this point means the
+            # product is BUYABLE (it passed the availability gate above) but its
+            # product_type isn't in the allowlist — i.e., a buyable item is being
+            # dropped. For POTO this surfaces an additive product_type bucket the
+            # allowlist silently misses (the listings_seen canary can't catch a
+            # new-bucket drop). Converts silent-miss to a visible WARN.
+            log.warning(
+                "in_stock_only: buyable item dropped by product_type_allowlist "
+                "(possible new bucket — check allowlist): product_type=%r title=%r",
+                product_type, product.get("title"),
+            )
         return False
     if tag_allowlist and not any(t in tag_allowlist for t in tags):
         return False
