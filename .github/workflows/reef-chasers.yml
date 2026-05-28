@@ -1,0 +1,101 @@
+name: reef-chasers
+
+on:
+  schedule:
+    # CTK-086 cadence lock per plan §Decisions Q-3 + arch §2.7 decision #15
+    # + .claude/open-items.md L53 + L60 off-minute discipline.
+    #
+    # 41 * * * * UTC = every hour at :41 minutes past — off-minute lock per
+    # L53 top-of-hour degradation discipline (2026-05-12 incident anchored
+    # the off-minute rule; :00 cron slots silently degrade under GH Actions
+    # free-tier scheduled-workflow load peaks) + L60 empirical evidence
+    # (2026-05-27 BC fired 3h26m late from :23 08 UTC slot — top-of-hour-
+    # cluster degradation).
+    #
+    # Reef Chasers is hourly-cadence ('hourly' cadence_label per vendor_id=9
+    # vendors row). Hourly per Q-3 disposition (CTK-086 plan §Decisions):
+    # RC adds rolling new-corals + Fri/Sat in-store event inventory; same
+    # posture as WWC where 24h latency lets hand-monitors beat the alert on
+    # first-buyer-wins single-piece corals. CTK-085 daily-cadence SC carve-
+    # out (BC) does NOT inherit; Q-3 reverts to the hourly default + ≥3
+    # successful scheduled fires SC.
+    #
+    # Runner-contention note: :41 off-minute is distinct from JF :07 / TSA
+    # :13 / WWC :19 / Vivid :19 / UC :29 — no co-fire neighbor within a
+    # 5-minute spread (clears the open-items.md L60 congestion heuristic;
+    # unlike the WWC+Vivid :19 same-minute pair flagged at Vivid ship).
+    - cron: '41 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Concurrency: queue (don't cancel) per JF cascade-repair shape (CTK-027
+# 2026-05-08 disposition). Phase 2 vendors ship with explicit concurrency
+# blocks from day one; latent PE/WWC/TSA gap stays parked at open-items.md
+# L51 as separate sub-CTK hygiene per CTK-086 plan §Out of scope.
+#
+# (a) cancel-in-progress: false rationale — operator-trigger landing during
+#     in-flight cron fire queues behind the running fire. Cancelling would
+#     risk truncating a running Phase B mirror loop mid-write —
+#     vendor_listings / price_history / R2 image-mirror double-write
+#     avoidance. Block also resolves GH-Actions-default silent-drop behavior
+#     on workflow_dispatch overlap (open-items.md L50 schedule-suppression)
+#     — explicit group converts silent-drop into queue-with-pending-
+#     replacement. Hourly cadence (24 fires/day) at RC's 249-product catalog
+#     scale (~2s parse + Phase B mirror loop) means queue depth never
+#     meaningfully accumulates.
+concurrency:
+  group: reef-chasers-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # 60-min cap inherits PE+WWC+TSA+JF+Battlecorals+UC+Vivid Phase 1+2
+    # carve-out. RC's 249-product catalog at ~500-600ms per mirror = ~2-3 min
+    # Phase B max on first cold-start run; steady-state hourly fires finish
+    # in under 1 min. Substantial headroom inside the 60-min ceiling; first-
+    # run image mirror absorbed cleanly inside a single fire at RC scale.
+    timeout-minutes: 60
+    steps:
+      # actions/checkout@v4 + actions/setup-python@v5 per fleet alignment
+      # (all existing workflows on @v4/@v5 at CTK-086 ship time, incl. Vivid
+      # Session 2; open-items.md L34 sub-CTK ports the whole fleet to Node-24-
+      # compatible majors in one pass before 2026-06-02 forced upgrade).
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Run Reef Chasers scraper
+        id: scrape
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: python -m scrapers.common.run reef-chasers
+
+      - name: Cleanup stale running rows
+        if: always()
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python -m scrapers.common.run reef-chasers --cleanup
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"reef-chasers scraper failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"

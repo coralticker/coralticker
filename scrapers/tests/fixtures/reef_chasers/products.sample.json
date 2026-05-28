@@ -1,0 +1,186 @@
+{
+  "products": [
+    {
+      "id": 8782375452904,
+      "title": "RC Space Invader Chalice Frag",
+      "handle": "space-invader-chalice",
+      "body_html": "<table class=\"tblProdDesc\" align=\"center\">\n<tbody class=\"tbodyBorder\">\n<tr class=\"trProdDesc\">\n<td align=\"Center\" valign=\"top\" class=\"ProductDescHead\" style=\"width: 541px;\">RC Space Invader Chalice Fr... [TRIMMED FOR FIXTURE]",
+      "published_at": "2026-05-06T11:50:57-04:00",
+      "created_at": "2024-05-13T13:40:12-04:00",
+      "updated_at": "2026-05-28T05:59:23-04:00",
+      "vendor": "Reef Chasers",
+      "product_type": "",
+      "tags": [
+        "Chalice",
+        "Coral",
+        "LPS"
+      ],
+      "variants": [
+        {
+          "id": 46083329360104,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "SPACE-INVADER-CHALICE-FRAG",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "19.99",
+          "grams": 170,
+          "compare_at_price": "29.99",
+          "position": 1,
+          "product_id": 8782375452904,
+          "created_at": "2024-05-13T13:40:13-04:00",
+          "updated_at": "2026-05-28T05:59:23-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 46259862470888,
+          "created_at": "2025-06-06T11:57:24-04:00",
+          "position": 1,
+          "updated_at": "2025-06-06T11:57:28-04:00",
+          "product_id": 8782375452904,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0548/9914/6925/files/DSC_9646-2.jpg?v=1749225448",
+          "width": 2048,
+          "height": 1638
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7554724987112,
+      "title": "Blue Hippo Tang",
+      "handle": "blue-tang",
+      "body_html": "<table align=\"center\" class=\"tblProdDesc\">\n<tbody class=\"tbodyBorder\">\n<tr class=\"trProdDesc\">\n<td style=\"width: 541px;\" class=\"ProductDescHead\" valign=\"top\" align=\"Center\">Blue (Hippo)\u00a0Tang</td>\n</tr... [TRIMMED FOR FIXTURE]",
+      "published_at": "2026-04-30T15:45:50-04:00",
+      "created_at": "2022-01-11T11:01:45-05:00",
+      "updated_at": "2026-05-28T05:59:23-04:00",
+      "vendor": "Reef Chasers",
+      "product_type": "",
+      "tags": [
+        "Fish",
+        "Tang"
+      ],
+      "variants": [
+        {
+          "id": 42403873390824,
+          "title": "Small",
+          "option1": "Small",
+          "option2": null,
+          "option3": null,
+          "sku": "",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "99.99",
+          "grams": 4536,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 7554724987112,
+          "created_at": "2022-01-11T11:01:45-05:00",
+          "updated_at": "2026-05-28T05:59:23-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 40694303064296,
+          "created_at": "2023-05-01T18:14:16-04:00",
+          "position": 1,
+          "updated_at": "2024-07-24T17:02:21-04:00",
+          "product_id": 7554724987112,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0548/9914/6925/products/blue-hippo-tang-619929.jpg?v=1721854941",
+          "width": 1000,
+          "height": 762
+        }
+      ],
+      "options": [
+        {
+          "name": "Size",
+          "position": 1,
+          "values": [
+            "Small",
+            "Medium",
+            "Large",
+            "XL"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 8611536142568,
+      "title": "Two Little Fishes AcroPower",
+      "handle": "two-little-fishes-acropower",
+      "body_html": "<div style=\"text-align: center;\" data-mce-style=\"text-align: center;\"><strong>*SPEND $50 OR MORE ON DRY GOODS AND GET FREE DRY GOOD SHIPPING*<br><br></strong></div>\n<div style=\"text-align: center;\" da... [TRIMMED FOR FIXTURE]",
+      "published_at": "2024-03-15T22:43:17-04:00",
+      "created_at": "2024-03-15T22:43:17-04:00",
+      "updated_at": "2026-05-28T05:59:23-04:00",
+      "vendor": "NONLIVESTOCK",
+      "product_type": "",
+      "tags": [
+        "coral food",
+        "food",
+        "liquid food",
+        "two little fishes"
+      ],
+      "variants": [
+        {
+          "id": 45603562946792,
+          "title": "8oz",
+          "option1": "8oz",
+          "option2": null,
+          "option3": null,
+          "sku": "TWO-LITTLE-FISHES-ACROPWR-8OZ",
+          "requires_shipping": true,
+          "taxable": true,
+          "featured_image": null,
+          "available": true,
+          "price": "14.99",
+          "grams": 68,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 8611536142568,
+          "created_at": "2024-03-15T22:43:17-04:00",
+          "updated_at": "2026-05-28T05:59:23-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 43049888645352,
+          "created_at": "2024-03-15T22:44:05-04:00",
+          "position": 1,
+          "updated_at": "2024-07-24T16:29:36-04:00",
+          "product_id": 8611536142568,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0548/9914/6925/files/Acropower.jpg?v=1721852976",
+          "width": 951,
+          "height": 793
+        }
+      ],
+      "options": [
+        {
+          "name": "Size",
+          "position": 1,
+          "values": [
+            "8oz",
+            "16oz",
+            "32oz"
+          ]
+        }
+      ]
+    }
+  ]
+}

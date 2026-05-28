@@ -1,0 +1,159 @@
+# Reef Chasers scraper config (CTK-086 Session 3).
+#
+# Authoritative platform/method fields live on the vendors row (migration
+# 0018_add_reef_chasers_vendor.sql, vendor_id=9). YAML carries scrape-tuning
+# per arch §2.3 — values that may change without a code edit (delay, page
+# size, max pages, hash anchor, originator prefix, category filter). DB row
+# wins on conflict.
+
+slug: reef-chasers
+platform: shopify
+base_url: https://reefchasers.com
+
+# Standard Shopify endpoint; pre-flight 2026-05-28 — HTTP 200, canonical
+# product-array payload; 249-product single-page catalog (page 2 empty
+# terminator). Pagination terminates on first under-full page per
+# parse_shopify.py page loop. Comparable small-catalog floor to JF (452)
+# at the lower end.
+#
+# Five-signal Shopify confirmation pre-flight (vendor-scan false-positive
+# precedent invariant per CTK-085 Session 1c AquaSD split to CTK-090):
+#   (1) /products.json HTTP 200 + canonical Shopify product-array payload
+#       (249 products / 1 page at limit=250; 1.68 MB)
+#   (2) window.Shopify.shop = "reef-chasers.myshopify.com" + cdn.shopify.com
+#       preconnect in homepage HTML (24 cdn.shopify.com refs)
+#   (3) cdn.shopify.com preconnect headers (multiple) + shopifycloud CDN
+#       URL shape; no BigCommerce / WooCommerce / custom-platform deviation
+#       signals (no `<meta name='platform'>` BigCommerce marker)
+#   (4) robots.txt explicit "# Shopify storefront. Public product, collection,
+#       page, blog, policy, cart, and localized HTML is crawlable." preamble
+#       + UCP/MCP endpoint at /api/ucp/mcp + agents.md advertised (Shopify
+#       agent-aware storefront posture)
+#   (5) /products.json payload carries canonical top-level products array
+#       with 13-key first-product shape (body_html / created_at / handle /
+#       id / images / options / product_type / published_at / tags / title /
+#       updated_at / variants / vendor) matching PE+WWC+TSA+JF+Battlecorals+
+#       Unique Corals+Vivid empirical anchor
+#
+# Response header shopify-complexity-score-v2: 777 confirms Shopify backing.
+# Canonical public domain is reefchasers.com (reef-chasers.com does NOT
+# resolve — DNS NXDOMAIN; the hyphenated form is the .myshopify.com shop
+# slug only, not a public domain).
+products_path: /products.json
+
+# Page size at Shopify's max (250) — single round-trip covers the 249-product
+# catalog. The parser short-circuits on the first under-full page (page 1
+# returns 249 < 250 = last page).
+page_size: 250
+
+# Inherits PE+WWC+TSA+JF+Battlecorals+UC+Vivid empirical request_delay_sec=2
+# lock. 249 products / 250 per page = 1 page × 2s = ~2s total scrape time,
+# trivial vs. 60-min workflow timeout. Hourly cadence at :41 puts the fire
+# well outside any top-of-hour GH Actions schedule degradation window
+# (open-items.md L53 + L60 off-minute discipline; :41 distinct from JF :07
+# / TSA :13 / WWC :19 / Vivid :19 / UC :29 — no co-fire neighbor within
+# 5-minute spread). Bump to 3-4s per arch §2.4 retry-policy outcome only if
+# 429s appear in observation window.
+request_delay_sec: 2
+
+# Belt-and-suspenders ceiling. RC's 249-product catalog at 250/page = 1 page
+# today; 5 leaves room for catalog growth + drop-spike inventory + Fri/Sat
+# in-store event inventory without re-tuning. Matches Battlecorals + UC
+# 5-cap inverse-load posture for small-catalog vendors.
+max_pages: 5
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object.
+# Same hash_anchor as PE+WWC+TSA+JF+Battlecorals+UC+Vivid per parse_shopify.py
+# shape stability. F5 fold (sort-before-hash) prevents Shopify JSON key
+# emission-order changes from spuriously flipping the sentinel. Empirical
+# anchor (pre-flight 2026-05-28): 13 keys = body_html, created_at, handle,
+# id, images, options, product_type, published_at, tags, title, updated_at,
+# variants, vendor.
+hash_anchor: first_product_keys
+
+# originator_prefix=null per CTK-024 PE + CTK-086 Session 2 Vivid precedent.
+# RC catalog carries an "RC X" self-prefix on 79/143 coral titles (~55%;
+# e.g., "RC Space Invader Chalice Frag", "RC Cosmic Calamity Favia", "RC
+# Ectoplasm Acropora", "RC Jungle Juice Acropora") — RC clearly originates
+# its own named house lineages. HOWEVER: the seed-list
+# (.claude/research/named-coral-seed-list.md) has ZERO Reef-Chasers-attributed
+# canonical entries (RC is not among the priority originator vendors: JF /
+# WWC / TSA / Battlecorals / AquaSD / Unique Corals / ORA / Tyree / Cherry
+# Corals / ECC / Reefdwellers / Poletti). With no "RC X" canonical_name
+# entries to synthesize against, matcher §3.4 stage 3 synthesis would be a
+# no-op for RC pieces; null prefix is the correct config TODAY.
+#
+# Forward note (Phase 4 seed-list expansion): RC's house lineages are
+# legitimate named-coral originator candidates. If seed-list expansion adds
+# RC-attributed canonicals, flip originator_prefix to 'rc' (matching the
+# seed-list canonical_name normalization output per the Battlecorals/UC
+# convention principle — prefix matches seed-list shape, not slug). Not a
+# CTK-086 scraper-side blocker; flagged for /lead-architect / seed-list
+# expansion awareness.
+#
+# Cross-vendor propagation: RC catalog carries cross-vendor lineages with
+# non-RC prefixes — TSA, JF, PR, TGC observed (e.g., "TSA Sour Patch
+# Acropora", "JF Raja Rampage Frag", "PR Fruity Pebbles Acropora", "TGC Red
+# Wing Millepora"). These match at matcher stages 1-2 directly without
+# synthesis IF the seed-list has the right cross-vendor canonical entries;
+# no special YAML config needed.
+originator_prefix: null
+
+# Category filter: TAG-based allowlist (Q-4 framework extension, CTK-086
+# Session 2). RC's product_type is EMPTY ('') universally across all 249
+# products — taxonomy lives entirely in tags. Distinct from all prior
+# Shopify vendors (PE/WWC/TSA/JF product_type buckets; Battlecorals
+# taxonomic-genus; UC structural-class; Vivid 'WYSIWYG Coral'/'Corals and
+# Inverts' buckets). This is the data-shape sub-divergence Q-4 absorbs.
+#
+# Empirical 2026-05-28 full-catalog walk (249 products, ALL product_type=''):
+#   - 'Coral' umbrella tag        143 items (primary + SOLE coral signal;
+#                                  every coral row carries it)
+#   - coral sub-type tags         SPS (63) / Acropora (49) / LPS (36) /
+#                                  WYSIWYG (31) / Zoanthid (26) / Soft Coral
+#                                  (25) / Mushroom (11) / Chalice (8) /
+#                                  Montipora (6) / Goniopora (6) / Porites
+#                                  (5) / Favia (3) / GSP (3) / torch (3) /
+#                                  Leptoseris (2) — ALL co-applied WITH the
+#                                  'Coral' umbrella (zero coral-subtype-tagged
+#                                  row missing the 'Coral' umbrella; coverage
+#                                  gap = 0 at walk).
+#   - non-coral residue           106 items WITHOUT 'Coral' tag: fish (Fish
+#                                  29 / Tang 11 / Clown / Wrasse 2 / Goby 1 /
+#                                  Foxface / Angelfish / Damsel), equipment
+#                                  (fragtech 32 frag racks / coral mounts /
+#                                  plugs), food (coral food / frozen food),
+#                                  supplements (Tropic Marin 1 / supplement 9).
+#                                  All correctly excluded by tag_allowlist
+#                                  miss (no 'Coral' tag).
+#
+# Filter design (Q-2 lock + 2026-05-28 full-catalog validation):
+#   tag_allowlist: ['Coral'] is the LOAD-BEARING gate — 143 corals kept,
+#   zero coverage gap (validated: every coral-subtype-tagged row also carries
+#   'Coral'). tag_denylist is belt-and-suspenders per
+#   feedback_rotating_bucket_allowlist.md: at 2026-05-28 walk, ZERO
+#   'Coral'-tagged rows ALSO carry a denylist tag (zero co-occurrence) — the
+#   denylist is DORMANT today, defending against a future re-tagging event
+#   where RC mistakenly applies 'Coral' to a fish/equipment row that also
+#   carries a denylist tag. All 11 denylist tag spellings verified verbatim-
+#   present in the catalog (no Vivid-style singular/plural mismatch).
+#
+# Watch item: a tag_denylist HIT (a row passing tag_allowlist 'Coral' but
+# rejected by a denylist tag) on a future scrape = RC re-tagging signal,
+# not a bug. scraper_runs.listings_seen drift watch at /lead-backend
+# per-vendor close-monitor.
+category_filter:
+  tag_allowlist:
+    - Coral                     # 143 items; sole coral signal; every coral row carries it (2026-05-28)
+  tag_denylist:
+    - Fish                      # 29 items; fish umbrella (2026-05-28)
+    - Tang                      # 11 items (2026-05-28)
+    - Wrasse                    # 2 items (2026-05-28)
+    - Goby                      # 1 item (2026-05-28)
+    - Tropic Marin              # 1 item; supplement brand (All For Reef dosing) (2026-05-28)
+    - shipping                  # 3 items; Live Auction shipping modules (2026-05-28)
+    - module                    # 3 items; Live Auction local-pickup modules (2026-05-28)
+    - supplement                # 9 items (2026-05-28)
+    - fragtech                  # 32 items; CFT/fragtech frag racks + coral mounts + plugs (2026-05-28)
+    - aquarium                  # 8 items (2026-05-28)
+    - sticker                   # 10 items (2026-05-28)
