@@ -2,7 +2,7 @@ name: pacific-east
 
 on:
   schedule:
-    - cron: '0 8 * * *'
+    - cron: '37 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -13,11 +13,14 @@ jobs:
     runs-on: ubuntu-latest
     # 60-min cap per CTK-024 Session 2 fix. First-run image-mirror loop on PE's
     # 2500-3000 listings × ~500-600ms per mirror() = 21-30 min just for Phase B
-    # (Phase A data writes finish in 1-2 min). Steady-state daily runs (handful
+    # (Phase A data writes finish in 1-2 min). Steady-state hourly runs (handful
     # of new arrivals + Phase B catch-up for prior NULL image_url rows) finish
     # in under 2 min. 60 absorbs first-run + future catalog growth without
     # re-tuning. Arch §2.7's 10-min default stands as the typical-cadence
     # ceiling; 60 is the CTK-024 first-scraper carve-out.
+    # Cadence: hourly off-minute (37 * * * *) per /lead-backend fleet-cadence
+    # audit 2026-05-28 — WYSIWYG-daily-drip rubric (vendor-scan §7) matches
+    # Vivid; off-minute clears the open-items L53 top-of-hour congestion class.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
