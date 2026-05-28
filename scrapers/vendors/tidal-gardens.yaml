@@ -1,0 +1,107 @@
+# Tidal Gardens scraper config (CTK-087 Session 2). Magento — single-file
+# vendor parser scrapers/vendors/tidal_gardens.py (NOT a shared parse_magento.py;
+# one Magento vendor, arch §2.8 rule-of-three). Authoritative platform/method
+# fields live on the vendors row (migration 0021_add_tidal_gardens_vendor.sql,
+# vendor_id=11); YAML carries scrape-tuning per arch §2.3. DB row wins on conflict.
+
+slug: tidal-gardens
+platform: magento
+base_url: https://tidalgardens.com
+
+# Platform confirmation (CTK-087 Session 1 investigation 2026-05-28, resolving
+# vendor-scan §8 "platform unclear, confirm with BuiltWith"):
+#   - x-magento-cache-debug response header + 48 Magento body markers
+#     (WeltPixel/Pearl theme); Cloudflare CDN in front (did not block).
+#   - Server-rendered category-grid HTML (probe: /corals/sps.html = 460 KB raw
+#     with the full grid present) -> BS4 static parse, NO Playwright.
+#   - robots.txt blocks only /catalogsearch/; coral genus paths + clams
+#     crawlable. Standard Chrome UA (decision #13) hygiene posture.
+
+# Category paths — ENUMERATED genus subpaths with a per-path category hint
+# (Magento cards carry no product_type field; the hint is the product_type
+# proxy passed to normalize.infer_category). Session-2 confirm-at-open
+# decision: the /corals.html parent anchor DOES aggregate all coral
+# subcategories in one sweep (probe 2026-05-28: 338 == union of subpaths,
+# all 3 anemone URLs included), but enumerate wins on two measured findings:
+#   (1) category quality — title-only inference on the anchor is 38% NULL
+#       (127/338) vs 0% NULL when each subpath supplies its genus hint.
+#   (2) the anchor's only 2 items beyond the subpath union are "MEGA Mystery
+#       Box" grab-bag bundles — aggregator noise we exclude anyway (cf. AquaSD
+#       dropping frag-packs / multiples buckets).
+# So category_paths IS the coral-scope filter (no category_filter block).
+# Anemones (/corals/anemones.html) + clams (/inverts/clams.html) KEPT with no
+# exclusion per CTK-087 Jon 2026-05-28 + CTK-037 D1 fleet anemone/clam-keep.
+# Counts at 2026-05-28 walk: sps 105 / lps 144 / soft-corals 14 / zoanthids
+# 63 / corallimorphs 8 / anemones 3 / clams 1.
+#
+# To revert to the anchor sweep (if category enrichment ever stops mattering),
+# replace the coral subpaths with a single `- path: /corals.html` entry — the
+# parser handles plain-string and {path, category} entries identically. No
+# code change. Watch item: if TG adds a new coral genus subpath, it is silently
+# missed under enumerate; a periodic /corals.html-total vs subpath-sum re-probe
+# (CTK-094-adjacent) catches it.
+category_paths:
+  - path: /corals/sps.html
+    category: sps
+  - path: /corals/lps.html
+    category: lps
+  - path: /corals/soft-corals.html
+    category: softie
+  - path: /corals/zoanthids.html
+    category: zoanthid
+  - path: /corals/corallimorphs.html
+    category: mushroom
+  - path: /corals/anemones.html
+    category: anemone
+  - path: /inverts/clams.html
+    category: clam
+
+# Pagination — ?p=N, and Magento CLAMPS past-the-end pages (probe 2026-05-28:
+# ?p=9 on an 8-page category returns page 1 again; a 1-page category's ?p=2
+# == ?p=1). The empty/short-page/404 terminators that Shopify + BC rely on
+# NEVER fire here — Magento serves a full page every time. tidal_gardens
+# terminates on the toolbar ("Items X-Y of Z", stop when Y >= Z), with a
+# first-title-repeat clamp guard as the markup-drift safety net.
+
+# Belt-and-suspenders ceiling. Largest category (lps=144) at 48 cards/page =
+# 3 pages; 12 leaves headroom for catalog growth + drop-spike inventory
+# without re-tuning. The toolbar terminator stops the walk well before this;
+# max_pages is the final runaway ceiling against a clamp-loop edge.
+max_pages: 12
+
+# Polite default. 7 paths × ~2 pages average × 2s = ~28s/scrape — comfortably
+# under the 60-min workflow ceiling. Bump to 3-4s per arch §2.4 retry-policy
+# outcome only if 429s appear in observation window.
+request_delay_sec: 2
+
+# Arch §2.6 Magento variant: first card's tag + class skeleton in document
+# order, text + non-class attrs stripped, AND per-product numeric class
+# suffixes stripped (WeltPixel bakes the product id into the image-container
+# class, e.g. product-image-container-221). Hash flips only on a real theme
+# structural change. Anchor pin: first card of first non-empty iterated path.
+hash_anchor: first_card_skeleton
+
+# Silent-OOS gap (probe 2026-05-28): Magento hides OOS items from category
+# view — zero out-of-stock markers across all coral paths; every card carries
+# Add-to-Cart. All parsed cards land in_stock=True at parse layer. OOS-via-
+# disappearance is NOT surfaced by diff.classify (absent rows aren't iterated;
+# existing DB rows stay at last-seen in_stock). v1 accepts the ~7-day stale-
+# available window (POTO Tier-3 precedent, Jon 2026-05-28). TG is added to
+# CTK-094's cohort-OOS consumer set (fast-follow). Same silent-OOS shape as
+# AquaSD (BigCommerce) + POTO.
+
+# originator_prefix — null at v1 launch (PE / AquaSD precedent — no matcher
+# §3.4 stage-3 synthesis amplification). TG carries house-named pieces; whether
+# to set a prefix depends on TG-attributed canonical entries in
+# named-coral-seed-list.md. Flag for /lead-backend Q-N at seed-list review.
+originator_prefix: null
+
+# image_strategy inherits from vendors row (mirror per default + decision #52).
+# Magento media URLs are /media/catalog/product/<x>/<y>/<file>.jpg; the grid
+# <img> src is a lazy-load /static/ Loader.gif placeholder — the parser reads
+# the real URL from data-original and strips the resize query params to the
+# canonical /media/ URL (probe 2026-05-28: bare URL byte-identical to the
+# param'd URL). Runtime-flippable to 'hotlink' via UPDATE, no code commit.
+
+# category_filter / auction_detection — ABSENT. category_paths IS the coral-
+# scope filter (genus subpaths only). TG has no auction surface.

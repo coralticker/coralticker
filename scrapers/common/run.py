@@ -39,6 +39,7 @@ import yaml
 from scrapers.common import db, diff, matcher, parse_bigcommerce, parse_shopify
 from scrapers.common.diff import Counters
 from scrapers.common.errors import ConfigError
+from scrapers.vendors import tidal_gardens
 
 log = logging.getLogger(__name__)
 
@@ -120,8 +121,16 @@ def run(slug: str) -> int:
             # BlockedError / FetchError shapes as parse_shopify (imported
             # directly in parse_bigcommerce); no new except clauses needed.
             result = parse_bigcommerce.fetch_and_parse(config)
+        elif platform == "magento":
+            # CTK-087 — Magento platform class (third after shopify +
+            # bigcommerce). Single-file vendor module (no shared parse_magento.py
+            # until a second Magento vendor lands, per arch §2.8 rule-of-three).
+            # Raises the same SchemaChangeError / BlockedError / FetchError
+            # shapes as parse_shopify (imported in tidal_gardens); no new except
+            # clauses needed.
+            result = tidal_gardens.fetch_and_parse(config)
         else:
-            raise RuntimeError(f"platform {platform!r} not implemented (v1 = shopify + bigcommerce)")
+            raise RuntimeError(f"platform {platform!r} not implemented (v1 = shopify + bigcommerce + magento)")
 
         items = result.items
         html_hash = result.html_hash

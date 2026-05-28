@@ -1,0 +1,83 @@
+name: tidal-gardens
+
+on:
+  schedule:
+    # CTK-087 cadence lock per plan §Q (Jon 2026-05-28) + arch §2.7 decision
+    # #15 + .claude/open-items.md L53 off-minute discipline.
+    #
+    # 31 10 * * * UTC = 5:31am EST / 6:31am EDT — early-morning ET, off-peak.
+    # 31-minute off-minute per L53 top-of-hour degradation discipline
+    # (2026-05-12 incident). Daily-cadence ('daily' cadence_label per
+    # vendor_id=11 vendors row). Tidal Gardens runs monthly YouTube-Live drops
+    # (operational signal only, not a scraper trigger) — no drop-day-aware
+    # second-workflow path.
+    #
+    # Runner-contention note: the daily-cadence band is Battlecorals 8:23 UTC +
+    # AquaSD 9:47 UTC; 10:31 UTC spreads Tidal Gardens clear of both so they
+    # don't share the runner pool simultaneously.
+    - cron: '31 10 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Concurrency: queue (don't cancel) per Phase 2 vendor ship-with-explicit-block
+# convention (AquaSD / Battlecorals / Unique Corals precedent).
+# cancel-in-progress: false — an operator-trigger landing during an in-flight
+# cron fire queues behind it (≤60-min latency given timeout-minutes: 60).
+# Cancelling would risk truncating a running Phase B mirror loop mid-write
+# (vendor_listings / price_history / R2 image-mirror double-write avoidance).
+# Explicit group also converts GH-Actions-default silent-drop on
+# workflow_dispatch overlap into queue-with-pending-replacement (open-items.md
+# L50); queue depth never exceeds 1 at Tidal Gardens' ~28s scrape time
+# (7 paths × ~2 pages × 2s) + Phase B mirror.
+concurrency:
+  group: tidal-gardens-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # 60-min cap inherits the Phase 2 vendor carve-out. Tidal Gardens scrape
+    # estimate: 7 category_paths × ~2 pages avg × 2s request_delay = ~28s
+    # Phase A; Phase B image-mirror scales with NEW count (first-run mirror
+    # absorbs the ~337-product catalog at ~500-600ms/image, ~4 min). Steady-
+    # state daily fires finish in <2 min total. 60 absorbs first-run + growth.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Run Tidal Gardens scraper
+        id: scrape
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: python -m scrapers.common.run tidal-gardens
+
+      - name: Cleanup stale running rows
+        if: always()
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python -m scrapers.common.run tidal-gardens --cleanup
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"tidal-gardens scraper failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"
