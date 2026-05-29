@@ -25,6 +25,9 @@ import traceback
 from decimal import Decimal
 from pathlib import Path
 
+import yaml
+
+from scrapers.common import normalize
 from scrapers.common.errors import ConfigError
 from scrapers.common.http import FetchResult
 from scrapers.common.parse_shopify import SchemaChangeError
@@ -37,7 +40,27 @@ from scrapers.vendors.tidal_gardens import (
 )
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "tidal_gardens"
+YAML_PATH = Path(__file__).parent.parent / "vendors" / "tidal-gardens.yaml"
 BASE_URL = "https://tidalgardens.com"
+
+# The category-hint -> arch §1.4 enum contract that tidal-gardens.yaml's
+# per-path hints depend on. The scraper passes each path's hint to
+# normalize.infer_category as a product_type proxy; the ratified 0%-NULL-
+# category claim (337/337 at 2026-05-28 verify-pass) rests on every hint
+# resolving to a non-NULL enum. These pins make a future normalize.py
+# _CATEGORY_PATTERNS tweak that silently breaks a hint mapping (e.g. dropping
+# the `(?:nthid)?` group, which would send all 63 zoanthid-path items to NULL)
+# fail a test instead of degrading prod silently. CTK-087 /code-review Finding
+# 2 (Tier 3).
+EXPECTED_HINT_ENUM = {
+    "sps": "sps",
+    "lps": "lps",
+    "softie": "softie",
+    "zoanthid": "zoa",     # lexically divergent — relies on the (?:nthid)? regex
+    "mushroom": "mushroom",
+    "anemone": "anemone",
+    "clam": "clam",
+}
 
 
 def _load(name: str) -> bytes:
@@ -493,6 +516,58 @@ def test_lineage_flag_vendor_named_for_caps_prefix():
 def test_lineage_flag_unknown_for_bare_title():
     items, _, _ = _parse_one_page(_load("sps_p1.sample.html"), "/corals/sps.html", "sps", None)
     assert items[0]["lineage_flag"] == "unknown"  # "24K Leptoseris" has no ALL-CAPS prefix
+
+
+# ─── Test 30: zoanthid hint → 'zoa' (the lexically-divergent mapping) ────────
+def test_hint_zoanthid_maps_to_zoa():
+    """The fragile one: 'zoanthid' resolves to 'zoa' ONLY via normalize.py's
+    `\\bzoa(?:nthid)?s?\\b` regex. A tweak that drops the (?:nthid)? group would
+    silently send all 63 zoanthid-path items to NULL category. Tested in
+    isolation (empty title) so this is purely the hint path."""
+    assert normalize.infer_category({"product_type": "zoanthid", "tags": [], "title": ""}) == "zoa"
+
+
+# ─── Test 31: softie hint → 'softie' (soft-corals path) ──────────────────────
+def test_hint_softie_maps_to_softie():
+    assert normalize.infer_category({"product_type": "softie", "tags": [], "title": ""}) == "softie"
+
+
+# ─── Test 32: mushroom hint → 'mushroom' (corallimorphs path) ────────────────
+def test_hint_mushroom_maps_to_mushroom():
+    """The /corals/corallimorphs.html path uses the 'mushroom' hint (the enum
+    value), NOT 'corallimorph' (which matches no pattern and would resolve
+    NULL). Pins that the YAML hint is the pattern-matching token, not the
+    biological label."""
+    assert normalize.infer_category({"product_type": "mushroom", "tags": [], "title": ""}) == "mushroom"
+
+
+# ─── Test 33: direct hints (sps / lps / anemone / clam) ──────────────────────
+def test_hint_direct_mappings():
+    for hint in ("sps", "lps", "anemone", "clam"):
+        got = normalize.infer_category({"product_type": hint, "tags": [], "title": ""})
+        assert got == EXPECTED_HINT_ENUM[hint], f"hint {hint!r} → {got!r}, expected {EXPECTED_HINT_ENUM[hint]!r}"
+
+
+# ─── Test 34: every YAML category hint is pinned AND resolves non-NULL ────────
+def test_yaml_category_hints_all_pinned_and_non_null():
+    """Ties the pins above to the live tidal-gardens.yaml. Loads the real
+    config's per-path hints and asserts each (a) is pinned in EXPECTED_HINT_ENUM
+    — so a future YAML hint addition without a regression assertion fails here
+    — and (b) resolves to the expected non-NULL enum. This is the guard behind
+    the 0%-NULL-category claim."""
+    cfg = yaml.safe_load(YAML_PATH.read_text(encoding="utf-8"))
+    hints = [e["category"] for e in cfg["category_paths"]
+             if isinstance(e, dict) and e.get("category")]
+    assert hints, "tidal-gardens.yaml category_paths carry no category hints — expected dict-shaped entries"
+    for hint in hints:
+        assert hint in EXPECTED_HINT_ENUM, (
+            f"YAML hint {hint!r} is not pinned in EXPECTED_HINT_ENUM — add a regression assertion"
+        )
+        got = normalize.infer_category({"product_type": hint, "tags": [], "title": ""})
+        assert got is not None, f"YAML hint {hint!r} resolves to NULL category — 0%-NULL guarantee broken"
+        assert got == EXPECTED_HINT_ENUM[hint], (
+            f"YAML hint {hint!r} → {got!r}, expected {EXPECTED_HINT_ENUM[hint]!r}"
+        )
 
 
 def main() -> int:
