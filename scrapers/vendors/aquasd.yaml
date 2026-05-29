@@ -81,23 +81,34 @@ pagination: '?page={n}'
 # 30 leaves ample headroom for catalog growth without re-tuning.
 max_pages: 30
 
-# Per-category floor — opt-in raise. parse_bigcommerce raises
-# SchemaChangeError if any single category produces fewer items than this
-# threshold across the full pagination sweep. Distinguishes single-category
-# schema drift (BC Stencil supports per-category template overrides via
-# `category-<id>.html`) from the all-categories-empty raise that fires at
-# function bottom only when EVERY category is empty (CTK-090 Session 4
-# /code-review finding #3). 3 tuned at Session 6b 2026-05-27 per small-
-# genera empirical probe — Session 4's "5 lean default" was set on n=1
-# /acropora/-shape sample without exercising the small-bucket tail;
-# /cynarinas/=4 + /scolys/=8 + 3 marker-empty paths (/wilsonis/,
-# /elegances/, /wellsos-and-trachys/) surfaced via 2026-05-27 probe
-# post-Session-6 marker carve-out land. Threshold 3 keeps the per-
-# category drift signal (5+ → 0/1/2 transition still raises) while
-# accommodating AquaSD's legitimate low-stock genera. Marker carve-out
-# absorbs the legitimate-empty case separately. Per-genus override path
-# is a future yaml field if a real-world catalog rotates a path below 3
-# in normal operation; not implemented at v1 launch.
+# Per-category floor — opt-in WARN. parse_bigcommerce logs a grep-friendly
+# WARN when any single category produces fewer items than this threshold
+# across the full pagination sweep; items still persist and the run
+# finalizes status='success'. Was a fatal SchemaChangeError until CTK-090
+# Session 7 2026-05-29 downgrade — live /cynarinas/ probe found 1 in-stock
+# product (no empty-state marker, because a product IS present), which
+# would have red-flagged scheduled runs and spammed ops. Genuine single-
+# category template breaks (BC Stencil supports per-category overrides via
+# `category-<id>.html`) are already loud-failed elsewhere: cards-present-
+# all-skipped in _parse_one_page (finding #2/#7), the all-categories-empty
+# raise at fetch_and_parse bottom (fires only when EVERY category is
+# empty), the §2.6 html_hash sentinel. The count heuristic was always an
+# observability signal, not a distinct failure mode — WARN keeps the
+# signal without the false fatal (mirrors CTK-088 POTO buyable-drop WARN
+# precedent). 3 tuned at Session 6b 2026-05-27 per small-genera empirical
+# probe — Session 4's "5 lean default" was set on n=1 /acropora/-shape
+# sample without exercising the small-bucket tail; /cynarinas/=4 (1 at
+# 2026-05-29 live probe) + /scolys/=8 + 3 marker-empty paths (/wilsonis/,
+# /elegances/, /wellsos-and-trachys/) surfaced via 2026-05-27 probe post-
+# Session-6 marker carve-out land. Threshold 3 keeps the per-category
+# drift signal (5+ → 0/1/2 transition still WARNs) while accommodating
+# AquaSD's legitimate low-stock genera. Marker carve-out absorbs the
+# legitimate-empty case separately. Per-genus override path is a future
+# yaml field if a real-world catalog rotates a path below 3 in normal
+# operation; not implemented at v1 launch.
+# Note: the same WARN message text fires on BOTH legitimate sparse single-
+# genus inventory (e.g., /cynarinas/=1) AND theme-drift 5+→1 transitions.
+# Signal discrimination requires per-path history; deferred to CTK-094.
 expected_min_per_category: 3
 
 # Polite default. 21 paths × ~3 pages average × 2s = ~125s/scrape —

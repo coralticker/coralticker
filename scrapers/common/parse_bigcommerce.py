@@ -47,12 +47,11 @@ def fetch_and_parse(config: dict) -> ParseResult:
     delay = float(config.get("request_delay_sec", 2.0))
     auction_detection = config.get("auction_detection")
     originator_prefix = config.get("originator_prefix")
-    # CTK-090 Session 4 finding #3: opt-in per-category min. Absent → no
-    # check (current behavior); set → raise SchemaChangeError when any
-    # single category produces fewer items than the threshold. Distinguishes
-    # single-category schema drift (e.g., per-category template override
-    # silently emptying /acropora/) from the all-categories-empty raise at
-    # function bottom.
+    # Opt-in per-category floor. Absent → no check; set → grep-friendly WARN
+    # when any single category produces fewer items than the threshold (items
+    # persist, run finalizes status='success'). WARN, not raise — CTK-090
+    # Session 7 downgrade 2026-05-29. Partial-bucket drift coverage gap +
+    # alerting deferral disclosed at the WARN call site (L122-138).
     expected_min_per_category = config.get("expected_min_per_category")
 
     items: list[dict] = []
@@ -119,20 +118,32 @@ def fetch_and_parse(config: dict) -> ParseResult:
             items.extend(page_items)
             category_item_count += len(page_items)
 
-        # Finding #3: per-category min threshold. Opt-in via yaml field. When
-        # set, any category producing fewer items than the threshold raises
-        # — single-category schema drift surfaces as loud-fail rather than
-        # silent ~5% catalog loss. Session 6 fix: skip the raise when the
-        # Stencil empty-state marker was detected on page 1 (legitimate empty
-        # category, not schema drift).
+        # Per-category WARN replaces Session 4 finding #3's fatal raise after
+        # live /cynarinas/=1 false-positive (CTK-090 Session 7 directive
+        # 2026-05-29). Items persist, run finalizes status='success'. Marker-
+        # detected empty categories already log at the page-1 break and stay
+        # excluded here to avoid double-signal. Mirrors CTK-088 POTO buyable-
+        # drop WARN precedent. Partial-bucket scenarios — a single category
+        # silently drops to 0 cards via per-category template override (BC
+        # Stencil category-<id>.html) while siblings stay healthy — produce
+        # ONLY a WARN today: cards-present-all-skipped (_parse_one_page)
+        # requires cards > 0; the all-categories-empty raise (L150-151)
+        # requires every category empty; html_hash is anchored on the first
+        # iterated category's first validated card with no scrape-time
+        # comparison job wired today. Alerting on partial-bucket drift is
+        # deferred to CTK-094 (cohort-comparison-OOS catches indirectly via
+        # missing-cohort delta; a category-cohort variant is a natural scope-
+        # add). Q-Backend-7 log-only-v1 posture holds — no schema column on
+        # scraper_runs.
         if (
             expected_min_per_category is not None
             and category_item_count < expected_min_per_category
             and not category_marker_empty
         ):
-            raise SchemaChangeError(
-                f"{cpath_norm}: {category_item_count} items (expected ≥{expected_min_per_category}) — "
-                "likely per-category template override or schema drift"
+            log.warning(
+                "%s: %d items (expected ≥%d) — below per-category floor; persisting anyway "
+                "(possible per-category template override or sparse single-genus inventory)",
+                cpath_norm, category_item_count, expected_min_per_category,
             )
 
     if not items:

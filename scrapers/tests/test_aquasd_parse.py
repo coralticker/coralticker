@@ -502,41 +502,67 @@ def test_cards_present_all_skipped_raises_schema_change():
     assert raised, "cards-present-all-skipped must raise SchemaChangeError, not return empty"
 
 
-# ─── Test 25: per-category min raise on undershoot ───────────────────────────
-def test_expected_min_per_category_raises_when_undershoot():
-    """Single category producing fewer items than expected_min_per_category
-    raises SchemaChangeError — surfaces single-category template-override
-    drift that the all-categories-empty raise would silently absorb on a
-    healthy-other-categories scrape (CTK-090 Session 4 /code-review finding
-    #3)."""
+# ─── Test 25: per-category min WARN on undershoot (no raise) ─────────────────
+def test_expected_min_per_category_warns_when_undershoot():
+    """Single category below the per-category floor logs a grep-friendly WARN
+    and persists its items; the run does NOT raise. This is the CTK-090
+    Session 7 downgrade (2026-05-29) of the original Session 4 finding-#3
+    fatal raise — the live /cynarinas/ probe found 1 in-stock product (no
+    empty-state marker, because a product IS present), which a fatal raise
+    would have red-flagged as schema drift and spammed ops. The genuine
+    single-category template break is already loud-failed elsewhere
+    (cards-present-all-skipped in _parse_one_page, all-categories-empty
+    raise at fetch_and_parse bottom, §2.6 html_hash sentinel). Mirrors the
+    CTK-088 POTO buyable-drop WARN precedent. /clearance/ is also a real
+    1-card small-bucket in production YAML — same WARN signal applies."""
+    import logging
     original_fetch = parse_bigcommerce.http.fetch
-    clearance_body = _load("clearance_p1.sample.html")  # 1 card
+    clearance_body = _load("clearance_p1.sample.html")  # 1 card, no marker
 
     def stub_fetch(url, request_delay_sec=2.0):
         if "page=1" in url:
             return FetchResult(body=clearance_body, status_code=200, error_class=None, error_message=None)
         return FetchResult(body=None, status_code=404, error_class="other", error_message="HTTP 404")
 
+    parse_log = logging.getLogger("scrapers.common.parse_bigcommerce")
+    records: list[logging.LogRecord] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    handler = _Capture(level=logging.WARNING)
+    parse_log.addHandler(handler)
+    prev_level = parse_log.level
+    prev_propagate = parse_log.propagate
+    parse_log.setLevel(logging.WARNING)
+    parse_log.propagate = False  # F11: keep WARNs off stderr in script-mode runner
     parse_bigcommerce.http.fetch = stub_fetch
     try:
         config = {
             "base_url": "https://aquasd.com",
-            "category_paths": ["/clearance/"],
+            "category_paths": ["/cynarinas/"],
             "max_pages": 3,
             "request_delay_sec": 0,
-            "expected_min_per_category": 5,
+            "expected_min_per_category": 3,  # mirrors production aquasd.yaml floor
         }
-        raised = False
-        try:
-            fetch_and_parse(config)
-        except SchemaChangeError as e:
-            raised = True
-            assert "1 items" in str(e), f"error should report actual count: {e}"
-            assert "expected" in str(e) and "5" in str(e), f"error should name threshold: {e}"
-            assert "/clearance/" in str(e), f"error should name violating path: {e}"
-        assert raised, "category under threshold must raise SchemaChangeError"
+        result = fetch_and_parse(config)
     finally:
         parse_bigcommerce.http.fetch = original_fetch
+        parse_log.removeHandler(handler)
+        parse_log.setLevel(prev_level)
+        parse_log.propagate = prev_propagate
+
+    assert len(result.items) == 1, (
+        f"undershoot category's items must survive the WARN; got {len(result.items)}"
+    )
+    messages = [r.getMessage() for r in records]
+    assert any("below per-category floor" in m for m in messages), (
+        f"expected per-category-floor WARN; got: {messages}"
+    )
+    assert any("/cynarinas/" in m for m in messages), (
+        f"WARN should name violating path; got: {messages}"
+    )
 
 
 # ─── Test 26: expected_min_per_category absent → no check ────────────────────
@@ -622,15 +648,18 @@ def test_empty_category_paths_raises_config_error():
     assert not raised_schema, "ConfigError must NOT be a SchemaChangeError subclass"
 
 
-# ─── Test 29: empty-category marker + zero cards → threshold raise skipped ────
+# ─── Test 29: empty-category marker + zero cards → per-category check skipped ─
 def test_empty_category_marker_skips_threshold():
     """AquaSD's BC Stencil renders `<p data-no-products-notification>` on
     categories with zero stock (e.g., /acanthos/ on 2026-05-27 daily-cron run
-    377). Without marker detection, expected_min_per_category:5 trips
-    SchemaChangeError on every legitimate empty category. Marker-present +
-    zero-cards → caller skips the threshold raise for that category; the
-    scrape continues across remaining categories (CTK-090 Session 6 daily-
-    cron empty-category fix)."""
+    377). Without marker detection, a non-zero expected_min_per_category would
+    fire a per-category WARN on every legitimate empty category. Marker-
+    present + zero-cards → caller skips the per-category check entirely for
+    that category (no WARN, no raise); the scrape continues across remaining
+    categories (CTK-090 Session 6 daily-cron empty-category fix; per-cat
+    check downgraded from raise to WARN at Session 7 2026-05-29, marker
+    carve-out still load-bearing to avoid double-signal with the page-1
+    marker-detected-empty log line)."""
     original_fetch = parse_bigcommerce.http.fetch
     empty_cat_body = _load("empty_category.sample.html")
     acropora_body = _load("acropora_p1.sample.html")
@@ -649,11 +678,11 @@ def test_empty_category_marker_skips_threshold():
             "category_paths": ["/acanthos/", "/acropora/"],
             "max_pages": 3,
             "request_delay_sec": 0,
-            "expected_min_per_category": 5,
+            "expected_min_per_category": 3,  # mirrors production aquasd.yaml floor
         }
         result = fetch_and_parse(config)
         assert len(result.items) == 5, (
-            f"acropora's 5 cards must survive while /acanthos/ marker-empty skips threshold; "
+            f"acropora's 5 cards must survive while /acanthos/ marker-empty skips check; "
             f"got {len(result.items)} items"
         )
         urls = [it["product_url"] for it in result.items]
@@ -695,13 +724,20 @@ def test_marker_with_cards_still_raises_schema_change():
     assert raised, "marker + cards must raise SchemaChangeError, not silently emit items"
 
 
-# ─── Test 31: no marker + zero cards + threshold → SchemaChangeError ─────────
-def test_no_marker_no_cards_below_threshold_raises():
-    """Preserves CTK-090 Session 4 finding #3 behavior: a category producing
-    zero items WITHOUT the empty-state marker is still suspicious (selector
-    drift, silent catalog wipe, fetch-layer issue masquerading as a 200), so
-    the threshold raise still fires. The Session 6 marker carve-out narrows
-    finding #3 only to vendor-emitted-empty cases, not all-empty cases."""
+# ─── Test 31: no marker + zero cards → per-cat WARN then raise via guard ─────
+def test_no_marker_zero_cards_warns_and_then_raises_via_total_empty_guard():
+    """A category producing zero items WITHOUT the empty-state marker is still
+    suspicious (selector drift, silent catalog wipe, fetch-layer issue
+    masquerading as a 200). Post-Session-7 downgrade (2026-05-29), the per-
+    category check WARNs (not raises) and the all-categories-empty raise at
+    fetch_and_parse bottom (parse_bigcommerce.py L150-151) is the load-bearing
+    loud-fail. F14 tighten: assert BOTH signals fire in sequence — per-cat
+    WARN names /acropora/ and below-floor; then the bottom-guard raises with
+    'zero items' + 'all category_paths'. The Session 6 marker carve-out still
+    narrows the per-cat WARN to vendor-emitted-empty cases (no double-signal
+    with the page-1 marker log); the bottom guard catches selector-drift-
+    without-marker."""
+    import logging
     original_fetch = parse_bigcommerce.http.fetch
     empty_body = _load("empty.sample.html")  # 0 cards, NO marker
 
@@ -710,30 +746,167 @@ def test_no_marker_no_cards_below_threshold_raises():
             return FetchResult(body=empty_body, status_code=200, error_class=None, error_message=None)
         return FetchResult(body=None, status_code=404, error_class="other", error_message="HTTP 404")
 
+    parse_log = logging.getLogger("scrapers.common.parse_bigcommerce")
+    records: list[logging.LogRecord] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    handler = _Capture(level=logging.WARNING)
+    parse_log.addHandler(handler)
+    prev_level = parse_log.level
+    prev_propagate = parse_log.propagate
+    parse_log.setLevel(logging.WARNING)
+    parse_log.propagate = False
     parse_bigcommerce.http.fetch = stub_fetch
+    raised_schema = False
+    raise_msg = ""
     try:
         config = {
             "base_url": "https://aquasd.com",
             "category_paths": ["/acropora/"],
             "max_pages": 3,
             "request_delay_sec": 0,
-            "expected_min_per_category": 5,
+            "expected_min_per_category": 3,  # mirrors production aquasd.yaml floor
         }
-        raised_schema = False
         try:
             fetch_and_parse(config)
         except SchemaChangeError as e:
             raised_schema = True
-            # The all-empty-paths raise OR the per-category-undershoot raise
-            # is acceptable here — both surface the same loud-fail signal that
-            # the marker carve-out would otherwise suppress incorrectly.
-            msg = str(e)
-            assert "/acropora/" in msg or "zero items" in msg, (
-                f"error should signal either category undershoot or all-empty: {e}"
-            )
-        assert raised_schema, "no-marker zero-cards must raise SchemaChangeError"
+            raise_msg = str(e)
     finally:
         parse_bigcommerce.http.fetch = original_fetch
+        parse_log.removeHandler(handler)
+        parse_log.setLevel(prev_level)
+        parse_log.propagate = prev_propagate
+
+    messages = [r.getMessage() for r in records]
+    assert any("/acropora/" in m and "below per-category floor" in m for m in messages), (
+        f"expected per-cat WARN before bottom-guard raise; got: {messages}"
+    )
+    assert raised_schema, "no-marker zero-cards must raise SchemaChangeError"
+    assert "zero items" in raise_msg and "all category_paths" in raise_msg, (
+        f"raise must come from the all-empty bottom guard; got: {raise_msg}"
+    )
+
+
+# ─── Test 32: multi-category partial undershoot WARN (F3 load-bearing) ───────
+def test_expected_min_per_category_warns_only_on_undershoot_when_siblings_healthy():
+    """F3 load-bearing scenario per /lead-backend /code-review disposition.
+    The Session 7 WARN downgrade's actual production load-path is multi-
+    category: 1 of 21 buckets undershoots while siblings stay healthy. The
+    all-categories-empty bottom guard does NOT fire (siblings backfill
+    `items`). The per-cat WARN is the ONLY signal for partial-bucket drift —
+    test that it fires for the undershooting category, does NOT fire for
+    healthy siblings, all items persist, and no raise. Pins the heuristic
+    against a future refactor that drops L139-148."""
+    import logging
+    original_fetch = parse_bigcommerce.http.fetch
+    short_body = _load("clearance_p1.sample.html")  # 1 card, no marker
+    healthy_body = _load("acropora_p1.sample.html")  # 5 cards
+
+    def stub_fetch(url, request_delay_sec=2.0):
+        cat = url.split("aquasd.com")[1].split("?")[0]
+        if "page=1" in url:
+            if cat == "/short/":
+                return FetchResult(body=short_body, status_code=200, error_class=None, error_message=None)
+            if cat == "/healthy/":
+                return FetchResult(body=healthy_body, status_code=200, error_class=None, error_message=None)
+        return FetchResult(body=None, status_code=404, error_class="other", error_message="HTTP 404")
+
+    parse_log = logging.getLogger("scrapers.common.parse_bigcommerce")
+    records: list[logging.LogRecord] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    handler = _Capture(level=logging.WARNING)
+    parse_log.addHandler(handler)
+    prev_level = parse_log.level
+    prev_propagate = parse_log.propagate
+    parse_log.setLevel(logging.WARNING)
+    parse_log.propagate = False
+    parse_bigcommerce.http.fetch = stub_fetch
+    try:
+        config = {
+            "base_url": "https://aquasd.com",
+            "category_paths": ["/short/", "/healthy/"],
+            "max_pages": 3,
+            "request_delay_sec": 0,
+            "expected_min_per_category": 3,  # mirrors production aquasd.yaml floor
+        }
+        result = fetch_and_parse(config)
+    finally:
+        parse_bigcommerce.http.fetch = original_fetch
+        parse_log.removeHandler(handler)
+        parse_log.setLevel(prev_level)
+        parse_log.propagate = prev_propagate
+
+    assert len(result.items) == 6, (
+        f"healthy sibling + undershooting category items must both persist; got {len(result.items)}"
+    )
+    messages = [r.getMessage() for r in records]
+    short_warns = [m for m in messages if "/short/" in m and "below per-category floor" in m]
+    healthy_warns = [m for m in messages if "/healthy/" in m and "below per-category floor" in m]
+    assert len(short_warns) == 1, (
+        f"WARN must fire exactly once for /short/; got: {messages}"
+    )
+    assert len(healthy_warns) == 0, (
+        f"healthy sibling must not WARN; got: {messages}"
+    )
+
+
+# ─── Test 33: WARN message preserves threshold parameter (F8 parametric pin) ──
+def test_expected_min_per_category_warn_names_configured_threshold():
+    """F8: pins the heuristic against a refactor that drops field-read and
+    inlines a constant. Uses a non-production threshold (7) so the WARN
+    message ('expected ≥7') would fail to materialize if the code stopped
+    reading the YAML field. 1 card under threshold=7 fires WARN."""
+    import logging
+    original_fetch = parse_bigcommerce.http.fetch
+    clearance_body = _load("clearance_p1.sample.html")  # 1 card, no marker
+
+    def stub_fetch(url, request_delay_sec=2.0):
+        if "page=1" in url:
+            return FetchResult(body=clearance_body, status_code=200, error_class=None, error_message=None)
+        return FetchResult(body=None, status_code=404, error_class="other", error_message="HTTP 404")
+
+    parse_log = logging.getLogger("scrapers.common.parse_bigcommerce")
+    records: list[logging.LogRecord] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    handler = _Capture(level=logging.WARNING)
+    parse_log.addHandler(handler)
+    prev_level = parse_log.level
+    prev_propagate = parse_log.propagate
+    parse_log.setLevel(logging.WARNING)
+    parse_log.propagate = False
+    parse_bigcommerce.http.fetch = stub_fetch
+    try:
+        config = {
+            "base_url": "https://aquasd.com",
+            "category_paths": ["/clearance/"],
+            "max_pages": 3,
+            "request_delay_sec": 0,
+            "expected_min_per_category": 7,  # non-production; pins parametricity
+        }
+        result = fetch_and_parse(config)
+    finally:
+        parse_bigcommerce.http.fetch = original_fetch
+        parse_log.removeHandler(handler)
+        parse_log.setLevel(prev_level)
+        parse_log.propagate = prev_propagate
+
+    assert len(result.items) == 1, "item must persist under WARN"
+    messages = [r.getMessage() for r in records]
+    assert any("expected ≥7" in m for m in messages), (
+        f"WARN must echo configured threshold (7), not a hardcoded value; got: {messages}"
+    )
 
 
 def main() -> int:
