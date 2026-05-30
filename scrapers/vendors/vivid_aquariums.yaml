@@ -6,7 +6,7 @@
 # size, max pages, hash anchor, originator prefix, category filter). DB row
 # wins on conflict.
 
-slug: vivid-aquariums
+slug: vivid_aquariums
 platform: shopify
 base_url: https://vividaquariums.com
 

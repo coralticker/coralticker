@@ -6,7 +6,7 @@
 # size, max pages, hash anchor, originator prefix, category filter). DB row
 # wins on conflict.
 
-slug: unique-corals
+slug: unique_corals
 platform: shopify
 base_url: https://uniquecorals.com
 

@@ -40,7 +40,7 @@ from scrapers.vendors.tidal_gardens import (
 )
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "tidal_gardens"
-YAML_PATH = Path(__file__).parent.parent / "vendors" / "tidal-gardens.yaml"
+YAML_PATH = Path(__file__).parent.parent / "vendors" / "tidal_gardens.yaml"
 BASE_URL = "https://tidalgardens.com"
 
 # The category-hint -> arch §1.4 enum contract that tidal-gardens.yaml's

@@ -4,7 +4,7 @@
 # fields live on the vendors row (migration 0021_add_tidal_gardens_vendor.sql,
 # vendor_id=11); YAML carries scrape-tuning per arch §2.3. DB row wins on conflict.
 
-slug: tidal-gardens
+slug: tidal_gardens
 platform: magento
 base_url: https://tidalgardens.com
 

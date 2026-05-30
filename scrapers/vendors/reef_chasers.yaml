@@ -6,7 +6,7 @@
 # size, max pages, hash anchor, originator prefix, category filter). DB row
 # wins on conflict.
 
-slug: reef-chasers
+slug: reef_chasers
 platform: shopify
 base_url: https://reefchasers.com
 

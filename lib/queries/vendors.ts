@@ -65,10 +65,15 @@ export async function getVendorBySlug(slug: string): Promise<Vendor | null> {
 
 export async function getAllActiveVendorSlugs(): Promise<{ slug: string }[]> {
   const sql = getNeonSql();
+  // CTK-095 Axis 3 b&s: `_ctk0XX_test` sentinel-slug convention (CTK-029 +
+  // CTK-033) for test rows. Filter keeps the test rows out of
+  // generateStaticParams even if `active=true` slips via row-level discipline
+  // lapse. Defensive arch over the discipline invariant per CTK-093 fail-loud
+  // precedent.
   const rows = (await sql`
     SELECT slug
     FROM vendors
-    WHERE active = true
+    WHERE active = true AND slug NOT LIKE '\_%' ESCAPE '\'
   `) as unknown as { slug: string }[];
   return rows.map((row) => ({ slug: row.slug.replaceAll('_', '-') }));
 }
@@ -82,10 +87,12 @@ export async function getAllActiveVendors(): Promise<
   return unstable_cache(
     async () => {
       const sql = getNeonSql();
+      // CTK-095 Axis 3 b&s — same sentinel-slug filter as
+      // getAllActiveVendorSlugs above; keeps test rows off /vendors index.
       const rows = (await sql`
         SELECT slug, display_name
         FROM vendors
-        WHERE active = true
+        WHERE active = true AND slug NOT LIKE '\_%' ESCAPE '\'
         ORDER BY display_name ASC
       `) as unknown as { slug: string; display_name: string }[];
       return rows.map((row) => ({
