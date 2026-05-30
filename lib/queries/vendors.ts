@@ -69,11 +69,13 @@ export async function getAllActiveVendorSlugs(): Promise<{ slug: string }[]> {
   // CTK-033) for test rows. Filter keeps the test rows out of
   // generateStaticParams even if `active=true` slips via row-level discipline
   // lapse. Defensive arch over the discipline invariant per CTK-093 fail-loud
-  // precedent.
+  // precedent. ESCAPE char `!` (not the SQL default `\`) so the LIKE pattern
+  // survives JS template-literal cooking — backslash escapes collapse and
+  // would silently invert the filter to "match everything".
   const rows = (await sql`
     SELECT slug
     FROM vendors
-    WHERE active = true AND slug NOT LIKE '\_%' ESCAPE '\'
+    WHERE active = true AND slug NOT LIKE '!_%' ESCAPE '!'
   `) as unknown as { slug: string }[];
   return rows.map((row) => ({ slug: row.slug.replaceAll('_', '-') }));
 }
@@ -92,7 +94,7 @@ export async function getAllActiveVendors(): Promise<
       const rows = (await sql`
         SELECT slug, display_name, base_url
         FROM vendors
-        WHERE active = true AND slug NOT LIKE '\_%' ESCAPE '\'
+        WHERE active = true AND slug NOT LIKE '!_%' ESCAPE '!'
         ORDER BY display_name ASC
       `) as unknown as { slug: string; display_name: string; base_url: string }[];
       return rows.map((row) => ({
