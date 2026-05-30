@@ -10,6 +10,11 @@
 // clause). Distinct from retired-vendor case (vendors.active = false), which
 // keeps the vendor row + renders an inline fallback at page.tsx — not this
 // surface.
+//
+// Body re-derived 2026-05-30 per CTK-095 Session 4 / branding-guide.md L102 —
+// cross-sibling tonal asymmetry (only L102 example asserting curation principle
+// rather than admitting limitation) caught by Jon site-eyeball; replaced with
+// scope-honest framing per L15 reframe-limitations-as-scope rule.
 
 import Link from 'next/link';
 import type { Metadata } from 'next';
@@ -26,7 +31,7 @@ export default function VendorNotFound() {
         That vendor isn&apos;t on CoralTicker yet.
       </h1>
       <p className="text-base leading-relaxed mb-8">
-        I add vendors deliberately. See the vendors I track.
+        I don&apos;t cover every reef vendor. See the ones I do.
       </p>
       <p className="text-base">
         <Link href="/vendors" className="underline">
