@@ -168,6 +168,16 @@ category_filter:
     - ""                          # 51 items mixed; ~38 coral [UC signature WYSIWYG + bare-name WYSIWYG + cross-vendor TSA/WWC] + ~13 equipment leaks covered by tag_denylist (CTK-037 Session 5 Q-8 path (a) + Battlecorals D3 precedent extended with tag_denylist) (2026-05-25)
     - CORAL                       # 239 items; primary coral bucket; UC signature pieces + cross-vendor distributions (2026-05-25)
     - Coral                       # 3 items; case-variant of CORAL per CTK-037 exact-string convention (2026-05-25)
+  # CTK-095 Axis 2 tag_denylist v2 (2026-05-30): `triton` add — UC catalog
+  # rotated in Triton/Core7/Corechem supplements tagged with `triton` not
+  # caught by v1 denylist. Most v1-era leaks are STALE legacy from
+  # 2026-05-25 cold-start (PT='DRYGOODS' / 'Drygoods' / 'Panta Rhei' all
+  # excluded at intake by current allowlist; cold-start rows stuck
+  # in_stock=true awaiting CTK-094 cohort-comparison-OOS ship). The 3 net
+  # rotation leaks (Core7/Triton supplements; see CTK-095 results.md Session 2
+  # for full empirical) all carry the `triton` tag — defensive add forward-
+  # binding only, no retroactive backfill (residual cleanup via migration
+  # 0023 intersection-DELETE).
   tag_denylist:
     - Dalua                       # 38 items; LED/equipment brand catalog-wide; appears on AQUARIUM PIXEL LED BUNDLE (CTK-085 Session 3 2026-05-25)
     - goods                       # 146 items catalog-wide; universal dry-goods signal; appears on PNS supplements + Dalua/illumagic equipment in empty-PT bucket (CTK-085 Session 3 2026-05-25)
@@ -178,4 +188,5 @@ category_filter:
     - Panta Rhei                  # 50 items; equipment brand (pumps, surge devices); same as Panta Rhei PT for some, tagged on cross-PT equipment for others (CTK-085 Session 3 2026-05-25)
     - PNS                         # 2 items; supplements brand (Deep Cycle / ProBio Live Bacteria) co-tagged with 'goods' (CTK-085 Session 3 2026-05-25)
     - shipping                    # tagged on shipping items + Australian Branching Live Rock equipment-adjacent (CTK-085 Session 3 2026-05-25)
+    - triton                      # Triton / Core7 / Corechem supplement brand (Triton Method / N-DOC / ICP-OES / STN-X / CYA-NO); CTK-095 Axis 2 2026-05-30
     - used                        # used / refurbished equipment marker (e.g., Ecotech Marine Radion XR30 G5 LED) (CTK-085 Session 3 2026-05-25)

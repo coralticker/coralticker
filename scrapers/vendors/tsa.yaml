@@ -62,11 +62,27 @@ category_filter:
     - ""                  # empty product_type bucket; 9/10 sample real coral (Blastomussa/Acropora/Chalice/Acan) per CTK-037 Session 4.5; remaining ~7 rows imageless test-data per /lead-backend spot-check 2026-05-11 (frontend has_image filter excludes); ~62 real-coral recovery; Q-8 path (a) (CTK-037 Session 5 2026-05-11)
     - Coral-POS           # 1/1 real coral (SPS Cap) per CTK-037 Session 4.5 2026-05-11
     - Livestock           # 2408 items; coral + fish + anemones (CTK-037 2026-05-10)
+  # CTK-095 Axis 2 tag_denylist v3 (2026-05-30): 7 additional entries for
+  # clam + fish leaks surfaced at Jon /vendor/tsa eyeball 2026-05-30 + cross-
+  # vendor fleet sweep. Clam catches Maxima / Hippopus / Squamosa / Derasa
+  # rows under Livestock allowlist (12 leaks; TSA out-of-scope for clams
+  # distinct from PE which keeps Maxima per CTK-037 D1 seed-list coverage).
+  # Hawkfish + Wrasse + Wrasses + Goby + Tilefish + Filefish catch the 4 fish
+  # leaks (Arc Eye Hawkfish, Common Cleaner Wrasse, Blue Gudgeon Dartfish,
+  # Aiptasia Eating Filefish, Purple Tilefish). Goby is the umbrella tag for
+  # Dartfish + Tilefish at TSA (no Dartfish/Tilefish-specific tags observed
+  # in live walk 2026-05-30); singular+plural Wrasse pairs for defensive
+  # coverage. Sticker/Hoodie/T-Shirt PT='Aquarium Supplies' already
+  # excluded by allowlist; no defensive tag add needed.
   tag_denylist:
     - Algae Eater         # algae-utility inverts, 26 items (CTK-041 2026-05-21)
     - Angelfish           # fish, 18 items in Livestock (CTK-037 2026-05-10)
     - Beginner Fish       # fish, 31 items in Livestock (CTK-037 2026-05-10)
+    - Clam                # clam (TSA out-of-scope per CTK-095 Axis 2 2026-05-30; 12 Maxima/Hippopus/Squamosa/Derasa leaks in_stock)
     - Clownfish           # fish, 19 items in Livestock (CTK-037 2026-05-10)
+    - Filefish            # fish (Aiptasia Eating Filefish; CTK-095 Axis 2 2026-05-30)
+    - Goby                # fish umbrella (catches Dartfish + Tilefish at TSA per live walk; CTK-095 Axis 2 2026-05-30)
+    - Hawkfish            # fish (Arc Eye Hawkfish; CTK-095 Axis 2 2026-05-30)
     - Invert              # umbrella tag catches Shrimp/Crab/Urchin/Starfish/Snail/Lobster/Chiton/Sand Sifter/Cucumber co-carry, 77 items (CTK-041 2026-05-21)
     - Live Rock           # bio-media substrate, 1 item (CTK-041 2026-05-21)
     - Macroalgae          # bio-media algae, 9 items (CTK-041 2026-05-21)
@@ -74,4 +90,7 @@ category_filter:
     - Nano Fish           # fish, 22 items in Livestock (CTK-037 2026-05-10)
     - Refugiums           # bio-media umbrella future-proof, 6 items (CTK-041 2026-05-21)
     - Tang                # fish, 33 items in Livestock (CTK-037 2026-05-10)
+    - Tilefish            # fish (Purple Tilefish; defensive plural-tag-form coverage; CTK-095 Axis 2 2026-05-30)
+    - Wrasse              # fish singular form (defensive; CTK-095 Axis 2 2026-05-30)
+    - Wrasses             # fish plural form (Common Cleaner Wrasse; CTK-095 Axis 2 2026-05-30)
     - WYSIWYG Fish        # fish, 48 items in Livestock (CTK-037 2026-05-10)
