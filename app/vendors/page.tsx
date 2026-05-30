@@ -30,13 +30,16 @@ async function VendorList() {
   return (
     <ul>
       {vendors.map((vendor) => (
-        <li key={vendor.slug} className="py-3">
+        <li
+          key={vendor.slug}
+          className="flex flex-wrap items-baseline gap-x-6 gap-y-1 py-3"
+        >
           <Link
             href={`/vendor/${vendor.slug}`}
             className="text-base font-bold underline"
           >
             {vendor.display_name}
-          </Link>{' '}
+          </Link>
           <a
             href={vendor.base_url}
             target="_blank"
