@@ -12,9 +12,9 @@ import { getRecentPriceDrops, type PriceDropListing } from '@/lib/queries/listin
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: 'Coral price drops — last 24 hours — CoralTicker',
+  title: 'Coral price drops — CoralTicker',
   description:
-    'Price drops across reef coral vendors in the last 24 hours. One feed, every vendor.',
+    'Price drops across reef coral vendors. One feed, every vendor.',
 };
 
 const SKELETON_ROW_COUNT = 6;

@@ -16,9 +16,9 @@ import {
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: 'New coral arrivals — last 24 hours — CoralTicker',
+  title: 'New coral arrivals — CoralTicker',
   description:
-    'New coral arrivals across reef vendors in the last 24 hours — just-listed and back-in-stock. One feed, every vendor.',
+    'New coral arrivals across reef vendors — just-listed and back-in-stock. One feed, every vendor.',
 };
 
 const SKELETON_ROW_COUNT = 6;
