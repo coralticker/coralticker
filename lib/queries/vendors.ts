@@ -82,7 +82,7 @@ export async function getAllActiveVendorSlugs(): Promise<{ slug: string }[]> {
 // vendor-neutrality per branding-guide.md L41-42 (no curated tier sort).
 // Slug normalized snake → kebab on emit per module seam.
 export async function getAllActiveVendors(): Promise<
-  { slug: string; display_name: string }[]
+  { slug: string; display_name: string; base_url: string }[]
 > {
   return unstable_cache(
     async () => {
@@ -90,14 +90,15 @@ export async function getAllActiveVendors(): Promise<
       // CTK-095 Axis 3 b&s — same sentinel-slug filter as
       // getAllActiveVendorSlugs above; keeps test rows off /vendors index.
       const rows = (await sql`
-        SELECT slug, display_name
+        SELECT slug, display_name, base_url
         FROM vendors
         WHERE active = true AND slug NOT LIKE '\_%' ESCAPE '\'
         ORDER BY display_name ASC
-      `) as unknown as { slug: string; display_name: string }[];
+      `) as unknown as { slug: string; display_name: string; base_url: string }[];
       return rows.map((row) => ({
         slug: row.slug.replaceAll('_', '-'),
         display_name: row.display_name,
+        base_url: row.base_url,
       }));
     },
     ['getAllActiveVendors'],

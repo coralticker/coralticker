@@ -26,12 +26,11 @@ export default function VendorNotFound() {
         That vendor isn&apos;t on CoralTicker yet.
       </h1>
       <p className="text-base leading-relaxed mb-8">
-        I add vendors deliberately &mdash; check the new arrivals to see
-        what&apos;s listed today.
+        I add vendors deliberately. See the vendors I track.
       </p>
       <p className="text-base">
-        <Link href="/new" className="underline">
-          &larr; back to new arrivals
+        <Link href="/vendors" className="underline">
+          &larr; back to vendors
         </Link>
       </p>
     </main>

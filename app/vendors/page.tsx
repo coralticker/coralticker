@@ -36,7 +36,15 @@ async function VendorList() {
             className="text-base font-bold underline"
           >
             {vendor.display_name}
-          </Link>
+          </Link>{' '}
+          <a
+            href={vendor.base_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline"
+          >
+            Visit {vendor.display_name} &rarr;
+          </a>
         </li>
       ))}
     </ul>
