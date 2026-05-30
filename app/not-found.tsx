@@ -19,7 +19,7 @@ import type { Metadata } from 'next';
 export const metadata: Metadata = {
   title: 'Page not found — CoralTicker',
   description:
-    "I haven't built that route. The feed is at /new; everything else is linked from there.",
+    "I don't have anything at that address — probably a mistyped or stale link.",
 };
 
 export default function NotFound() {
@@ -29,8 +29,8 @@ export default function NotFound() {
         That page isn&apos;t here.
       </h1>
       <p className="text-base leading-relaxed mb-8">
-        I haven&apos;t built that route. The feed is at /new; everything else
-        is linked from there.
+        I don&apos;t have anything at that address &mdash; probably a mistyped
+        or stale link.
       </p>
       <p className="text-base">
         <Link href="/new" className="underline">

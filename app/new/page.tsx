@@ -104,7 +104,7 @@ export default function NewArrivalsPage() {
         <Eyebrow />
       </Suspense>
       <h1 className="text-3xl md:text-4xl font-bold mb-8">
-        New arrivals · last 24 hours
+        New arrivals.
       </h1>
       <Suspense fallback={<FeedSkeleton />}>
         <ArrivalsFeed />
