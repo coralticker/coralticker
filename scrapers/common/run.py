@@ -178,7 +178,11 @@ def run(slug: str) -> int:
         # Title-changed-on-existing rows are a deferred gap (see results.md
         # Outstanding Questions for /lead-backend); CTK-002 calibration era
         # is the natural moment to extend.
-        for d in decisions:
+        # CTK-094: iterate per_item_decisions only — cohort-OOS synthetic
+        # decisions are decision="oos" so they'd skip the d.decision != "new"
+        # guard anyway, but the cohort list doesn't exist as `decisions` until
+        # Stage 5.7 gate runs below. Iterate the per-item list directly.
+        for d in per_item_decisions:
             if d.decision != "new":
                 continue
             try:
