@@ -36,7 +36,7 @@ async function VendorList() {
         >
           <Link
             href={`/vendor/${vendor.slug}`}
-            className="text-base font-bold underline"
+            className="text-base font-bold hover:underline focus-visible:underline underline-offset-[3px] decoration-1"
           >
             {vendor.display_name}
           </Link>
@@ -44,7 +44,7 @@ async function VendorList() {
             href={vendor.base_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="underline"
+            className="hover:underline focus-visible:underline underline-offset-[3px] decoration-1"
           >
             Visit {vendor.display_name} &rarr;
           </a>
