@@ -190,7 +190,14 @@ def persist_phase_a(
     upserts: list[dict] = []
     history: list[dict] = []
     touch_ids: list[int] = []
+    cohort_oos_ids: list[int] = []  # CTK-094 — direct UPDATE path; see below
     mirror_queue: list[MirrorTask] = []
+    # Pre-declared so the CTK-094 cohort branch can pre-populate
+    # `id_by_url[product_url] = existing_id` before the UPSERT loop runs;
+    # the price_history INSERT at the bottom resolves listing_id by URL
+    # join, so cohort rows need their id in the map even though they skip
+    # the UPSERT path.
+    id_by_url: dict[str, int] = {}
 
     for d in decisions:
         item = d.item
@@ -227,38 +234,44 @@ def persist_phase_a(
             touch_ids.append(d.existing_id)  # type: ignore[arg-type]
             continue
 
-        # CTK-094 cohort-OOS synthetic decisions carry a minimal item shape
-        # (product_url + in_stock=False + last-known current_price). Build a
-        # minimal UPSERT row so the existing absent-column = keep-existing
-        # contract in _upsert_listing_row preserves raw_title / normalized_title
-        # / category / lineage_flag / vendor_sku / currency / image_url at
-        # their last-scraped values. Discriminator: synthetic items omit
-        # `raw_title` (real parser items always carry it per the parser dict
-        # shape lock at parse_shopify._normalize_product + parse_bigcommerce.
-        # _parse_one_page + tidal_gardens._parse_one_page).
+        # CTK-094 cohort-OOS synthetic decisions take a direct UPDATE path
+        # rather than UPSERT. The UPSERT/ON CONFLICT pattern can't preserve
+        # NOT NULL columns from the existing row — Postgres evaluates NOT NULL
+        # constraints on the INSERT-row-build BEFORE ON CONFLICT routes to
+        # DO UPDATE, so a synthetic row missing raw_title (NOT NULL, no
+        # default) fails before the conflict can resolve. existing_id is
+        # known from classify (URL was in existing_by_url with in_stock=True),
+        # so we batch a `UPDATE ... WHERE id = ANY(%s)` instead. Discriminator:
+        # synthetic items omit `raw_title` (real parser items always carry it
+        # per the parser dict shape lock at parse_shopify._normalize_product +
+        # parse_bigcommerce._parse_one_page + tidal_gardens._parse_one_page).
+        # price_history INSERT still records the (last-known-price, in_stock=
+        # False) row; pre-populate id_by_url so the join below resolves.
         is_cohort_oos_synthetic = "raw_title" not in item
         if is_cohort_oos_synthetic:
-            row = {
-                "vendor_id": vendor_id,
-                "product_url": product_url,
-                "current_price": _decimal_to_str(item.get("current_price")),
+            cohort_oos_ids.append(d.existing_id)  # type: ignore[arg-type]
+            id_by_url[product_url] = d.existing_id  # type: ignore[assignment]
+            history.append({
+                "price": _decimal_to_str(item.get("current_price")),
                 "in_stock": False,
-                "last_seen_at": now,
-            }
-        else:
-            row = {
-                "vendor_id": vendor_id,
-                "vendor_sku": item.get("vendor_sku"),
-                "product_url": product_url,
-                "raw_title": item["raw_title"],
-                "normalized_title": item["normalized_title"],
-                "current_price": _decimal_to_str(item.get("current_price")),
-                "currency": item.get("currency", "USD"),
-                "in_stock": item["in_stock"],
-                "category": item.get("category"),
-                "lineage_flag": item.get("lineage_flag", "unknown"),
-                "last_seen_at": now,
-            }
+                "scraper_run_id": run_id,
+                "_product_url": product_url,
+            })
+            continue
+
+        row = {
+            "vendor_id": vendor_id,
+            "vendor_sku": item.get("vendor_sku"),
+            "product_url": product_url,
+            "raw_title": item["raw_title"],
+            "normalized_title": item["normalized_title"],
+            "current_price": _decimal_to_str(item.get("current_price")),
+            "currency": item.get("currency", "USD"),
+            "in_stock": item["in_stock"],
+            "category": item.get("category"),
+            "lineage_flag": item.get("lineage_flag", "unknown"),
+            "last_seen_at": now,
+        }
         # first_seen_at is omitted from every payload: the absent-column =
         # keep-existing contract via per-row dynamic ON CONFLICT DO UPDATE in
         # _upsert_listing_row means UPDATE never touches first_seen_at when
@@ -301,7 +314,6 @@ def persist_phase_a(
     # rule both ride on this); RETURNING id, product_url builds the
     # listing_id-by-url map inline (CTK-024 Session 5 — replaces the
     # post-upsert SELECT round-trip).
-    id_by_url: dict[str, int] = {}
     if upserts:
         with conn.cursor() as cur:
             for row in upserts:
@@ -317,6 +329,24 @@ def persist_phase_a(
             for chunk in _chunks(touch_ids, 1000):
                 cur.execute(
                     "UPDATE vendor_listings SET last_seen_at = %s WHERE id = ANY(%s)",
+                    (now, chunk),
+                )
+
+    # CTK-094 cohort-OOS chunked UPDATE — flip in_stock=false + bump
+    # last_seen_at on the absent-set rows. Same chunked-ANY shape as
+    # touch_ids above. Direct UPDATE (no UPSERT/ON CONFLICT) because the
+    # synthetic row would fail NOT NULL on raw_title/normalized_title at
+    # the INSERT-side of an UPSERT before ON CONFLICT could route to DO
+    # UPDATE — Postgres evaluates NOT NULL before unique-conflict
+    # resolution. existing_id is known from classify (URL was in
+    # existing_by_url with in_stock=True), so the UPDATE-by-id path is
+    # both correct and cheaper than the UPSERT round-trip.
+    if cohort_oos_ids:
+        with conn.cursor() as cur:
+            for chunk in _chunks(cohort_oos_ids, 1000):
+                cur.execute(
+                    "UPDATE vendor_listings SET in_stock = false, last_seen_at = %s "
+                    "WHERE id = ANY(%s)",
                     (now, chunk),
                 )
 
@@ -344,8 +374,8 @@ def persist_phase_a(
                 )
 
     log.info(
-        "Phase A complete: %d upserts + %d touches + %d history rows; %d Phase B mirrors queued",
-        len(upserts), len(touch_ids), len(history), len(mirror_queue),
+        "Phase A complete: %d upserts + %d touches + %d cohort-oos + %d history rows; %d Phase B mirrors queued",
+        len(upserts), len(touch_ids), len(cohort_oos_ids), len(history), len(mirror_queue),
     )
     return mirror_queue
 
