@@ -267,7 +267,12 @@ def _should_keep(product: dict, category_filter: dict | None, in_stock_only: boo
       - tag_allowlist (CTK-086 Q-4) — at least one product tag must intersect
         the list. Skipped when unset. Use for vendors whose taxonomy lives in
         tags rather than product_type (Reef Chasers: product_type='' universal,
-        every coral row tagged 'Coral').
+        every coral row tagged 'Coral'). Membership is lowercase-runtime per
+        CTK-096 D-2 symmetric extension (close-fold F2 2026-05-31) so a vendor's
+        tag-shape drift between mixed-case and lowercase doesn't silently miss
+        the entry — RC's `tag_allowlist: ['Coral']` is the sole coral signal
+        for ~143 corals and an API drift to lowercase 'coral' would otherwise
+        empty the catalog.
       - tag_denylist (CTK-041) — no product tag may appear in the list.
         Membership is lowercase-runtime per CTK-096 D-2 (both sides .lower()
         at the predicate) so a vendor's tag-shape drift between mixed-case
@@ -315,7 +320,14 @@ def _should_keep(product: dict, category_filter: dict | None, in_stock_only: boo
                 product_type, product.get("title"),
             )
         return False
-    if tag_allowlist and not any(t in tag_allowlist for t in tags):
+    # CTK-096 D-2 symmetric extension (close-fold F2 2026-05-31): lowercase
+    # both sides at membership for cross-fleet case-mismatch defense. Mirrors
+    # the tag_denylist mitigation shape below. RC's load-bearing
+    # `tag_allowlist: ['Coral']` would otherwise empty the catalog on an
+    # API-side drift to lowercase 'coral'.
+    if tag_allowlist and not any(
+        t.lower() in {e.lower() for e in tag_allowlist} for t in tags
+    ):
         return False
     # CTK-096 D-2: lowercase both sides at membership for future-proof tag-
     # case-mismatch defense (cross-fleet). Closes the silent-miss class where

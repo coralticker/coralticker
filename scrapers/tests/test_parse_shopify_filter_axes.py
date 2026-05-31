@@ -123,6 +123,64 @@ def test_empty_denylist_permissive():
 
 # --- title_denylist permissive when unset (no-regression for 8 vendors) ---
 
+# --- tag_allowlist D-2 symmetric extension (close-fold F2 2026-05-31) ---
+#
+# Mirrors the tag_denylist mitigation. RC's load-bearing `tag_allowlist:
+# ['Coral']` is the sole coral signal for ~143 corals; an API drift to
+# lowercase 'coral' would empty the catalog without this symmetric mitigation.
+
+def _mk_allowlist_filter(tag_allowlist: list[str]) -> dict:
+    """Like _mk_filter but exercises tag_allowlist instead of tag_denylist.
+    Empty product_type_allowlist = permissive (no PT gate)."""
+    return {"product_type_allowlist": [], "tag_allowlist": tag_allowlist}
+
+
+def test_tag_allowlist_yaml_mixed_case_api_lowercase_keeps():
+    """YAML carries `Coral` capital — API returns `coral` lowercase (the RC
+    load-bearing drift case). Symmetric mitigation must keep (allowlist hit)."""
+    flt = _mk_allowlist_filter(["Coral"])
+    p = _p(tags=["coral"])
+    assert _should_keep(p, flt) is True
+
+
+def test_tag_allowlist_yaml_lowercase_api_mixed_case_keeps():
+    """YAML carries `coral` lowercase — API returns `Coral` mixed-case (inverse
+    drift). Symmetric mitigation must keep."""
+    flt = _mk_allowlist_filter(["coral"])
+    p = _p(tags=["Coral"])
+    assert _should_keep(p, flt) is True
+
+
+def test_tag_allowlist_yaml_and_api_both_mixed_case_keeps_no_regression():
+    """Same-case match continues to keep — pre-fold behavior preserved."""
+    flt = _mk_allowlist_filter(["Coral"])
+    p = _p(tags=["Coral"])
+    assert _should_keep(p, flt) is True
+
+
+def test_tag_allowlist_yaml_and_api_both_lowercase_keeps_no_regression():
+    """Same-case lowercase match continues to keep."""
+    flt = _mk_allowlist_filter(["coral"])
+    p = _p(tags=["coral"])
+    assert _should_keep(p, flt) is True
+
+
+def test_tag_allowlist_no_overlap_drops():
+    """Tag set entirely disjoint from allowlist: row drops regardless of case
+    shape on either side. Pins the gate fires when it should."""
+    flt = _mk_allowlist_filter(["Coral"])
+    p = _p(tags=["Fish", "Tang"])
+    assert _should_keep(p, flt) is False
+
+
+def test_tag_allowlist_empty_permissive():
+    """Empty tag_allowlist = no gate (existing 8 vendors with empty allowlist
+    stay byte-identical to pre-fold behavior)."""
+    flt = _mk_allowlist_filter([])
+    p = _p(tags=["anything", "AnythingElse"])
+    assert _should_keep(p, flt) is True
+
+
 def test_title_denylist_unset_preserves_pre_ctk096_behavior():
     """A vendor YAML without a title_denylist key behaves identically to the
     pre-CTK-096 shape — permissive when unset. Pins the 8 non-CTK-096 vendors
@@ -150,6 +208,12 @@ def main() -> int:
         test_yaml_and_api_both_lowercase_drops_no_regression,
         test_no_overlap_keeps,
         test_empty_denylist_permissive,
+        test_tag_allowlist_yaml_mixed_case_api_lowercase_keeps,
+        test_tag_allowlist_yaml_lowercase_api_mixed_case_keeps,
+        test_tag_allowlist_yaml_and_api_both_mixed_case_keeps_no_regression,
+        test_tag_allowlist_yaml_and_api_both_lowercase_keeps_no_regression,
+        test_tag_allowlist_no_overlap_drops,
+        test_tag_allowlist_empty_permissive,
         test_title_denylist_unset_preserves_pre_ctk096_behavior,
     ]
     failed = 0
