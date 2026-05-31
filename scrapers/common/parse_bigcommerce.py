@@ -263,13 +263,22 @@ def fetch_and_parse(config: dict) -> ParseResult:
     if partial_paths:
         marker_broken_threshold = max(3, int(0.3 * len(category_paths)))
         if len(partial_paths) >= marker_broken_threshold:
+            # CTK-094 Session 5 fold #2 (/code-review F2): carry the assembled
+            # ParseResult on the escalation. Pre-Session-5 the escalated raise
+            # passed only a message string — run.py's outer SchemaChangeError
+            # handler caught it AFTER persist_phase_a was skipped, dropping
+            # the healthy-category items collected from the 14/21 paths that
+            # did parse cleanly. Carrier mirrors PartialCategoryWarning so
+            # run.py catches in the parser try-block, extracts result, and
+            # persists the healthy harvest with status='partial'.
             raise SchemaChangeError(
                 f"marker-detection broken: {len(partial_paths)} of "
                 f"{len(category_paths)} category_paths returned 0 items "
                 f"with no empty-state marker (threshold = "
                 f"max(3, 0.3 * {len(category_paths)}) = "
                 f"{marker_broken_threshold}); affected paths: "
-                f"{', '.join(partial_paths)}"
+                f"{', '.join(partial_paths)}",
+                result=result,
             )
         raise PartialCategoryWarning(result=result, partial_paths=partial_paths)
     return result

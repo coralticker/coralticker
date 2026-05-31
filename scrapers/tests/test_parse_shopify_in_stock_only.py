@@ -22,6 +22,8 @@ import sys
 import traceback
 from pathlib import Path
 
+from scrapers.common import parse_shopify
+from scrapers.common.http import FetchResult
 from scrapers.common.parse_shopify import _should_keep
 
 
@@ -216,6 +218,135 @@ def test_known_excluded_bucket_does_not_warn(caplog):
     assert "possible new bucket" not in caplog.text
 
 
+# Test 13 (CTK-094 Session 5 fold #6 — regression-pin for Session 3 → Session 4
+# fold #1). Drives parse_shopify.fetch_and_parse end-to-end to pin the
+# filtered_urls discrimination: only category-rejected URLs (vendor still
+# buyable) enter the cohort absent-set; sold-out rejects are the cohort signal
+# and must NOT enter filtered_urls. Session 3's fold #4 added URLs at the
+# wrong scope, defeating CTK-094 on POTO; Session 4 restored the discrimination
+# but landed no test. This test would have caught the Session 3 regression at
+# landing time. Three assertions cover all three classes of _should_keep
+# rejects under in_stock_only:true.
+def test_filtered_urls_excludes_sold_out_includes_category_rejected():
+    """CTK-094 Session 5 fold #6 — three assertions on parse_shopify.fetch_and_parse:
+    (a) sold-out product (in_stock_only short-circuit at skipped_unavailable) →
+        URL NOT in filtered_urls (cohort signal preserved).
+    (b) buyable + category-rejected product (skipped_category) → URL IS in
+        filtered_urls (cohort exclusion: vendor still buyable, no false-OOS).
+    (c) sold-out + category-rejected product (skipped_unavailable wins per
+        L165-168 discrimination order) → URL NOT in filtered_urls."""
+    fixture = {
+        "products": [
+            # (a) Sold-out buyable category — cohort signal must persist.
+            {
+                "id": 1,
+                "handle": "sold-out-coral",
+                "title": "Sold-out coral that would pass category gate",
+                "product_type": "live sale",
+                "tags": [],
+                "variants": [{"sku": "SO-1", "available": False}],
+                "images": [],
+            },
+            # (b) Buyable but category-rejected — cohort exclusion via filtered_urls.
+            {
+                "id": 2,
+                "handle": "buyable-merch",
+                "title": "Buyable merch in disallowed bucket",
+                "product_type": "merch",
+                "tags": [],
+                "variants": [{"sku": "M-1", "available": True}],
+                "images": [],
+            },
+            # (c) Sold-out AND category-rejected — skipped_unavailable wins.
+            {
+                "id": 3,
+                "handle": "sold-out-merch",
+                "title": "Sold-out merch in disallowed bucket",
+                "product_type": "merch",
+                "tags": [],
+                "variants": [{"sku": "SOM-1", "available": False}],
+                "images": [],
+            },
+            # Anchor buyable + in-allowlist product to keep items non-empty.
+            {
+                "id": 4,
+                "handle": "kept-coral",
+                "title": "Buyable coral in allowlist bucket",
+                "product_type": "live sale",
+                "tags": [],
+                "variants": [{"sku": "K-1", "available": True, "price": "100.00"}],
+                "images": [],
+            },
+        ]
+    }
+
+    original_fetch = parse_shopify.http.fetch
+    pages_served: dict[int, bool] = {1: False}
+
+    def stub_fetch(url, request_delay_sec=2.0):
+        if "page=1" in url and not pages_served[1]:
+            pages_served[1] = True
+            return FetchResult(
+                body=json.dumps(fixture).encode("utf-8"),
+                status_code=200,
+                error_class=None,
+                error_message=None,
+            )
+        # Subsequent pages → empty products array (natural terminator).
+        return FetchResult(
+            body=json.dumps({"products": []}).encode("utf-8"),
+            status_code=200,
+            error_class=None,
+            error_message=None,
+        )
+
+    parse_shopify.http.fetch = stub_fetch
+    try:
+        config = {
+            "base_url": "https://example-vendor.com",
+            "products_path": "/products.json",
+            "page_size": 250,
+            "max_pages": 3,
+            "request_delay_sec": 0,
+            "in_stock_only": True,
+            "category_filter": {"product_type_allowlist": ["live sale"]},
+            "image_strategy": "mirror",
+        }
+        result = parse_shopify.fetch_and_parse(config)
+    finally:
+        parse_shopify.http.fetch = original_fetch
+
+    # Build expected URL shape (matches _normalize_product + parse_shopify.py:178).
+    base = "https://example-vendor.com/products"
+    sold_out_url = f"{base}/sold-out-coral"
+    buyable_merch_url = f"{base}/buyable-merch"
+    sold_out_merch_url = f"{base}/sold-out-merch"
+
+    # (a) sold-out coral — NOT in filtered_urls (cohort signal preserved).
+    assert sold_out_url not in result.filtered_urls, (
+        f"sold-out coral URL must NOT enter filtered_urls (it IS the cohort "
+        f"signal); got filtered_urls={result.filtered_urls}"
+    )
+    # (b) buyable + category-rejected — IS in filtered_urls (cohort exclusion).
+    assert buyable_merch_url in result.filtered_urls, (
+        f"buyable + category-rejected URL must enter filtered_urls (vendor "
+        f"still buyable, prevents false cohort-OOS); got "
+        f"filtered_urls={result.filtered_urls}"
+    )
+    # (c) sold-out + category-rejected — NOT in filtered_urls
+    # (skipped_unavailable wins; sold-out is still the cohort signal).
+    assert sold_out_merch_url not in result.filtered_urls, (
+        f"sold-out + category-rejected URL must NOT enter filtered_urls "
+        f"(skipped_unavailable wins per L165-168 discrimination order); got "
+        f"filtered_urls={result.filtered_urls}"
+    )
+    # Sanity: the anchor buyable in-allowlist product DID make it into items.
+    assert len(result.items) == 1, (
+        f"expected 1 kept item (kept-coral); got {len(result.items)} "
+        f"({[i.get('product_url') for i in result.items]})"
+    )
+
+
 def main() -> int:
     products = _load_fixture()
     tests = [
@@ -238,7 +369,16 @@ def main() -> int:
             failed += 1
             print(f"FAIL  {t.__name__}")
             traceback.print_exc()
-    print(f"\n{len(tests) - failed}/{len(tests)} passed")
+    # CTK-094 Session 5 fold #6 — no-args test driving fetch_and_parse end-to-end.
+    try:
+        test_filtered_urls_excludes_sold_out_includes_category_rejected()
+        print(f"PASS  test_filtered_urls_excludes_sold_out_includes_category_rejected")
+    except Exception:
+        failed += 1
+        print(f"FAIL  test_filtered_urls_excludes_sold_out_includes_category_rejected")
+        traceback.print_exc()
+    total = len(tests) + 1
+    print(f"\n{total - failed}/{total} passed")
     return 1 if failed else 0
 
 

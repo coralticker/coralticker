@@ -42,7 +42,21 @@ def _coerce_bool(value) -> bool:
 class SchemaChangeError(Exception):
     """Shopify /products.json returned a shape we don't recognize. Per arch §2.4
     schema-change row: best-effort persist whatever parsed; status='partial';
-    no retry. Orchestrator catches + records error_class='html_schema_change'."""
+    no retry. Orchestrator catches + records error_class='html_schema_change'.
+
+    CTK-094 Session 5 fold #2 (/code-review F2): optional `result` kwarg carries
+    a partial ParseResult on marker-broken escalation (parse_bigcommerce.py
+    fold #3 escalates from PartialCategoryWarning to SchemaChangeError when the
+    silent-zero count breaches threshold). The carrier shape mirrors
+    PartialCategoryWarning — orchestrator catches in the parser try-block,
+    extracts result, persists the healthy-categories' items, and finalizes
+    status='partial' rather than dropping the harvest. Absent result kwarg
+    preserves the original semantic — orchestrator outer-except catches and
+    finalizes status='partial' with no persist (no items to save anyway, the
+    raise interrupted parse before items existed)."""
+    def __init__(self, message: str, *, result: "ParseResult | None" = None):
+        super().__init__(message)
+        self.result = result
 
 
 class BlockedError(Exception):

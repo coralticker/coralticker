@@ -119,7 +119,11 @@ canary: false
 # 5-20 parser-bug band while staying clear of the legitimate low-tail at 21.
 # Only read when canary:false (canary:true vendors use the median-ratio
 # canary which already has a floor-of-5 max-clause). Override-only — absent
-# on canary:false vendors → default 5.0.
+# on canary:false vendors → default 5.0. Blank value (canary_floor: /
+# canary_floor: ~ / canary_floor: null) equivalent to absent per Session 5
+# fold #3 defensive coalesce at run.py Stage 5.6. Range constrained to
+# (0, 10000) — operator typos outside that band raise ConfigError (status=
+# 'failed' + error_class='config') per Session 5 fold #5.
 canary_floor: 15
 
 # Category filter — RATIFIED 2026-05-28 (/lead-backend) AFTER the impl

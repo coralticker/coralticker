@@ -173,6 +173,14 @@ def run(slug: str) -> int:
         # exceptions); the WARN log surfaces the affected paths for operator
         # triage.
         cohort_unsafe_partial = False
+        # CTK-094 Session 5 fold #2 (/code-review F2): set when parser raises
+        # SchemaChangeError carrying a partial ParseResult (marker-broken
+        # escalation from parse_bigcommerce). Forces status='partial' at the
+        # success-path status branch so healthy-categories' items persist while
+        # the marker-broken signal surfaces via error_class='html_schema_change'
+        # + error_message. Distinct from cohort_unsafe_partial (cohort gate
+        # disable) — the two flags coexist on a marker-broken-escalation run.
+        marker_broken_force_partial = False
         platform = vendor_row["platform"]
         try:
             if platform == "shopify":
@@ -203,16 +211,51 @@ def run(slug: str) -> int:
             # CTK-094 Session 4 fold #2 (/code-review F2): persist the
             # partial-bucket signal to scraper_runs.error_message via the
             # canary_msg / completeness_msg accumulator pattern. Status
-            # stays 'success' on the healthy categories — error_message
-            # carries the marker-side observability so CTK-097 operator
-            # alerting + ops queries surface partial-bucket drift events
-            # rather than relying on transient WARN logs.
+            # stays 'partial' on the healthy categories (Session 5 fold #4
+            # sets error_class so CTK-097 alerting queries filtering by
+            # error_class IS NOT NULL surface the row) — error_message
+            # carries the marker-side observability so ops queries surface
+            # partial-bucket drift events rather than relying on transient
+            # WARN logs.
             partial_msg = (
                 f"partial-category WARN: {', '.join(e.partial_paths)}"
             )
             error_message = (
                 f"{error_message}; {partial_msg}" if error_message else partial_msg
             )
+            # CTK-094 Session 5 fold #4 (/code-review F4): set error_class so
+            # CTK-097 alerting + ops queries filtering by `error_class IS NOT
+            # NULL` surface the partial-bucket event. Re-uses the existing
+            # 'other' enum value (matches the matcher-branch idiom at L286)
+            # — no migration needed. CHECK constraint extension to a dedicated
+            # 'partial_category' value parked to open-items for a future
+            # migration that adds it as a first-class enum.
+            error_class = error_class or "other"
+        except parse_shopify.SchemaChangeError as e:
+            # CTK-094 Session 5 fold #2 (/code-review F2): marker-broken
+            # escalation carries a partial ParseResult so healthy-categories'
+            # items persist. Re-raise when no result (the normal SchemaChange
+            # path — schema drift detected mid-parse before items existed; the
+            # outer-except handler at L420 catches that and finalizes with no
+            # persist). Carrier-present path mirrors PartialCategoryWarning:
+            # extract result + accumulate to error_message + force status to
+            # 'partial' via marker_broken_force_partial; cohort_unsafe_partial
+            # also set because mass-marker-broken implies cohort gate must
+            # disable for this run.
+            if getattr(e, "result", None) is None:
+                raise
+            log.error(
+                "marker-broken escalation with partial result — persisting healthy-categories' items: %s",
+                e,
+            )
+            result = e.result
+            cohort_unsafe_partial = True
+            marker_broken_force_partial = True
+            marker_broken_msg = str(e)
+            error_message = (
+                f"{error_message}; {marker_broken_msg}" if error_message else marker_broken_msg
+            )
+            error_class = "html_schema_change"
 
         items = result.items
         html_hash = result.html_hash
@@ -283,9 +326,18 @@ def run(slug: str) -> int:
 
         if matcher_error_count > 0:
             # Append to error_message (truncated to 1000 chars in db.finish_scraper_run).
+            # CTK-094 Session 5 fold #1 (/code-review F1): conditional accumulator
+            # matching the three sibling branches (partial-category L213, completeness
+            # L367, canary L386). Pre-Session-5 this was a plain assignment that would
+            # overwrite a prior partial_msg from the PartialCategoryWarning catch when
+            # both fired on the same run — the exact observability gap fold #2 was
+            # designed to close.
             error_class = error_class or "other"
-            error_message = (
+            matcher_msg = (
                 f"{matcher_error_count} matcher exception(s); first: {matcher_error_first}"
+            )
+            error_message = (
+                f"{error_message}; {matcher_msg}" if error_message else matcher_msg
             )
 
         # Stage 5.6 (CTK-094) — Canary check moved BEFORE persist_phase_a so
@@ -308,7 +360,29 @@ def run(slug: str) -> int:
             # override on canary:false vendors. POTO sets canary_floor: 15
             # because its normal buyable count is 21-164 (CTK-088 fold #2),
             # so default floor-of-5 leaves the 5-20 parser-bug band uncovered.
-            threshold = float(config.get("canary_floor", 5.0))
+            # CTK-094 Session 5 fold #3 (/code-review F3): defensive coalesce
+            # — `config.get('canary_floor') or 5.0` short-circuits on None /
+            # 0 / empty-string before reaching float(), preventing the
+            # TypeError that `float(None)` would raise on blank YAML
+            # (`canary_floor:` / `canary_floor: ~` / `canary_floor: null`).
+            # The poto.yaml comment documents blank-canary_floor as
+            # "absent" equivalent — this defensive coalesce makes that
+            # documented semantic actually true.
+            canary_floor = float(config.get("canary_floor") or 5.0)
+            # CTK-094 Session 5 fold #5 (/code-review F5): range validation
+            # — defends against negative-typo (e.g., `canary_floor: -15`
+            # silently disables the canary because `counters.seen < -15` is
+            # always False) + extreme-value (e.g., `canary_floor: 100000`
+            # silently always-trips). Routes to existing 'config' error_class
+            # via the ConfigError handler at L462. Upper bound 10000 is well
+            # above any plausible vendor catalog size — Phase 1-3 vendors
+            # cap at ~6,000 items; 10000 leaves headroom while still
+            # catching off-by-orders-of-magnitude typos.
+            if not 0 < canary_floor < 10000:
+                raise ConfigError(
+                    f"canary_floor must be in (0, 10000); got {canary_floor}"
+                )
+            threshold = canary_floor
         canary_tripped = counters.seen < threshold
         canary_msg: str | None = None
         if canary_tripped:
@@ -379,13 +453,24 @@ def run(slug: str) -> int:
 
         # Status assignment uses canary outcome computed above (CTK-094
         # reorder). Per-item decisions wrote regardless of canary; status
-        # reflects the canary result + matcher exceptions.
+        # reflects the canary result + matcher exceptions + marker-broken
+        # escalation (Session 5 fold #2). Canary supersedes — a partial-result
+        # marker-broken run that ALSO trips canary lands status='failed' so
+        # the louder signal wins.
         if canary_tripped:
             status = "failed"
             error_class = "block"
             error_message = (
                 f"{error_message}; {canary_msg}" if error_message else canary_msg
             )
+        elif marker_broken_force_partial:
+            # CTK-094 Session 5 fold #2 (/code-review F2): marker-broken
+            # escalation persisted healthy-categories' items via the in-try
+            # SchemaChangeError-with-result catch. Status='partial' so CTK-097
+            # alerting + ops queries surface the row; error_class already set
+            # to 'html_schema_change' at the catch site; error_message already
+            # accumulated.
+            status = "partial"
         elif matcher_error_count > 0:
             # Arch §3.2: matcher exceptions flip status to 'partial' (data
             # persisted with null match fields, error_message accumulated).
