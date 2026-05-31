@@ -76,8 +76,22 @@ class ParseResult:
     # agnostic: parse_shopify writes {} (no category axis), tidal_gardens
     # writes {} (enumerated genus subpaths are coverage-filter, not partial-
     # cohort surface), parse_bigcommerce writes the populated dict only
-    # when the YAML opt-in fires.
+    # when the YAML opt-in fires. NOTE per /code-review F7+F13: counts are
+    # PRE-overlap-dedup raw card counts, not post-dedup unique listings.
+    # Vendors with category overlap (AquaSD /softies/ ∩ /zoanthids/ ~57
+    # cards) will see sum(per_category_counts.values()) > len(items).
+    # Downstream consumers (CTK-097 operator alerting) MUST treat these as
+    # raw-card-per-path observability, not unique-product-per-category.
     per_category_counts: dict = field(default_factory=dict)
+    # CTK-094 fold #4 (/code-review F4): URLs the parser actively rejected
+    # via YAML filter (in_stock_only sold-out drop, product_type_allowlist
+    # mismatch, tag_denylist match, tag_allowlist miss). diff.classify
+    # excludes these from the cohort-OOS absent-set so a parser-filter
+    # rejection (vendor re-categorized item to a non-allowlisted bucket)
+    # doesn't conflate with vendor-sold-out. parse_bigcommerce +
+    # tidal_gardens return empty set (no filter axis today; plumbing
+    # exists for future filter additions on those platforms).
+    filtered_urls: set = field(default_factory=set)
 
 
 def fetch_and_parse(config: dict) -> ParseResult:
@@ -97,6 +111,7 @@ def fetch_and_parse(config: dict) -> ParseResult:
     items: list[dict] = []
     skipped_unavailable = 0  # CTK-088 fold #4: dropped by the in_stock_only availability gate
     skipped_category = 0     # CTK-088 fold #4: dropped by product_type_allowlist / tag_allowlist / tag_denylist
+    filtered_urls: set[str] = set()  # CTK-094 fold #4: URLs rejected by _should_keep, excluded from cohort absent-set
     html_hash: str | None = None
     http_status_last: int | None = None
     pages_fetched = 0        # CTK-094 §4.2 completeness signal — increment per fetched page
@@ -151,6 +166,16 @@ def fetch_and_parse(config: dict) -> ParseResult:
                     skipped_unavailable += 1
                 else:
                     skipped_category += 1
+                # CTK-094 fold #4: collect the URL of every parser-rejected
+                # product so diff.classify can exclude it from the cohort-
+                # OOS absent-set. Without this, a vendor re-categorizing
+                # item X into a non-allowlisted product_type drops X from
+                # `items` → URL not in seen_urls → cohort flips X to OOS
+                # even though X is still buyable on-vendor. URL shape
+                # matches _normalize_product (base_url + /products/handle).
+                handle = p.get("handle", "")
+                if handle:
+                    filtered_urls.add(f"{base_url}/products/{handle}")
                 continue
             items.append(_normalize_product(p, base_url, image_strategy, originator_prefix, auction_detection))
 
@@ -174,6 +199,7 @@ def fetch_and_parse(config: dict) -> ParseResult:
         http_status_last=http_status_last,
         pages_fetched=pages_fetched,
         per_category_counts={},  # Shopify single-endpoint — no category axis
+        filtered_urls=filtered_urls,
     )
 
 

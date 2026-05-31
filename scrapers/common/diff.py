@@ -52,6 +52,7 @@ def classify(
     existing_by_url: dict[str, dict],
     *,
     cohort_oos_at_persist: bool = False,
+    filtered_urls: set[str] | None = None,
 ) -> tuple[list[ItemDecision], list[ItemDecision]]:
     """Apply the §2.2 diff rule: for each parsed item, look up by product_url
     and classify. Returns a (per_item_decisions, cohort_oos_decisions) tuple.
@@ -80,7 +81,18 @@ def classify(
     catalog vendors (PE/WWC/TSA/JF/BC/UC/Vivid/RC) stay byte-identical —
     `per_item_decisions` matches the pre-CTK-094 return list and the empty
     cohort list extends to a no-op at the caller.
+
+    CTK-094 fold #4 (/code-review F4): `filtered_urls` carries URLs the
+    parser actively rejected via YAML filter (in_stock_only sold-out drop,
+    product_type_allowlist mismatch, tag_denylist match). The cohort pass
+    EXCLUDES these URLs from the absent-set — a vendor re-categorizing
+    item X into a non-allowlisted bucket drops X from `items` but X is
+    still buyable on-vendor; flipping X to OOS would be a false signal.
+    Defaulted to None (treated as empty set) for callers that don't pass
+    the parameter — preserves byte-equivalence for tests + non-cohort
+    paths.
     """
+    _filtered = filtered_urls or set()
     per_item_decisions: list[ItemDecision] = []
     seen_urls: set[str] = set()
     for item in items:
@@ -104,13 +116,14 @@ def classify(
     cohort_oos_decisions: list[ItemDecision] = []
     if cohort_oos_at_persist:
         # Cohort-absent pass — URLs in DB with in_stock=true that didn't
-        # appear in this scrape. Synthetic ItemDecision carries only the
+        # appear in this scrape AND weren't actively rejected by the parser
+        # filter (CTK-094 fold #4). Synthetic ItemDecision carries only the
         # minimal shape that persist_phase_a's decision=="oos" branch
-        # touches: product_url for join + in_stock=false for the UPSERT
-        # payload. Other vendor_listings columns stay at their existing
-        # values via the absent-column = keep-existing UPSERT contract.
+        # touches: product_url for join + in_stock=false. Other
+        # vendor_listings columns stay at their existing values via the
+        # direct UPDATE-by-id path (see persist_phase_a synthetic branch).
         for url, existing in existing_by_url.items():
-            if existing.get("in_stock") and url not in seen_urls:
+            if existing.get("in_stock") and url not in seen_urls and url not in _filtered:
                 cohort_oos_decisions.append(ItemDecision(
                     item={
                         "product_url": url,
@@ -332,22 +345,33 @@ def persist_phase_a(
                     (now, chunk),
                 )
 
-    # CTK-094 cohort-OOS chunked UPDATE — flip in_stock=false + bump
-    # last_seen_at on the absent-set rows. Same chunked-ANY shape as
-    # touch_ids above. Direct UPDATE (no UPSERT/ON CONFLICT) because the
-    # synthetic row would fail NOT NULL on raw_title/normalized_title at
-    # the INSERT-side of an UPSERT before ON CONFLICT could route to DO
-    # UPDATE — Postgres evaluates NOT NULL before unique-conflict
-    # resolution. existing_id is known from classify (URL was in
-    # existing_by_url with in_stock=True), so the UPDATE-by-id path is
-    # both correct and cheaper than the UPSERT round-trip.
+    # CTK-094 cohort-OOS chunked UPDATE — flip in_stock=false ONLY on the
+    # absent-set rows. Same chunked-ANY shape as touch_ids above. Direct
+    # UPDATE (no UPSERT/ON CONFLICT) because the synthetic row would fail
+    # NOT NULL on raw_title/normalized_title at the INSERT-side of an
+    # UPSERT before ON CONFLICT could route to DO UPDATE — Postgres
+    # evaluates NOT NULL before unique-conflict resolution. existing_id is
+    # known from classify (URL was in existing_by_url with in_stock=True),
+    # so the UPDATE-by-id path is both correct and cheaper than the UPSERT
+    # round-trip.
+    #
+    # CTK-094 fold #3 (/code-review F3): last_seen_at deliberately NOT
+    # touched. The column semantic is "last time we saw this URL in a
+    # scrape"; cohort-OOS rows are absent FROM the scrape, so bumping
+    # last_seen_at would falsify the staleness clock and break downstream
+    # consumers — coral page 7d window (lib/queries/listings.ts), vendor +
+    # deals 14d windows, rematch.py 7d backfill, named-corals
+    # MAX(last_seen_at) surface, and the arch §2.2 stale-window mechanism
+    # documented at poto.py:75 ("absent → no touch → goes stale → filtered
+    # out"). The stale-window ages cohort-flipped rows out on its own
+    # timeline; the in_stock=false flip is the cohort branch's only write.
     if cohort_oos_ids:
         with conn.cursor() as cur:
             for chunk in _chunks(cohort_oos_ids, 1000):
                 cur.execute(
-                    "UPDATE vendor_listings SET in_stock = false, last_seen_at = %s "
+                    "UPDATE vendor_listings SET in_stock = false "
                     "WHERE id = ANY(%s)",
-                    (now, chunk),
+                    (chunk,),
                 )
 
     # Hand listing_ids back to the mirror queue.

@@ -161,15 +161,25 @@ def get_7d_median_seen(conn: psycopg.Connection, vendor_id: int) -> float:
 
     CTK-094 §4.3 ratchet exclusion: counts status='success' AND ALSO counts
     canary-only false-fails (status='failed' AND error_class='block' AND
-    error_message LIKE 'silent canary tripped:%'). Without this, a single
+    error_message contains 'silent canary tripped:'). Without this, a single
     false-canary-trip excludes the run's listings_seen from the next median
     computation — biasing the median upward and making the next low-buyable
     window more likely to trip. Real block events (Cloudflare / WAF /
     network) stay excluded because their error_message lacks the canary
-    prefix; their listings_seen value is unreliable. The canary-self-fail
+    substring; their listings_seen value is unreliable. The canary-self-fail
     listings_seen value IS reliable (the parse succeeded; only the count
     crossed the threshold), so including it dilutes the median back toward
     the actual catalog volatility.
+
+    CTK-094 fold #2 (/code-review F2): LIKE is contains-match
+    ('%silent canary tripped:%%'), NOT prefix-match. run.py L290-295 builds
+    error_message via `f'{error_message}; {canary_msg}' if error_message
+    else canary_msg` — when matcher_error_count>0 already set error_message
+    at L201-204, the canary text gets APPENDED as suffix. A prefix-match
+    LIKE 'silent canary tripped:%' would fail on combined matcher+canary
+    runs, excluding them from the median and defeating the ratchet fix in
+    the exact scenario it was meant to handle. Contains-match catches both
+    canary-first and matcher-first concatenation orders.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     with conn.cursor() as cur:
@@ -180,7 +190,7 @@ def get_7d_median_seen(conn: psycopg.Connection, vendor_id: int) -> float:
             "  status = 'success' "
             "  OR ("
             "    status = 'failed' AND error_class = 'block' "
-            "    AND error_message LIKE 'silent canary tripped:%%'"
+            "    AND error_message LIKE '%%silent canary tripped:%%'"
             "  )"
             ")",
             (vendor_id, cutoff),
@@ -214,14 +224,28 @@ def get_7d_median_pages_fetched(conn: psycopg.Connection, vendor_id: int) -> flo
     until a real median lands). Pre-CTK-094 rows have NULL pages_fetched
     (column lands at this migration); SELECT filters NULL out so the
     rollout window stays clean.
+
+    CTK-094 fold #8 (/code-review F8): mirrors get_7d_median_seen's §4.3
+    ratchet exclusion — counts canary-self-fail runs alongside
+    status='success'. A canary false-fail run's pages_fetched is reliable
+    (parse ran to completion; only the count check tripped at canary). Not
+    including those rows would bias the pages-median upward on the same
+    ratchet pattern §4.3 just fixed for listings_seen — making the §4.2
+    completeness signal harder to trip after a canary false-fire.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     with conn.cursor() as cur:
         cur.execute(
             "SELECT pages_fetched FROM scraper_runs "
             "WHERE vendor_id = %s AND started_at >= %s "
-            "AND status = 'success' "
-            "AND pages_fetched IS NOT NULL",
+            "AND pages_fetched IS NOT NULL "
+            "AND ("
+            "  status = 'success' "
+            "  OR ("
+            "    status = 'failed' AND error_class = 'block' "
+            "    AND error_message LIKE '%%silent canary tripped:%%'"
+            "  )"
+            ")",
             (vendor_id, cutoff),
         )
         rows = cur.fetchall()

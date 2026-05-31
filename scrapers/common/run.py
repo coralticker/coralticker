@@ -58,6 +58,51 @@ def _load_yaml(slug: str) -> dict:
     return yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
 
 
+def _apply_cohort_gate(
+    per_item_decisions: list,
+    cohort_oos_decisions: list,
+    counters: Counters,
+    *,
+    canary_tripped: bool,
+    matcher_error_count: int,
+    cohort_unsafe_partial: bool,
+) -> tuple[list, bool]:
+    """CTK-094 fold #12 (/code-review F12 test-coverage extraction) — pure
+    function that applies the Stage 5.7 cohort-OOS gate. Returns (decisions,
+    cohort_safe) tuple; `counters.oos` is mutated in-place on the cohort-fire
+    path (+= len(cohort_oos_decisions)).
+
+    Gate predicate: cohort decisions fire only when the run is going to be
+    treated as fully-successful — no canary trip, no matcher exceptions, no
+    partial-category degradation. Any one of these signals disables cohort
+    OOS persistence for this run (cohort decisions dropped; per-item rows
+    persist normally; status determined separately downstream).
+
+    Extracted from inline run.py code so the gate logic can be unit-tested
+    independently of the orchestrator's db + parser dependencies. The three
+    boolean inputs are exactly the partial-success signals run.py computes
+    before this call; counters is the per-item Counters that flows to
+    finish_scraper_run.
+
+    listings_seen semantic preserved: counters.seen stays at the per-item
+    count regardless of cohort outcome (per fold #1). Only counters.oos
+    increments on cohort fire — the synthetic OOS decisions contribute to
+    listings_oos but NOT listings_seen, which would otherwise inflate the
+    get_7d_median_seen baseline.
+    """
+    cohort_safe = (
+        not canary_tripped
+        and matcher_error_count == 0
+        and not cohort_unsafe_partial
+    )
+    if cohort_safe and cohort_oos_decisions:
+        decisions = per_item_decisions + cohort_oos_decisions
+        counters.oos += len(cohort_oos_decisions)
+    else:
+        decisions = per_item_decisions
+    return decisions, cohort_safe
+
+
 def _setup_logging() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -118,26 +163,43 @@ def run(slug: str) -> int:
         match_cache = matcher.load_match_cache(conn)
         originator_prefix = config.get("originator_prefix")
 
-        # Stages 2-4 — Fetch + Parse + Normalize (parser yields normalized items)
+        # Stages 2-4 — Fetch + Parse + Normalize (parser yields normalized items).
+        # CTK-094 fold #5: cohort_unsafe_partial flag — set to True when
+        # parse_bigcommerce raises PartialCategoryWarning (silent-zero category
+        # drift, theme-override class). Disables cohort-OOS gate at Stage 5.7
+        # so the cohort branch doesn't mass-flip previously-in_stock products
+        # from the silently-empty path to OOS. Healthy categories still
+        # persist normally; status stays 'success' (or 'partial' on matcher
+        # exceptions); the WARN log surfaces the affected paths for operator
+        # triage.
+        cohort_unsafe_partial = False
         platform = vendor_row["platform"]
-        if platform == "shopify":
-            result = parse_shopify.fetch_and_parse(config)
-        elif platform == "bigcommerce":
-            # CTK-090 decision register row #66 — BigCommerce Stencil platform
-            # class. Shared parser raises the same SchemaChangeError /
-            # BlockedError / FetchError shapes as parse_shopify (imported
-            # directly in parse_bigcommerce); no new except clauses needed.
-            result = parse_bigcommerce.fetch_and_parse(config)
-        elif platform == "magento":
-            # CTK-087 — Magento platform class (third after shopify +
-            # bigcommerce). Single-file vendor module (no shared parse_magento.py
-            # until a second Magento vendor lands, per arch §2.8 rule-of-three).
-            # Raises the same SchemaChangeError / BlockedError / FetchError
-            # shapes as parse_shopify (imported in tidal_gardens); no new except
-            # clauses needed.
-            result = tidal_gardens.fetch_and_parse(config)
-        else:
-            raise RuntimeError(f"platform {platform!r} not implemented (v1 = shopify + bigcommerce + magento)")
+        try:
+            if platform == "shopify":
+                result = parse_shopify.fetch_and_parse(config)
+            elif platform == "bigcommerce":
+                # CTK-090 decision register row #66 — BigCommerce Stencil platform
+                # class. Shared parser raises the same SchemaChangeError /
+                # BlockedError / FetchError shapes as parse_shopify (imported
+                # directly in parse_bigcommerce); no new except clauses needed.
+                result = parse_bigcommerce.fetch_and_parse(config)
+            elif platform == "magento":
+                # CTK-087 — Magento platform class (third after shopify +
+                # bigcommerce). Single-file vendor module (no shared parse_magento.py
+                # until a second Magento vendor lands, per arch §2.8 rule-of-three).
+                # Raises the same SchemaChangeError / BlockedError / FetchError
+                # shapes as parse_shopify (imported in tidal_gardens); no new except
+                # clauses needed.
+                result = tidal_gardens.fetch_and_parse(config)
+            else:
+                raise RuntimeError(f"platform {platform!r} not implemented (v1 = shopify + bigcommerce + magento)")
+        except parse_bigcommerce.PartialCategoryWarning as e:
+            log.warning(
+                "partial-category WARN — cohort-OOS gate disabled for this run; affected paths: %s",
+                e.partial_paths,
+            )
+            result = e.result
+            cohort_unsafe_partial = True
 
         items = result.items
         html_hash = result.html_hash
@@ -147,7 +209,16 @@ def run(slug: str) -> int:
         # the contract; populated by the three CTK-094 parser edits.
         pages_fetched = result.pages_fetched
         per_category_counts = result.per_category_counts
-        log.info("parsed %d items; html_hash=%s; pages_fetched=%s", len(items), html_hash, pages_fetched)
+        # CTK-094 fold #4 (/code-review F4): URLs the parser actively
+        # rejected via YAML filter. diff.classify excludes these from the
+        # cohort-OOS absent-set so parser-filter rejection (vendor re-
+        # categorized item to a non-allowlisted bucket) doesn't conflate
+        # with vendor-sold-out.
+        filtered_urls = result.filtered_urls
+        log.info(
+            "parsed %d items; html_hash=%s; pages_fetched=%s; filtered_urls=%d",
+            len(items), html_hash, pages_fetched, len(filtered_urls),
+        )
 
         # Stage 5 — Diff. CTK-094 D-1: tuple return splits per-item decisions
         # (always landed) from cohort-OOS decisions (gated on canary outcome
@@ -159,6 +230,7 @@ def run(slug: str) -> int:
             items,
             existing_by_url,
             cohort_oos_at_persist=cohort_oos_at_persist,
+            filtered_urls=filtered_urls,
         )
         counters = diff.counters_from(per_item_decisions)
         log.info(
@@ -238,23 +310,27 @@ def run(slug: str) -> int:
         # FetchError / ConfigError all raise before reaching this point —
         # the except-block handlers below take over and persist_phase_a
         # never runs, so cohort-OOS decisions can't slip through there.
-        cohort_safe = not canary_tripped and matcher_error_count == 0
+        decisions, cohort_safe = _apply_cohort_gate(
+            per_item_decisions,
+            cohort_oos_decisions,
+            counters,
+            canary_tripped=canary_tripped,
+            matcher_error_count=matcher_error_count,
+            cohort_unsafe_partial=cohort_unsafe_partial,
+        )
         if cohort_safe and cohort_oos_decisions:
-            decisions = per_item_decisions + cohort_oos_decisions
-            counters = diff.counters_from(decisions)
             log.info(
                 "cohort_oos: gate passed — appending %d absent-set OOS decisions; "
-                "counters now seen=%d new=%d price_changed=%d restocked=%d oos=%d",
-                len(cohort_oos_decisions),
-                counters.seen, counters.new, counters.price_changed, counters.restocked, counters.oos,
+                "listings_seen=%d (per-item only) listings_oos=%d (per-item + cohort)",
+                len(cohort_oos_decisions), counters.seen, counters.oos,
             )
-        else:
-            decisions = per_item_decisions
-            if cohort_oos_decisions:
-                log.info(
-                    "cohort_oos: gate failed — dropping %d decisions (canary_tripped=%s matcher_errors=%d)",
-                    len(cohort_oos_decisions), canary_tripped, matcher_error_count,
-                )
+        elif cohort_oos_decisions:
+            log.info(
+                "cohort_oos: gate failed — dropping %d decisions "
+                "(canary_tripped=%s matcher_errors=%d cohort_unsafe_partial=%s)",
+                len(cohort_oos_decisions), canary_tripped,
+                matcher_error_count, cohort_unsafe_partial,
+            )
 
         # Stage 5.8 (CTK-094 §4.2) — completeness signal. Soft WARN when
         # pages_fetched falls below 50% of the per-vendor 7d median (NOT

@@ -175,8 +175,6 @@ def fetch_and_parse(config: dict) -> ParseResult:
             if result.error_class is not None:
                 raise FetchError(result.error_class, f"{result.error_class}: {result.error_message}")
 
-            pages_fetched += 1  # CTK-094 §4.2 — count after success, not after attempt
-
             page_items, first_card_html, page_first_title = _parse_one_page(
                 result.body, cpath_norm, cat_hint, originator_prefix, page,
             )
@@ -184,18 +182,30 @@ def fetch_and_parse(config: dict) -> ParseResult:
             if not page_items:
                 # Magento clamps rather than emptying, so this is unusual — a
                 # genuinely empty category or a fetch hiccup. Treat as terminator.
+                # pages_fetched NOT incremented — empty/terminator pages don't
+                # contribute to the §4.2 completeness baseline.
                 log.info("%s page %d: 0 cards — terminator", cpath_norm, page)
                 break
 
             # Clamp guard: a past-the-end ?p=N returns page 1 again. If the
             # first title repeats page 1's, we've overshot — stop WITHOUT
             # re-adding page-1 items (the toolbar terminator below normally
-            # stops us first; this is the markup-drift safety net).
+            # stops us first; this is the markup-drift safety net). pages_fetched
+            # NOT incremented on clamp detection per CTK-094 fold #11
+            # (/code-review F11) — a clamp-detected page is a duplicate of
+            # page 1, not a new page of work; counting it would inflate the
+            # per-vendor pages-median and make the §4.2 completeness signal
+            # harder to trip after clamp overshoot events.
             if page > 1 and page_first_title == first_page_first_title:
                 log.info("%s page %d: clamp detected (first title repeats page 1) — terminator", cpath_norm, page)
                 break
             if page == 1:
                 first_page_first_title = page_first_title
+
+            # CTK-094 §4.2 — count pages whose items actually landed (post-
+            # clamp-guard). Fold #11 moved this from pre-_parse_one_page to
+            # here so terminator/clamp pages don't inflate the count.
+            pages_fetched += 1
 
             if html_hash is None and first_card_html is not None:
                 html_hash = _compute_card_skeleton_hash(first_card_html)
@@ -228,6 +238,7 @@ def fetch_and_parse(config: dict) -> ParseResult:
         http_status_last=http_status_last,
         pages_fetched=pages_fetched,
         per_category_counts={},  # TG enumerated genus subpaths = coverage-filter, not partial-cohort surface (CTK-094 D-3)
+        filtered_urls=set(),     # CTK-094 fold #4 — Magento has no parser-side filter axis today; plumbing exists for future
     )
 
 

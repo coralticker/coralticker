@@ -53,7 +53,7 @@ ALTER TABLE scraper_runs
   ADD COLUMN IF NOT EXISTS pages_fetched INTEGER;
 
 COMMENT ON COLUMN scraper_runs.per_category_counts IS
-  'CTK-094 per-category cohort signal. JSONB map {category_path: cards_seen} for vendors with category_cohort_signal:true in YAML (AquaSD only at v1; POTO no-op, TG no-op, 8 stable-catalog vendors no-op). Feeds sibling CTK-097 operator Slack alerting (digest + threshold ping). Default ''{}''::jsonb on non-signaling vendors.';
+  'CTK-094 per-category cohort signal. JSONB map {category_path: cards_seen} for vendors with category_cohort_signal:true in YAML (AquaSD only at v1; POTO no-op, TG no-op, 8 stable-catalog vendors no-op). Feeds sibling CTK-097 operator Slack alerting (digest + threshold ping). Default ''{}''::jsonb on non-signaling vendors. NOTE per /code-review F7+F13: counts are PRE-overlap-dedup raw card counts, not post-dedup unique listings — categories that share products (AquaSD /softies/ and /zoanthids/ share ~57 cards) sum to more than the deduped items list that lands in vendor_listings. CTK-097 reader MUST treat values as per-path raw-card observability, not unique-product-per-category. A 120-card path dropping to 80 may reflect a 60-card overlap product re-tagged to its sibling path, not 40 actual sell-outs.';
 
 COMMENT ON COLUMN scraper_runs.pages_fetched IS
   'CTK-094 §4.2 completeness signal source-of-truth. Integer count of pages the parser fetched across the run (Shopify /products.json pagination + BC Stencil category_paths cross-product + Magento ?p=N). NULL on pre-CTK-094 rows. Read by db.get_7d_median_pages_fetched to baseline the per-vendor under-scrape WARN.';

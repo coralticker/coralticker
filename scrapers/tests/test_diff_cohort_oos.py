@@ -29,7 +29,8 @@ import sys
 import traceback
 from decimal import Decimal
 
-from scrapers.common.diff import classify
+from scrapers.common.diff import Counters, ItemDecision, classify
+from scrapers.common.run import _apply_cohort_gate
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +329,159 @@ def test_classify_tuple_shape_supports_caller_gate():
     assert cohort_on[0].item["product_url"] == "url-b"
 
 
+def test_filtered_urls_excluded_from_cohort_absent_set():
+    """CTK-094 fold #4 — URLs the parser rejected via YAML filter (e.g.,
+    in_stock_only sold-out drop, product_type_allowlist mismatch) MUST be
+    excluded from the cohort absent-set. The parser's _should_keep dropping
+    item X doesn't mean X is vendor-sold-out — could be a re-categorization
+    by the vendor. Cohort branch should NOT flip such URLs to OOS."""
+    existing_by_url = {
+        "url-still-in-scrape": _make_existing(1, "url-still-in-scrape", in_stock=True),
+        "url-vendor-sold": _make_existing(2, "url-vendor-sold", in_stock=True),  # absent + not filtered → cohort flip
+        "url-parser-rejected": _make_existing(3, "url-parser-rejected", in_stock=True),  # absent + filtered → NO flip
+    }
+    items = [_make_item("url-still-in-scrape", in_stock=True)]
+    filtered_urls = {"url-parser-rejected"}
+
+    per_item, cohort_oos = classify(
+        items,
+        existing_by_url,
+        cohort_oos_at_persist=True,
+        filtered_urls=filtered_urls,
+    )
+
+    # Only url-vendor-sold gets cohort-flipped. url-parser-rejected is
+    # excluded because the parser actively dropped it (could be re-categorized
+    # not sold).
+    assert len(cohort_oos) == 1
+    assert cohort_oos[0].item["product_url"] == "url-vendor-sold"
+
+
+def test_filtered_urls_default_none_is_empty_set():
+    """Backward-compat: classify() with no filtered_urls kwarg treats it as
+    empty set — same behavior as pre-fold-#4 for tests + callers that
+    don't pass the parameter."""
+    existing_by_url = {
+        "url-absent": _make_existing(1, "url-absent", in_stock=True),
+    }
+    items: list[dict] = []
+    # No filtered_urls arg
+    per_item, cohort_oos = classify(items, existing_by_url, cohort_oos_at_persist=True)
+    assert len(cohort_oos) == 1  # nothing filtered → URL is treated as cohort-OOS
+
+
+# ---------------------------------------------------------------------------
+# Fold #12 — _apply_cohort_gate unit tests
+# ---------------------------------------------------------------------------
+
+
+def _gate_inputs(per_item_n: int = 5, cohort_n: int = 3):
+    """Helper — builds per_item + cohort decisions + counters with known
+    shapes so each gate test can assert exact post-state values."""
+    per_item = [
+        ItemDecision(item={"product_url": f"url-p{i}"}, decision="unchanged", existing_id=i)
+        for i in range(per_item_n)
+    ]
+    cohort = [
+        ItemDecision(
+            item={"product_url": f"url-c{i}", "in_stock": False, "current_price": None},
+            decision="oos",
+            existing_id=100 + i,
+        )
+        for i in range(cohort_n)
+    ]
+    counters = Counters(seen=per_item_n, oos=0)
+    return per_item, cohort, counters
+
+
+def test_apply_cohort_gate_canary_tripped_drops_cohort():
+    """CTK-094 fold #12 — canary_tripped=True drops cohort decisions; per-item
+    list passes through unchanged; counters.seen stays at per-item count
+    (fold #1 invariant); counters.oos NOT incremented."""
+    per_item, cohort, counters = _gate_inputs(per_item_n=5, cohort_n=3)
+    decisions, cohort_safe = _apply_cohort_gate(
+        per_item, cohort, counters,
+        canary_tripped=True,
+        matcher_error_count=0,
+        cohort_unsafe_partial=False,
+    )
+    assert cohort_safe is False
+    assert decisions == per_item  # cohort dropped
+    assert len(decisions) == 5
+    assert counters.seen == 5  # unchanged
+    assert counters.oos == 0   # NOT incremented
+
+
+def test_apply_cohort_gate_matcher_errors_drops_cohort():
+    """CTK-094 fold #12 — matcher_error_count > 0 drops cohort decisions
+    (status would be 'partial' per arch §3.2; cohort doesn't fire on
+    partial-success either)."""
+    per_item, cohort, counters = _gate_inputs(per_item_n=5, cohort_n=3)
+    decisions, cohort_safe = _apply_cohort_gate(
+        per_item, cohort, counters,
+        canary_tripped=False,
+        matcher_error_count=2,
+        cohort_unsafe_partial=False,
+    )
+    assert cohort_safe is False
+    assert decisions == per_item
+    assert counters.oos == 0
+
+
+def test_apply_cohort_gate_partial_category_drops_cohort():
+    """CTK-094 fold #5 + #12 — cohort_unsafe_partial=True (raised by
+    parse_bigcommerce PartialCategoryWarning on silent-zero category drift)
+    drops cohort decisions. Prevents mass-false-OOS when a single category
+    silently empties via template override while siblings stay healthy."""
+    per_item, cohort, counters = _gate_inputs(per_item_n=5, cohort_n=3)
+    decisions, cohort_safe = _apply_cohort_gate(
+        per_item, cohort, counters,
+        canary_tripped=False,
+        matcher_error_count=0,
+        cohort_unsafe_partial=True,
+    )
+    assert cohort_safe is False
+    assert decisions == per_item
+    assert counters.oos == 0
+
+
+def test_apply_cohort_gate_all_clear_fires_cohort():
+    """CTK-094 fold #12 — clean run: canary silent, no matcher errors, no
+    partial-category warning → cohort decisions append to the decisions
+    list AND counters.oos increments by cohort cardinality. counters.seen
+    stays at per-item count (fold #1 invariant)."""
+    per_item, cohort, counters = _gate_inputs(per_item_n=5, cohort_n=3)
+    decisions, cohort_safe = _apply_cohort_gate(
+        per_item, cohort, counters,
+        canary_tripped=False,
+        matcher_error_count=0,
+        cohort_unsafe_partial=False,
+    )
+    assert cohort_safe is True
+    assert len(decisions) == 8  # 5 per-item + 3 cohort
+    assert decisions[:5] == per_item
+    assert decisions[5:] == cohort
+    assert counters.seen == 5   # fold #1: NOT inflated by cohort
+    assert counters.oos == 3    # incremented by cohort cardinality
+
+
+def test_apply_cohort_gate_empty_cohort_is_noop_on_success():
+    """CTK-094 fold #12 — clean run with no cohort decisions (e.g., 8 stable-
+    catalog vendors): gate returns cohort_safe=True but decisions == per_item
+    (empty cohort list extends to no-op). counters unchanged."""
+    per_item, _, counters = _gate_inputs(per_item_n=5, cohort_n=0)
+    decisions, cohort_safe = _apply_cohort_gate(
+        per_item, [], counters,
+        canary_tripped=False,
+        matcher_error_count=0,
+        cohort_unsafe_partial=False,
+    )
+    assert cohort_safe is True
+    assert decisions == per_item
+    assert counters.seen == 5
+    assert counters.oos == 0
+
+
 def test_classify_single_pass_over_items_no_double_consume():
     """`items` iterable is consumed exactly once — the cohort-pass uses the
     seen_urls set built DURING the per-item loop, not a re-iteration. Catches
@@ -367,6 +521,13 @@ if __name__ == "__main__":
         test_no_regression_default_off_returns_empty_cohort,
         test_no_regression_per_item_decisions_match_pre_ctk094_shape,
         test_classify_tuple_shape_supports_caller_gate,
+        test_filtered_urls_excluded_from_cohort_absent_set,
+        test_filtered_urls_default_none_is_empty_set,
+        test_apply_cohort_gate_canary_tripped_drops_cohort,
+        test_apply_cohort_gate_matcher_errors_drops_cohort,
+        test_apply_cohort_gate_partial_category_drops_cohort,
+        test_apply_cohort_gate_all_clear_fires_cohort,
+        test_apply_cohort_gate_empty_cohort_is_noop_on_success,
         test_classify_single_pass_over_items_no_double_consume,
     ]
     failures = []

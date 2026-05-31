@@ -32,6 +32,35 @@ from scrapers.common.parse_shopify import (
 log = logging.getLogger(__name__)
 
 
+class PartialCategoryWarning(Exception):
+    """CTK-094 fold #5 (/code-review F5): raised by parse_bigcommerce after
+    a successful parse when one or more category_paths returned 0 items
+    AND no Stencil empty-state marker was detected. The pattern indicates
+    silent partial-bucket loss — BC Stencil per-category template override
+    or theme drift hiding products under a single path while siblings stay
+    healthy. The signal cannot be discriminated from a canary perspective
+    (total catalog cards stay above 0.2 * median when only one path drops)
+    but IS partial-parser-degradation that must disable cohort-OOS gating
+    in run.py — otherwise cohort flips every previously-in_stock product
+    from the silently-empty path to OOS (the mass-false-OOS class the
+    /code-review F5 finding surfaced).
+
+    Carries the partial ParseResult so run.py can proceed with
+    status='success' on the rest of the catalog while marking
+    cohort_unsafe_partial = True. Trigger is the NARROW signal
+    (category_item_count == 0 AND not category_marker_empty), NOT the
+    broader expected_min_per_category WARN — legitimate sparse genera
+    (AquaSD /cynarinas/=1 etc.) still WARN-log but don't raise, otherwise
+    cohort would be permanently disabled on AquaSD."""
+    def __init__(self, result: ParseResult, partial_paths: list[str]):
+        self.result = result
+        self.partial_paths = partial_paths
+        super().__init__(
+            f"partial category paths (0 items, no empty-marker): "
+            f"{', '.join(partial_paths)}"
+        )
+
+
 def fetch_and_parse(config: dict) -> ParseResult:
     """Iterate `category_paths` × `?page=N` until natural terminator (HTTP 404
     or empty card set). Returns ParseResult matching the parse_shopify shape
@@ -63,6 +92,13 @@ def fetch_and_parse(config: dict) -> ParseResult:
     http_status_last: int | None = None
     pages_fetched = 0
     per_category_counts: dict[str, int] = {}
+    # CTK-094 fold #5: collect paths where category_item_count == 0 AND
+    # the Stencil empty-state marker was NOT present. Narrow signal —
+    # routine low-stock (e.g., AquaSD /cynarinas/=1) does NOT land here;
+    # marker-empty paths (vendor curated zero) do NOT land here. Only the
+    # silent-zero theme-drift class. Raised as PartialCategoryWarning at
+    # end-of-parse so run.py can disable cohort-OOS gating.
+    partial_paths: list[str] = []
 
     for cpath in category_paths:
         cpath_norm = cpath if cpath.startswith("/") else f"/{cpath}"
@@ -154,10 +190,25 @@ def fetch_and_parse(config: dict) -> ParseResult:
                 cpath_norm, category_item_count, expected_min_per_category,
             )
 
+        # CTK-094 fold #5: partial-bucket drift signal (silent zero, no
+        # marker). Distinct from the broader undershoot WARN above — only
+        # fires when a category has 0 items AND the Stencil empty-state
+        # marker was NOT detected. Raises PartialCategoryWarning at end-
+        # of-parse so run.py disables cohort-OOS gating for this run.
+        # Routine sparseness (1-2 items) still logs the WARN above but
+        # does NOT land here; cohort fires normally.
+        if category_item_count == 0 and not category_marker_empty:
+            partial_paths.append(cpath_norm)
+
         # CTK-094 §5.2 category-cohort signal — record per-path counts when
         # YAML opt-in fires. Marker-empty categories register their 0 count
         # explicitly so the downstream CTK-097 reader can distinguish
         # "vendor curated zero" from "category absent from this scrape."
+        # NOTE per /code-review F7+F13: counts are PRE-overlap-dedup raw
+        # card counts, not post-dedup unique listings. Categories that
+        # overlap (AquaSD /softies/ ∩ /zoanthids/ ~57 cards) sum to more
+        # than the final deduped items list. CTK-097 reader must treat
+        # these as per-path raw-card observability, not unique-product.
         if category_cohort_signal:
             per_category_counts[cpath_norm] = category_item_count
 
@@ -183,13 +234,21 @@ def fetch_and_parse(config: dict) -> ParseResult:
         seen_urls.add(url)
         deduped.append(item)
 
-    return ParseResult(
+    result = ParseResult(
         items=deduped,
         html_hash=html_hash,
         http_status_last=http_status_last,
         pages_fetched=pages_fetched,
         per_category_counts=per_category_counts,
+        filtered_urls=set(),  # CTK-094 fold #4 — BC Stencil has no parser-side filter axis today (no in_stock_only / product_type_allowlist equivalent); plumbing exists for future filter additions
     )
+    # CTK-094 fold #5: raise PartialCategoryWarning AFTER assembling the
+    # full result so the caller (run.py) receives a complete ParseResult
+    # via the exception payload + can proceed with status='success' on
+    # the healthy categories while disabling cohort-OOS gate for this run.
+    if partial_paths:
+        raise PartialCategoryWarning(result=result, partial_paths=partial_paths)
+    return result
 
 
 def _parse_one_page(
