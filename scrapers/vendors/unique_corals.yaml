@@ -190,3 +190,25 @@ category_filter:
     - shipping                    # tagged on shipping items + Australian Branching Live Rock equipment-adjacent (CTK-085 Session 3 2026-05-25)
     - triton                      # Triton / Core7 / Corechem supplement brand (Triton Method / N-DOC / ICP-OES / STN-X / CYA-NO); CTK-095 Axis 2 2026-05-30
     - used                        # used / refurbished equipment marker (e.g., Ecotech Marine Radion XR30 G5 LED) (CTK-085 Session 3 2026-05-25)
+  # CTK-096 title_denylist (2026-05-31): defensive moat against
+  # tag-shape drift on the tagged-but-not-denylisted equipment-brand
+  # class. Empirical leak surface 2026-05-31 live-walk + Session 1
+  # walk-confirm: 1 row PT='' ("DaStaCo Replacement Bottom Sensor";
+  # tags=['DaStaCo'], 'DaStaCo' not in existing tag_denylist). The 6
+  # other DaStaCo sibling rows carry PT='Drygoods' and are caught by
+  # allowlist exclusion today; title_denylist provides redundant
+  # belt-and-suspenders if PT shape drifts (e.g., DaStaCo admin lands a
+  # PT='' row tomorrow). Overlap with existing tag_denylist
+  # (Dalua/illumagic/Panta Rhei caught at tag level for ~70 rows
+  # combined) is intentional belt-and-suspenders — title_denylist fires
+  # when the brand-name appears in raw_title but the brand tag is absent.
+  # 'ARID ' carries trailing space to avoid 'MARID'/'PARIDA' collisions.
+  # Alphabetized.
+  title_denylist:
+    - "ARID "
+    - Dalua
+    - DaStaCo
+    - Illumagic
+    - MagSleeve
+    - Panta Rhei
+    - SeeClear

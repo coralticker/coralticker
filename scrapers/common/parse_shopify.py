@@ -125,10 +125,18 @@ def fetch_and_parse(config: dict) -> ParseResult:
     items: list[dict] = []
     skipped_unavailable = 0  # CTK-088 fold #4: dropped by the in_stock_only availability gate
     skipped_category = 0     # CTK-088 fold #4: dropped by product_type_allowlist / tag_allowlist / tag_denylist
+    skipped_title_denylist = 0  # CTK-096 D-1: dropped by title_denylist axis (split out from skipped_category so an operator can tell which YAML axis catches the row)
     filtered_urls: set[str] = set()  # CTK-094 fold #4: URLs rejected by _should_keep, excluded from cohort absent-set
     html_hash: str | None = None
     http_status_last: int | None = None
     pages_fetched = 0        # CTK-094 §4.2 completeness signal — increment per fetched page
+
+    # CTK-096 D-1: hoist title_denylist out of the per-product loop so we don't
+    # re-read the dict on every iteration. Used at the call-site attribution
+    # below to discriminate skipped_title_denylist from skipped_category.
+    title_denylist_lower = [
+        e.lower() for e in ((category_filter or {}).get("title_denylist") or [])
+    ]
 
     for page in range(1, max_pages + 1):
         url = f"{base_url}{products_path}?limit={page_size}&page={page}"
@@ -187,10 +195,29 @@ def fetch_and_parse(config: dict) -> ParseResult:
                 if in_stock_only and not any(v.get("available") for v in (p.get("variants") or [])):
                     skipped_unavailable += 1
                 else:
-                    skipped_category += 1
+                    # CTK-096 D-1: attribute between category-axis and title-
+                    # axis drops. Discrimination mirrors _should_keep's axis
+                    # order (title_denylist runs LAST and short-circuits): when
+                    # an earlier axis (allowlist / tag_allowlist / tag_denylist)
+                    # already rejected, that's the discriminating axis — leave
+                    # this re-check tighter than _should_keep's short-circuit
+                    # so a row caught by both axes attributes to the first
+                    # one. Cheap: hoisted title_denylist_lower + O(N) title
+                    # substring scan per dropped row.
+                    if title_denylist_lower and any(
+                        e in (p.get("title") or "").lower() for e in title_denylist_lower
+                    ):
+                        skipped_title_denylist += 1
+                    else:
+                        skipped_category += 1
                     # CTK-094 fold #4 + Session 4 fold #1: scope-gated to
                     # category-rejection only. URL shape matches
                     # _normalize_product (base_url + /products/handle).
+                    # CTK-096 note: title_denylist drops also enter filtered_urls
+                    # (parser-active rejection on a buyable row; same cohort-
+                    # OOS exclusion contract as category-axis drops — a vendor
+                    # renaming a buyable item to hit title_denylist would
+                    # otherwise mass-fire false OOS).
                     handle = p.get("handle", "")
                     if handle:
                         filtered_urls.add(f"{base_url}/products/{handle}")
@@ -206,9 +233,9 @@ def fetch_and_parse(config: dict) -> ParseResult:
     # availability and only a handful on the category filter.
     if category_filter or in_stock_only:
         log.info(
-            "filter: kept %d, skipped %d (unavailable %d, category-filter %d)",
-            len(items), skipped_unavailable + skipped_category,
-            skipped_unavailable, skipped_category,
+            "filter: kept %d, skipped %d (unavailable %d, category-filter %d, title-denylist %d)",
+            len(items), skipped_unavailable + skipped_category + skipped_title_denylist,
+            skipped_unavailable, skipped_category, skipped_title_denylist,
         )
 
     return ParseResult(
@@ -223,11 +250,11 @@ def fetch_and_parse(config: dict) -> ParseResult:
 
 def _should_keep(product: dict, category_filter: dict | None, in_stock_only: bool = False) -> bool:
     """CTK-037 category-filter gate. Returns True if product passes; False if
-    rejected by the availability gate, the allowlist, or the tag-denylist.
-    None or empty dict category_filter = no category gate (permissive default
-    for Phase 2 vendor onboarding inheritance).
+    rejected by the availability gate, the allowlist, the tag-denylist, or the
+    title-denylist. None or empty dict category_filter = no category gate
+    (permissive default for Phase 2 vendor onboarding inheritance).
 
-    Four filter axes, AND-semantics when more than one is configured:
+    Five filter axes, AND-semantics when more than one is configured:
       - in_stock_only (CTK-088) — when True, drop any product with no buyable
         variant (`not any(v.available ...)`). Opt-in per-vendor (default False
         = fleet behavior). For vendors whose catalog is a permanent archive of
@@ -242,6 +269,18 @@ def _should_keep(product: dict, category_filter: dict | None, in_stock_only: boo
         tags rather than product_type (Reef Chasers: product_type='' universal,
         every coral row tagged 'Coral').
       - tag_denylist (CTK-041) — no product tag may appear in the list.
+        Membership is lowercase-runtime per CTK-096 D-2 (both sides .lower()
+        at the predicate) so a vendor's tag-shape drift between mixed-case
+        and lowercase doesn't silently miss the entry — YAML stays mixed-
+        case readable.
+      - title_denylist (CTK-096) — no entry may appear as a case-insensitive
+        substring of raw_title. Per CTK-096 D-1; closes the empty-tag +
+        permissive-PT bypass class on JF / BC / UC + the tagged-but-not-
+        denylisted equipment-brand class on UC. Each entry is matched as
+        `entry.lower() in title.lower()`; compound substrings preferred
+        over single-word when coral-noun collision is possible (e.g., JF
+        uses `Hybrid Tang` not `Tang` — `Tang` would false-fire on the
+        Tangerine/Tango/Tangelo coral lineages).
 
     Each axis short-circuits to False on miss; permissive when unset (so a
     config carrying only one axis behaves identically to the prior single-axis
@@ -257,6 +296,7 @@ def _should_keep(product: dict, category_filter: dict | None, in_stock_only: boo
     allowlist = category_filter.get("product_type_allowlist") or []
     tag_allowlist = category_filter.get("tag_allowlist") or []
     tag_denylist = category_filter.get("tag_denylist") or []
+    title_denylist = category_filter.get("title_denylist") or []
     product_type = product.get("product_type") or ""  # CTK-037 Session 5.5: normalize None/absent to "" so allowlist entry "" matches both shapes
     tags = product.get("tags") or []
     if allowlist and product_type not in allowlist:
@@ -277,8 +317,20 @@ def _should_keep(product: dict, category_filter: dict | None, in_stock_only: boo
         return False
     if tag_allowlist and not any(t in tag_allowlist for t in tags):
         return False
-    if tag_denylist and any(t in tag_denylist for t in tags):
+    # CTK-096 D-2: lowercase both sides at membership for future-proof tag-
+    # case-mismatch defense (cross-fleet). Closes the silent-miss class where
+    # a vendor's API returns 'Triton' while the YAML carries 'triton' (or
+    # vice-versa). Per-row cost is trivial — bounded by ~10 denylist entries
+    # x ~5 tags x .lower() per scrape page.
+    if tag_denylist and any(
+        t.lower() in {e.lower() for e in tag_denylist} for t in tags
+    ):
         return False
+    # CTK-096 D-1: 5th axis. Case-insensitive substring against raw_title.
+    if title_denylist:
+        title_lower = (product.get("title") or "").lower()
+        if any(e.lower() in title_lower for e in title_denylist):
+            return False
     return True
 
 

@@ -86,3 +86,13 @@ category_filter:
     - WYSIWYG             # WYSIWYG-photographed coral, 169 items (CTK-027 2026-05-11)
     - Zoanthids/Softies   # zoa + softie corals, 36 items (CTK-027 2026-05-11)
   tag_denylist: []  # JF not needed: product_type alone discriminates (CTK-027 2026-05-11)
+  # CTK-096 title_denylist (2026-05-31): defensive intake-filter axis for the
+  # tagged-but-not-denylisted bypass class (empty tag_denylist on JF means
+  # any non-coral title with a PT in allowlist slips through). Empirical
+  # leak surface 2026-05-31 live-walk: 1 row ("WHITE AND YELLOW LIP HYBRID
+  # TANG"; PT='WYSIWYG' + tags=['WYSIWYG']). Substring "Hybrid Tang" is
+  # FP-clean against JF coral-naming patterns (Tangerine Twisters / Mango
+  # Tango / Tangelo Psammocora are all "Tang*" coral — single-word "Tang"
+  # would false-fire; compound "Hybrid Tang" is clean).
+  title_denylist:
+    - Hybrid Tang

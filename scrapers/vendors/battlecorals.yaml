@@ -205,3 +205,17 @@ category_filter:
     - Tenuis                      # 3 items (2026-05-25)
     - Unknown                     # 1 item (2026-05-25)
   tag_denylist: []  # Battlecorals not needed: no fish/inverts/merch/equipment product_types observed; 'blue light special' verified 100% coral (CTK-085 Session 2 2026-05-25)
+  # CTK-096 title_denylist (2026-05-31): closes the empty-tag + PT=''
+  # bypass class on BC's permissive empty-bucket allowlist. Empirical leak
+  # surface 2026-05-31 live-walk: ~45 non-coral rows in PT='' empty-tag
+  # bucket — Tee Shirt (4) / Shirt non-Tee (1) / Print (~27 at Session 1
+  # walk-confirm, Δ+9 since plan walk) / Gift Card (1) / service (2,
+  # Δ+1 "shipping for Replacements"). 313 coral rows in non-empty PT buckets
+  # unaffected. All entries case-insensitive substring per CTK-096 D-1;
+  # alphabetized.
+  title_denylist:
+    - delivery fee          # service row "Saturday delivery fee" (1 row)
+    - Gift Card             # promo row "Gift Cards" (1 row); also future-proof against "Gift Card - $X" shape
+    - " Print"              # leading-space suffix substring; catches ~27 "X Print" merch rows + "4 pack of 20x20 prints" without false-firing on hypothetical "Imprint"/"Footprint" coral names
+    - shipping              # service rows "UPS actual shipping" + "shipping for Replacements" (2 rows); FP-clean against coral catalog
+    - Shirt                 # catches 4 "Tee Shirt" rows + 1 "Superb Owl Shirt" (superset of Tee Shirt); no coral-noun collision observed
