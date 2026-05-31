@@ -200,6 +200,19 @@ def run(slug: str) -> int:
             )
             result = e.result
             cohort_unsafe_partial = True
+            # CTK-094 Session 4 fold #2 (/code-review F2): persist the
+            # partial-bucket signal to scraper_runs.error_message via the
+            # canary_msg / completeness_msg accumulator pattern. Status
+            # stays 'success' on the healthy categories — error_message
+            # carries the marker-side observability so CTK-097 operator
+            # alerting + ops queries surface partial-bucket drift events
+            # rather than relying on transient WARN logs.
+            partial_msg = (
+                f"partial-category WARN: {', '.join(e.partial_paths)}"
+            )
+            error_message = (
+                f"{error_message}; {partial_msg}" if error_message else partial_msg
+            )
 
         items = result.items
         html_hash = result.html_hash
@@ -291,13 +304,17 @@ def run(slug: str) -> int:
         if canary_enabled:
             threshold = max(5.0, 0.2 * median_7d)
         else:
-            threshold = 5.0  # floor-only on exempt vendors per D-2 (i)
+            # CTK-094 Session 4 fold #4 (/code-review F4): per-vendor floor
+            # override on canary:false vendors. POTO sets canary_floor: 15
+            # because its normal buyable count is 21-164 (CTK-088 fold #2),
+            # so default floor-of-5 leaves the 5-20 parser-bug band uncovered.
+            threshold = float(config.get("canary_floor", 5.0))
         canary_tripped = counters.seen < threshold
         canary_msg: str | None = None
         if canary_tripped:
             canary_msg = (
                 f"silent canary tripped: listings_seen={counters.seen} < "
-                f"{'max(5, 0.2 * ' + f'7d_median={median_7d:.1f})' if canary_enabled else 'floor=5'} "
+                f"{'max(5, 0.2 * ' + f'7d_median={median_7d:.1f})' if canary_enabled else f'floor={threshold:.1f}'} "
                 f"= {threshold:.1f}"
             )
             log.error(canary_msg)

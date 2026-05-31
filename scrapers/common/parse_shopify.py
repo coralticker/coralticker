@@ -162,20 +162,24 @@ def fetch_and_parse(config: dict) -> ParseResult:
                 # short-circuited by the availability gate FIRST, so under
                 # in_stock_only any sold-out row is an availability drop; a
                 # buyable row that still got dropped failed the category filter.
+                # CTK-094 Session 4 fold #1 (/code-review F1): filtered_urls
+                # only collects category-rejected URLs (vendor still buyable).
+                # Sold-out rejects (skipped_unavailable) ARE the cohort-OOS
+                # signal — they must NOT enter filtered_urls or diff.classify
+                # will exclude them from the cohort absent-set and the in_stock
+                # row stays TRUE despite the vendor selling out (Session 3
+                # fold-batch regressed this for the POTO in_stock_only + cohort
+                # combo; Session 4 restores the discrimination).
                 if in_stock_only and not any(v.get("available") for v in (p.get("variants") or [])):
                     skipped_unavailable += 1
                 else:
                     skipped_category += 1
-                # CTK-094 fold #4: collect the URL of every parser-rejected
-                # product so diff.classify can exclude it from the cohort-
-                # OOS absent-set. Without this, a vendor re-categorizing
-                # item X into a non-allowlisted product_type drops X from
-                # `items` → URL not in seen_urls → cohort flips X to OOS
-                # even though X is still buyable on-vendor. URL shape
-                # matches _normalize_product (base_url + /products/handle).
-                handle = p.get("handle", "")
-                if handle:
-                    filtered_urls.add(f"{base_url}/products/{handle}")
+                    # CTK-094 fold #4 + Session 4 fold #1: scope-gated to
+                    # category-rejection only. URL shape matches
+                    # _normalize_product (base_url + /products/handle).
+                    handle = p.get("handle", "")
+                    if handle:
+                        filtered_urls.add(f"{base_url}/products/{handle}")
                 continue
             items.append(_normalize_product(p, base_url, image_strategy, originator_prefix, auction_detection))
 

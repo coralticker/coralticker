@@ -109,6 +109,19 @@ cohort_oos_at_persist: true
 # volatile buyable counts.
 canary: false
 
+# canary_floor: 15 — CTK-094 Session 4 fold #4 (/code-review F4). The
+# default floor-of-5 on canary:false vendors leaves the 5-20 band uncovered
+# on POTO — a parser bug producing 6-20 items (e.g., regex over-filter,
+# template-rename silently dropping most buyable rows) silently passes the
+# threshold and the cohort gate runs against a near-empty seen_urls set,
+# mass-flipping every previously-in-stock POTO listing to OOS. POTO's normal
+# buyable count is 21-164 per CTK-088 fold #2, so a floor of 15 catches the
+# 5-20 parser-bug band while staying clear of the legitimate low-tail at 21.
+# Only read when canary:false (canary:true vendors use the median-ratio
+# canary which already has a floor-of-5 max-clause). Override-only — absent
+# on canary:false vendors → default 5.0.
+canary_floor: 15
+
 # Category filter — RATIFIED 2026-05-28 (/lead-backend) AFTER the impl
 # re-sweep contradicted the plan's "coral-pure, no allowlist" Q1 premise.
 # The grown catalog surfaced BUYABLE non-coral that the plan pre-flight

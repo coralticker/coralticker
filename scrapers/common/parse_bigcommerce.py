@@ -246,7 +246,31 @@ def fetch_and_parse(config: dict) -> ParseResult:
     # full result so the caller (run.py) receives a complete ParseResult
     # via the exception payload + can proceed with status='success' on
     # the healthy categories while disabling cohort-OOS gate for this run.
+    #
+    # CTK-094 Session 4 fold #3 (/code-review F3): when the partial-path
+    # count breaches max(3, 0.3 * len(category_paths)), the silent-zero
+    # pattern is wider than vendor-side curation drift — Stencil empty-
+    # marker detection is itself broken (theme refactor renamed the
+    # `<p data-no-products-notification>` class, etc.). Mass-marker-broken
+    # would permanently disable cohort-OOS while status stays 'success';
+    # escalate to SchemaChangeError so error_class='html_schema_change' and
+    # CTK-019 #54 Slack digest + CTK-097 operator alerting surface it as a
+    # real scrape failure rather than a recoverable WARN. Threshold rationale:
+    # 3-path floor catches small-grid vendors (TG-class, 3-10 paths) where
+    # 1-of-3 silent is curation but 3-of-3 silent is broken; 30% ratio catches
+    # large-grid vendors (AquaSD 21 paths) where 3-of-21 silent is curation
+    # but 7-of-21 silent is broken. Tunable post-empirical.
     if partial_paths:
+        marker_broken_threshold = max(3, int(0.3 * len(category_paths)))
+        if len(partial_paths) >= marker_broken_threshold:
+            raise SchemaChangeError(
+                f"marker-detection broken: {len(partial_paths)} of "
+                f"{len(category_paths)} category_paths returned 0 items "
+                f"with no empty-state marker (threshold = "
+                f"max(3, 0.3 * {len(category_paths)}) = "
+                f"{marker_broken_threshold}); affected paths: "
+                f"{', '.join(partial_paths)}"
+            )
         raise PartialCategoryWarning(result=result, partial_paths=partial_paths)
     return result
 
