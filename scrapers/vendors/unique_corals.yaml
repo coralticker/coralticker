@@ -202,7 +202,15 @@ category_filter:
   # (Dalua/illumagic/Panta Rhei caught at tag level for ~70 rows
   # combined) is intentional belt-and-suspenders — title_denylist fires
   # when the brand-name appears in raw_title but the brand tag is absent.
-  # 'ARID ' carries trailing space to avoid 'MARID'/'PARIDA' collisions.
+  # 'ARID ' carries trailing space to avoid SUFFIX-class collisions
+  # (PARIDA / Aridana / Floridan-class — substring 'arid' followed by a
+  # non-space char doesn't match 'arid '). Does NOT protect PREFIX-class
+  # collisions ('Marid ' lowercase literally contains 'arid ' because the
+  # original word-break space matches the entry's trailing space). UC
+  # catalog 2026-05-31 walk-confirm carries zero 'marid '/'narid '-class
+  # coral titles; the asymmetry is theoretical FP risk only. Disciplined
+  # claim pinned at test_parse_shopify_unique_corals.py:test_uc_keeps_
+  # arida_suffix_fp_control docstring.
   # Alphabetized.
   title_denylist:
     - "ARID "
