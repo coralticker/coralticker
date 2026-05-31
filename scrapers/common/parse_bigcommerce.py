@@ -53,10 +53,16 @@ def fetch_and_parse(config: dict) -> ParseResult:
     # Session 7 downgrade 2026-05-29. Partial-bucket drift coverage gap +
     # alerting deferral disclosed at the WARN call site (L122-138).
     expected_min_per_category = config.get("expected_min_per_category")
+    # CTK-094 §5 category-cohort signal opt-in. AquaSD writes the per-path
+    # counts to scraper_runs.per_category_counts for downstream CTK-097
+    # operator alerting. Default off — non-signaling vendors return {}.
+    category_cohort_signal = bool(config.get("category_cohort_signal", False))
 
     items: list[dict] = []
     html_hash: str | None = None
     http_status_last: int | None = None
+    pages_fetched = 0
+    per_category_counts: dict[str, int] = {}
 
     for cpath in category_paths:
         cpath_norm = cpath if cpath.startswith("/") else f"/{cpath}"
@@ -83,6 +89,8 @@ def fetch_and_parse(config: dict) -> ParseResult:
                 raise BlockedError(result.error_message or "block detected")
             if result.error_class is not None:
                 raise FetchError(result.error_class, f"{result.error_class}: {result.error_message}")
+
+            pages_fetched += 1  # CTK-094 §4.2 — count after success, not after attempt
 
             page_items, first_card_html, is_empty_category = _parse_one_page(
                 result.body, base_url, cpath_norm, auction_detection, originator_prefix, page,
@@ -146,6 +154,13 @@ def fetch_and_parse(config: dict) -> ParseResult:
                 cpath_norm, category_item_count, expected_min_per_category,
             )
 
+        # CTK-094 §5.2 category-cohort signal — record per-path counts when
+        # YAML opt-in fires. Marker-empty categories register their 0 count
+        # explicitly so the downstream CTK-097 reader can distinguish
+        # "vendor curated zero" from "category absent from this scrape."
+        if category_cohort_signal:
+            per_category_counts[cpath_norm] = category_item_count
+
     if not items:
         raise SchemaChangeError("zero items parsed across all category_paths — scrape produced nothing")
 
@@ -168,7 +183,13 @@ def fetch_and_parse(config: dict) -> ParseResult:
         seen_urls.add(url)
         deduped.append(item)
 
-    return ParseResult(items=deduped, html_hash=html_hash, http_status_last=http_status_last)
+    return ParseResult(
+        items=deduped,
+        html_hash=html_hash,
+        http_status_last=http_status_last,
+        pages_fetched=pages_fetched,
+        per_category_counts=per_category_counts,
+    )
 
 
 def _parse_one_page(
@@ -276,7 +297,7 @@ def _parse_one_page(
             "vendor_sku": None,  # BC data-entity-id is internal, not a vendor SKU
             "current_price": current_price,
             "currency": "USD",
-            "in_stock": True,  # Stencil hides OOS from category view; silent-OOS gap Q-N flagged in aquasd.yaml
+            "in_stock": True,  # Stencil hides OOS from category view; CTK-094 cohort_oos_at_persist (aquasd.yaml) is the persist-layer mechanism that flips absent rows to in_stock=false — do not change this hardcode without removing the YAML opt-in
             "vendor_image_url": vendor_image_url,
             "category": normalize.infer_category(fake_product),
             "lineage_flag": normalize.infer_lineage_flag(raw_title),

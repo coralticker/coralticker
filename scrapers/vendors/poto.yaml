@@ -81,6 +81,34 @@ originator_prefix: null
 # fleet behavior, byte-identical).
 in_stock_only: true
 
+# cohort_oos_at_persist: true — CTK-094 §3 D-1 ratified 2026-05-31. Because
+# in_stock_only drops sold-out items pre-diff, the §2.2 diff never flips
+# them to in_stock=false (the absent rows just stop showing up). Without
+# this flag, vendor_listings rows for items POTO has already sold show
+# `in_stock=true` for up to ~7 days (until the §2.2 stale-window catches
+# them). With the flag, scrapers/common/diff.classify adds a cohort pass:
+# previously-in_stock URLs absent from this scrape's seen-URL set flip to
+# in_stock=false + emit an OOS decision. Persist-layer mechanism; the
+# parser still drops sold-out items at parse-time, so this fires on the
+# diff-layer absent-set. Gated by run.py on canary outcome (cohort pass
+# skipped when canary trips or matcher exception fires, so a partial parse
+# doesn't mass-fire false OOS).
+cohort_oos_at_persist: true
+
+# canary: false — CTK-094 §4.1 D-2 (i) ratified 2026-05-31. POTO's buyable
+# count is intrinsically volatile (21-164 across normal operation per
+# CTK-088 fold #2; a legit low-buyable window mid-week trips the §2.4
+# median-ratio canary with status='failed' + error_class='block' + a false
+# Slack page + skipped Phase B image mirroring). Opt-out drops the median
+# ratio half of the canary (max(5, 0.2 * 7d_median)); the floor-of-5
+# survives so outright-empty / total-failure detection stays loud. The
+# §2.4 canary was tuned for stable full-catalog scrapers (PE / WWC / TSA /
+# JF) where seen-count IS the completeness signal; POTO's live-sale
+# storefront violates that premise. §4.2 pages-fetched completeness signal
+# (also CTK-094) is the new under-scrape signal that doesn't false-fire on
+# volatile buyable counts.
+canary: false
+
 # Category filter — RATIFIED 2026-05-28 (/lead-backend) AFTER the impl
 # re-sweep contradicted the plan's "coral-pure, no allowlist" Q1 premise.
 # The grown catalog surfaced BUYABLE non-coral that the plan pre-flight

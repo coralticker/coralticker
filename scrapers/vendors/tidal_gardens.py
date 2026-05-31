@@ -154,6 +154,7 @@ def fetch_and_parse(config: dict) -> ParseResult:
     items: list[dict] = []
     html_hash: str | None = None
     http_status_last: int | None = None
+    pages_fetched = 0  # CTK-094 §4.2 completeness signal — count successful page fetches
 
     for cpath, cat_hint in paths:
         cpath_norm = cpath if cpath.startswith("/") else f"/{cpath}"
@@ -173,6 +174,8 @@ def fetch_and_parse(config: dict) -> ParseResult:
                 raise BlockedError(result.error_message or "block detected")
             if result.error_class is not None:
                 raise FetchError(result.error_class, f"{result.error_class}: {result.error_message}")
+
+            pages_fetched += 1  # CTK-094 §4.2 — count after success, not after attempt
 
             page_items, first_card_html, page_first_title = _parse_one_page(
                 result.body, cpath_norm, cat_hint, originator_prefix, page,
@@ -219,7 +222,13 @@ def fetch_and_parse(config: dict) -> ParseResult:
         seen_urls.add(u)
         deduped.append(item)
 
-    return ParseResult(items=deduped, html_hash=html_hash, http_status_last=http_status_last)
+    return ParseResult(
+        items=deduped,
+        html_hash=html_hash,
+        http_status_last=http_status_last,
+        pages_fetched=pages_fetched,
+        per_category_counts={},  # TG enumerated genus subpaths = coverage-filter, not partial-cohort surface (CTK-094 D-3)
+    )
 
 
 def _parse_one_page(

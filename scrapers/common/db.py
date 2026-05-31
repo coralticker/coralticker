@@ -18,15 +18,18 @@ unaffected):
     fetch_vendor(conn, slug) -> dict
     fetch_existing_listings(conn, vendor_id) -> dict[str, dict]
     get_7d_median_seen(conn, vendor_id) -> float
+    get_7d_median_pages_fetched(conn, vendor_id) -> float
     start_scraper_run(conn, vendor_id, git_sha) -> int
     finish_scraper_run(conn, run_id, status, error_class, error_message,
-                       counters, html_hash, http_status_last) -> None
+                       counters, html_hash, http_status_last,
+                       per_category_counts=None) -> None
     finish_phase_b(conn, run_id) -> None
     cleanup_stale_runs(conn, vendor_id, git_sha) -> int
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -147,7 +150,7 @@ def fetch_existing_listings(conn: psycopg.Connection, vendor_id: int) -> dict[st
 
 def get_7d_median_seen(conn: psycopg.Connection, vendor_id: int) -> float:
     """Silent-canary 7d_median half per arch §2.4. Returns the median of
-    listings_seen across the last 7 days of SUCCESS runs for this vendor.
+    listings_seen across the last 7 days for this vendor.
 
     Phase 1 first-7-days behavior (F4 fold): with no successful history yet,
     this returns 0 — making max(5, 0.2 * 0) collapse to the floor of 5.
@@ -155,12 +158,31 @@ def get_7d_median_seen(conn: psycopg.Connection, vendor_id: int) -> float:
     floor-of-5 is the only canary signal in week 1; Slack `if: failure()` is
     the load-bearing alert in that window. Pattern carries to CTK-025/026/027
     first-7-day windows.
+
+    CTK-094 §4.3 ratchet exclusion: counts status='success' AND ALSO counts
+    canary-only false-fails (status='failed' AND error_class='block' AND
+    error_message LIKE 'silent canary tripped:%'). Without this, a single
+    false-canary-trip excludes the run's listings_seen from the next median
+    computation — biasing the median upward and making the next low-buyable
+    window more likely to trip. Real block events (Cloudflare / WAF /
+    network) stay excluded because their error_message lacks the canary
+    prefix; their listings_seen value is unreliable. The canary-self-fail
+    listings_seen value IS reliable (the parse succeeded; only the count
+    crossed the threshold), so including it dilutes the median back toward
+    the actual catalog volatility.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     with conn.cursor() as cur:
         cur.execute(
             "SELECT listings_seen FROM scraper_runs "
-            "WHERE vendor_id = %s AND status = 'success' AND started_at >= %s",
+            "WHERE vendor_id = %s AND started_at >= %s "
+            "AND ("
+            "  status = 'success' "
+            "  OR ("
+            "    status = 'failed' AND error_class = 'block' "
+            "    AND error_message LIKE 'silent canary tripped:%%'"
+            "  )"
+            ")",
             (vendor_id, cutoff),
         )
         rows = cur.fetchall()
@@ -171,6 +193,45 @@ def get_7d_median_seen(conn: psycopg.Connection, vendor_id: int) -> float:
     if n % 2 == 1:
         return float(seen_values[n // 2])
     return (seen_values[n // 2 - 1] + seen_values[n // 2]) / 2.0
+
+
+def get_7d_median_pages_fetched(conn: psycopg.Connection, vendor_id: int) -> float:
+    """CTK-094 §4.2 completeness signal — returns the 7-day median of
+    pages_fetched across SUCCESS runs for this vendor. Used by run.py to
+    emit a soft WARN when the current run's pages_fetched falls below a
+    configurable fraction of the historical baseline (catches under-scrape
+    classes like TG Finding-1's toolbar-drift truncation that the
+    listings_seen canary alone can miss — the count-canary watches the
+    item-count tail; this watches the page-count tail).
+
+    Per-vendor median (not fleet) because pages_fetched varies wildly across
+    vendors (PE Shopify ~1-2 pages on /products.json, AquaSD BC Stencil
+    ~10-15 across 21 category_paths, TG Magento ~7-10 across 7 paths). A
+    per-vendor floor is the only meaningful baseline.
+
+    Phase 1 first-7-days behavior mirrors get_7d_median_seen: no history
+    yet → returns 0 → run.py guards against the zero-baseline case (no WARN
+    until a real median lands). Pre-CTK-094 rows have NULL pages_fetched
+    (column lands at this migration); SELECT filters NULL out so the
+    rollout window stays clean.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT pages_fetched FROM scraper_runs "
+            "WHERE vendor_id = %s AND started_at >= %s "
+            "AND status = 'success' "
+            "AND pages_fetched IS NOT NULL",
+            (vendor_id, cutoff),
+        )
+        rows = cur.fetchall()
+    values = sorted(int(r["pages_fetched"]) for r in rows)
+    if not values:
+        return 0.0
+    n = len(values)
+    if n % 2 == 1:
+        return float(values[n // 2])
+    return (values[n // 2 - 1] + values[n // 2]) / 2.0
 
 
 def start_scraper_run(conn: psycopg.Connection, vendor_id: int, git_sha: str) -> int:
@@ -196,9 +257,17 @@ def finish_scraper_run(
     counters: Counters,
     html_hash: str | None,
     http_status_last: int | None,
+    per_category_counts: dict | None = None,
+    pages_fetched: int | None = None,
 ) -> None:
     """Stage 7 (Log) — finalize the row. Called from run.py finally-block so
-    every code path that opens a run also closes it."""
+    every code path that opens a run also closes it.
+
+    CTK-094 extensions: per_category_counts (default {} for vendors without
+    category_cohort_signal:true in YAML; populated by parse_bigcommerce on
+    AquaSD) + pages_fetched (default None on pre-CTK-094 / failure-before-
+    fetch paths; populated by all three parsers when fetch ran at all).
+    """
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE scraper_runs SET "
@@ -206,7 +275,8 @@ def finish_scraper_run(
             "listings_seen = %s, listings_new = %s, listings_price_changed = %s, "
             "listings_restocked = %s, listings_oos = %s, "
             "error_class = %s, error_message = %s, "
-            "http_status_last = %s, html_hash = %s "
+            "http_status_last = %s, html_hash = %s, "
+            "per_category_counts = %s::jsonb, pages_fetched = %s "
             "WHERE id = %s",
             (
                 status,
@@ -220,6 +290,8 @@ def finish_scraper_run(
                 (error_message[:1000] if error_message else None),  # column is text; keep it bounded
                 http_status_last,
                 html_hash,
+                json.dumps(per_category_counts or {}),
+                pages_fetched,
                 run_id,
             ),
         )

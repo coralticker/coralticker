@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from scrapers.common import http, normalize
 
@@ -64,6 +64,20 @@ class ParseResult:
     items: list[dict]
     html_hash: str | None
     http_status_last: int | None
+    # CTK-094 §4.2 completeness signal source — every parser populates this
+    # with the count of pages actually fetched (Shopify /products.json
+    # pagination, BC Stencil category_paths cross-product, Magento ?p=N).
+    # None only on the early-exit / never-fetched paths so the field is
+    # never load-bearing without a successful fetch.
+    pages_fetched: int | None = None
+    # CTK-094 §5.2 category-cohort signal — populated by parsers that loop
+    # over category_paths AND have category_cohort_signal:true in YAML
+    # (AquaSD BC Stencil at v1). Default {} keeps the contract platform-
+    # agnostic: parse_shopify writes {} (no category axis), tidal_gardens
+    # writes {} (enumerated genus subpaths are coverage-filter, not partial-
+    # cohort surface), parse_bigcommerce writes the populated dict only
+    # when the YAML opt-in fires.
+    per_category_counts: dict = field(default_factory=dict)
 
 
 def fetch_and_parse(config: dict) -> ParseResult:
@@ -85,6 +99,7 @@ def fetch_and_parse(config: dict) -> ParseResult:
     skipped_category = 0     # CTK-088 fold #4: dropped by product_type_allowlist / tag_allowlist / tag_denylist
     html_hash: str | None = None
     http_status_last: int | None = None
+    pages_fetched = 0        # CTK-094 §4.2 completeness signal — increment per fetched page
 
     for page in range(1, max_pages + 1):
         url = f"{base_url}{products_path}?limit={page_size}&page={page}"
@@ -97,6 +112,8 @@ def fetch_and_parse(config: dict) -> ParseResult:
             # network / 429 / 5xx / other — bubble up as a structured exception so
             # the orchestrator can record the right error_class without re-mapping.
             raise _to_exception(result)
+
+        pages_fetched += 1  # CTK-094 §4.2 — count after success, not after attempt
 
         try:
             payload = json.loads(result.body)
@@ -151,7 +168,13 @@ def fetch_and_parse(config: dict) -> ParseResult:
             skipped_unavailable, skipped_category,
         )
 
-    return ParseResult(items=items, html_hash=html_hash, http_status_last=http_status_last)
+    return ParseResult(
+        items=items,
+        html_hash=html_hash,
+        http_status_last=http_status_last,
+        pages_fetched=pages_fetched,
+        per_category_counts={},  # Shopify single-endpoint — no category axis
+    )
 
 
 def _should_keep(product: dict, category_filter: dict | None, in_stock_only: bool = False) -> bool:

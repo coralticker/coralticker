@@ -47,27 +47,89 @@ class Counters:
     oos: int = 0
 
 
-def classify(items: Iterable[dict], existing_by_url: dict[str, dict]) -> list[ItemDecision]:
+def classify(
+    items: Iterable[dict],
+    existing_by_url: dict[str, dict],
+    *,
+    cohort_oos_at_persist: bool = False,
+) -> tuple[list[ItemDecision], list[ItemDecision]]:
     """Apply the §2.2 diff rule: for each parsed item, look up by product_url
-    and classify. Returns ItemDecision list — caller iterates to persist."""
-    decisions: list[ItemDecision] = []
+    and classify. Returns a (per_item_decisions, cohort_oos_decisions) tuple.
+
+    CTK-094 §3 cohort-comparison-OOS at persist (D-1 ratified 2026-05-31).
+    The §2.2 diff today iterates only products PRESENT in the scrape, which
+    leaves stale `in_stock=true` rows on vendors that drop sold-out items
+    pre-diff (POTO `in_stock_only`, AquaSD BC Stencil hides OOS, TG Magento
+    hides OOS). On opt-in (`cohort_oos_at_persist=True`), classify does one
+    extra pass after the per-item loop: URLs that were `in_stock=true` in
+    `existing_by_url` AND are absent from the current scrape's seen-URL set
+    flip to `in_stock=false` AND emit `ItemDecision(decision="oos",
+    existing_id=...)` in the second tuple element. The caller (run.py)
+    gates the second list on the canary outcome — short-circuit per §3 so
+    a SchemaChangeError / canary-tripped / config-error run doesn't mass-
+    fire false OOS on a partial parse.
+
+    Per the directive: build `seen_urls` as a set DURING the existing per-
+    item loop (single pass over `items`). Do NOT call `set(items)` — if
+    `items` is a generator, the second iteration would be empty and the
+    cohort pass would mass-fire every existing in-stock row as absent.
+
+    Byte-equivalent skip path on `cohort_oos_at_persist=False`: the seen_urls
+    set is still built (cheap dict-add per item) but the cohort pass below
+    the loop short-circuits, returning an empty second list. The 8 stable-
+    catalog vendors (PE/WWC/TSA/JF/BC/UC/Vivid/RC) stay byte-identical —
+    `per_item_decisions` matches the pre-CTK-094 return list and the empty
+    cohort list extends to a no-op at the caller.
+    """
+    per_item_decisions: list[ItemDecision] = []
+    seen_urls: set[str] = set()
     for item in items:
         url = item["product_url"]
+        seen_urls.add(url)
         existing = existing_by_url.get(url)
         if existing is None:
-            decisions.append(ItemDecision(item=item, decision="new"))
+            per_item_decisions.append(ItemDecision(item=item, decision="new"))
             continue
         old_price = _to_decimal(existing.get("current_price"))
         new_price = _to_decimal(item.get("current_price"))
         if old_price != new_price:
-            decisions.append(ItemDecision(item=item, decision="price_changed", existing_id=existing["id"]))
+            per_item_decisions.append(ItemDecision(item=item, decision="price_changed", existing_id=existing["id"]))
         elif item["in_stock"] and not existing["in_stock"]:
-            decisions.append(ItemDecision(item=item, decision="restocked", existing_id=existing["id"]))
+            per_item_decisions.append(ItemDecision(item=item, decision="restocked", existing_id=existing["id"]))
         elif not item["in_stock"] and existing["in_stock"]:
-            decisions.append(ItemDecision(item=item, decision="oos", existing_id=existing["id"]))
+            per_item_decisions.append(ItemDecision(item=item, decision="oos", existing_id=existing["id"]))
         else:
-            decisions.append(ItemDecision(item=item, decision="unchanged", existing_id=existing["id"]))
-    return decisions
+            per_item_decisions.append(ItemDecision(item=item, decision="unchanged", existing_id=existing["id"]))
+
+    cohort_oos_decisions: list[ItemDecision] = []
+    if cohort_oos_at_persist:
+        # Cohort-absent pass — URLs in DB with in_stock=true that didn't
+        # appear in this scrape. Synthetic ItemDecision carries only the
+        # minimal shape that persist_phase_a's decision=="oos" branch
+        # touches: product_url for join + in_stock=false for the UPSERT
+        # payload. Other vendor_listings columns stay at their existing
+        # values via the absent-column = keep-existing UPSERT contract.
+        for url, existing in existing_by_url.items():
+            if existing.get("in_stock") and url not in seen_urls:
+                cohort_oos_decisions.append(ItemDecision(
+                    item={
+                        "product_url": url,
+                        "in_stock": False,
+                        # current_price preserves on UPSERT (column absent from
+                        # _UPSERT_ALLOWED_COLS payload when not provided), but
+                        # price_history INSERT uses the item's current_price
+                        # at diff.py L207-211 — pull from existing to record
+                        # the last-known price alongside the stock flip.
+                        "current_price": existing.get("current_price"),
+                        # raw_title / normalized_title / category preserve via
+                        # the absent-column rule too; omit from the synthetic
+                        # item to avoid clobbering existing values.
+                    },
+                    decision="oos",
+                    existing_id=existing["id"],
+                ))
+
+    return per_item_decisions, cohort_oos_decisions
 
 
 def counters_from(decisions: list[ItemDecision]) -> Counters:
@@ -165,19 +227,38 @@ def persist_phase_a(
             touch_ids.append(d.existing_id)  # type: ignore[arg-type]
             continue
 
-        row = {
-            "vendor_id": vendor_id,
-            "vendor_sku": item.get("vendor_sku"),
-            "product_url": product_url,
-            "raw_title": item["raw_title"],
-            "normalized_title": item["normalized_title"],
-            "current_price": _decimal_to_str(item.get("current_price")),
-            "currency": item.get("currency", "USD"),
-            "in_stock": item["in_stock"],
-            "category": item.get("category"),
-            "lineage_flag": item.get("lineage_flag", "unknown"),
-            "last_seen_at": now,
-        }
+        # CTK-094 cohort-OOS synthetic decisions carry a minimal item shape
+        # (product_url + in_stock=False + last-known current_price). Build a
+        # minimal UPSERT row so the existing absent-column = keep-existing
+        # contract in _upsert_listing_row preserves raw_title / normalized_title
+        # / category / lineage_flag / vendor_sku / currency / image_url at
+        # their last-scraped values. Discriminator: synthetic items omit
+        # `raw_title` (real parser items always carry it per the parser dict
+        # shape lock at parse_shopify._normalize_product + parse_bigcommerce.
+        # _parse_one_page + tidal_gardens._parse_one_page).
+        is_cohort_oos_synthetic = "raw_title" not in item
+        if is_cohort_oos_synthetic:
+            row = {
+                "vendor_id": vendor_id,
+                "product_url": product_url,
+                "current_price": _decimal_to_str(item.get("current_price")),
+                "in_stock": False,
+                "last_seen_at": now,
+            }
+        else:
+            row = {
+                "vendor_id": vendor_id,
+                "vendor_sku": item.get("vendor_sku"),
+                "product_url": product_url,
+                "raw_title": item["raw_title"],
+                "normalized_title": item["normalized_title"],
+                "current_price": _decimal_to_str(item.get("current_price")),
+                "currency": item.get("currency", "USD"),
+                "in_stock": item["in_stock"],
+                "category": item.get("category"),
+                "lineage_flag": item.get("lineage_flag", "unknown"),
+                "last_seen_at": now,
+            }
         # first_seen_at is omitted from every payload: the absent-column =
         # keep-existing contract via per-row dynamic ON CONFLICT DO UPDATE in
         # _upsert_listing_row means UPDATE never touches first_seen_at when

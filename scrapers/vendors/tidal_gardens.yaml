@@ -83,12 +83,18 @@ hash_anchor: first_card_skeleton
 
 # Silent-OOS gap (probe 2026-05-28): Magento hides OOS items from category
 # view — zero out-of-stock markers across all coral paths; every card carries
-# Add-to-Cart. All parsed cards land in_stock=True at parse layer. OOS-via-
-# disappearance is NOT surfaced by diff.classify (absent rows aren't iterated;
-# existing DB rows stay at last-seen in_stock). v1 accepts the ~7-day stale-
-# available window (POTO Tier-3 precedent, Jon 2026-05-28). TG is added to
-# CTK-094's cohort-OOS consumer set (fast-follow). Same silent-OOS shape as
-# AquaSD (BigCommerce) + POTO.
+# Add-to-Cart. All parsed cards land in_stock=True at parse layer.
+#
+# Coverage closed by CTK-094 (D-1 + D-4 (4c) ratified 2026-05-31):
+# cohort_oos_at_persist below opts TG into the persist-layer cohort pass in
+# scrapers/common/diff.classify. Previously-in_stock URLs absent from this
+# scrape's seen-URL set flip to in_stock=false + emit OOS decision. Same
+# silent-OOS shape as AquaSD (BigCommerce) + POTO; same mechanism class.
+# Parser still writes in_stock=True at parse layer (Magento doesn't surface
+# OOS in category view); persist infers OOS from absence.
+
+# cohort_oos_at_persist: true — CTK-094 §3 D-1 ratified 2026-05-31.
+cohort_oos_at_persist: true
 
 # originator_prefix — null at v1 launch (PE / AquaSD precedent — no matcher
 # §3.4 stage-3 synthesis amplification). TG carries house-named pieces; whether

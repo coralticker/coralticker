@@ -127,14 +127,35 @@ hash_anchor: first_card_skeleton
 # view — zero out-of-stock markers across /acropora/, /sps/, /lps/ page-1
 # 64-card sweeps. All parsed cards land in_stock=True at parse layer.
 #
-# Coverage gap: OOS-via-disappearance is not currently surfaced by
-# diff.classify (items absent from scrape aren't iterated; existing DB
-# rows stay at last-seen in_stock value). Frontend may show stale "in
-# stock" badges on items long delisted. Flag for /lead-backend Q-N
-# disposition — sibling-CTK or open-items.md entry for cohort-based OOS
-# detection at persist time. Workaround until then: AquaSD's OOS transit
-# is silently dropped from the diff; first-seen + price-changed +
-# restocked still work correctly.
+# Coverage closed by CTK-094 (D-1 ratified 2026-05-31): cohort_oos_at_persist
+# below opts AquaSD into the persist-layer cohort pass in
+# scrapers/common/diff.classify. Previously-in_stock URLs absent from this
+# scrape's seen-URL set flip to in_stock=false + emit OOS decision so
+# Counters.oos accumulates + price_history records the stock flip.
+# parse_bigcommerce.py:279 hardcoded in_stock=True is now correct under
+# cohort-OOS-at-persist (the parser writes what it sees; persist infers OOS
+# from absence). Documented edge: category_paths staleness (new genus
+# subpath added at AquaSD that aquasd.yaml doesn't cover) silently flips
+# products only-in-the-new-path to OOS; bounded by expected_min_per_category
+# WARN + per_category_counts column + biologically-stable genus taxonomy
+# (CTK-094 §5.4).
+
+# cohort_oos_at_persist: true — CTK-094 §3 D-1 ratified 2026-05-31. See the
+# silent-OOS section above for mechanism + AquaSD-specific edge case.
+cohort_oos_at_persist: true
+
+# category_cohort_signal: true — CTK-094 §5 D-3 ratified 2026-05-31. AquaSD-
+# only at v1 (BC Stencil 21 category_paths surface). parse_bigcommerce
+# emits a {category_path: cards_seen} dict alongside items + html_hash;
+# db.finish_scraper_run writes it to scraper_runs.per_category_counts JSONB.
+# Sibling CTK-097 (operator Slack alerting — orthogonal, gated on this
+# column existing) reads the column for digest + threshold ping ("category
+# X went N->0 cards with no data-no-products-notification marker between
+# scrapes"). Coexists with expected_min_per_category WARN: that's a fixed-
+# floor signal (catch 0/1/2 low-tail); this is the cohort-comparison signal
+# (catch historical N->0 flip even when N > expected_min). Different
+# failure modes, both kept.
+category_cohort_signal: true
 
 # auction_detection — ABSENT from this config. AquaSD's /auctions/ surface
 # is out of v1 scope (eBay widget, JS-rendered). parse_bigcommerce's

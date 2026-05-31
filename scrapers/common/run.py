@@ -94,6 +94,13 @@ def run(slug: str) -> int:
     mirror_queue: list = []
     matcher_error_count = 0
     matcher_error_first: str | None = None
+    # CTK-094 §4.2 + §5.2 — initialized outside the try-block so the failure-
+    # path finish_scraper_run call (at the finally clause) can pass them
+    # uniformly. Parser-side population happens at Stage 2-4; pre-parser
+    # failures (ConfigError on YAML load, db.fetch_vendor error) leave them
+    # as their initial defaults and the column writes NULL / '{}' accordingly.
+    pages_fetched: int | None = None
+    per_category_counts: dict = {}
 
     try:
         # Stage 1 (cont.) — YAML config load. CTK-093: _load_yaml raises
@@ -135,15 +142,29 @@ def run(slug: str) -> int:
         items = result.items
         html_hash = result.html_hash
         http_status_last = result.http_status_last
-        log.info("parsed %d items; html_hash=%s", len(items), html_hash)
+        # CTK-094 §4.2 + §5.2 — parser-side observability surfaces. Defaulted
+        # at the ParseResult dataclass so a pre-CTK-094 parser still satisfies
+        # the contract; populated by the three CTK-094 parser edits.
+        pages_fetched = result.pages_fetched
+        per_category_counts = result.per_category_counts
+        log.info("parsed %d items; html_hash=%s; pages_fetched=%s", len(items), html_hash, pages_fetched)
 
-        # Stage 5 — Diff
+        # Stage 5 — Diff. CTK-094 D-1: tuple return splits per-item decisions
+        # (always landed) from cohort-OOS decisions (gated on canary outcome
+        # per §3 short-circuit). cohort_oos_at_persist resolves off the
+        # YAML-merged config (per arch §2.3 YAML-wins-over-vendors-row).
         existing_by_url = db.fetch_existing_listings(conn, vendor_row["id"])
-        decisions = diff.classify(items, existing_by_url)
-        counters = diff.counters_from(decisions)
+        cohort_oos_at_persist = bool(config.get("cohort_oos_at_persist", False))
+        per_item_decisions, cohort_oos_decisions = diff.classify(
+            items,
+            existing_by_url,
+            cohort_oos_at_persist=cohort_oos_at_persist,
+        )
+        counters = diff.counters_from(per_item_decisions)
         log.info(
-            "diff: seen=%d new=%d price_changed=%d restocked=%d oos=%d",
+            "diff (per-item): seen=%d new=%d price_changed=%d restocked=%d oos=%d; cohort_oos_pending=%d",
             counters.seen, counters.new, counters.price_changed, counters.restocked, counters.oos,
+            len(cohort_oos_decisions),
         )
 
         # Stage 5.5 — Match (per arch §3.2 + §3.4, between stages 5 and 6a).
@@ -178,28 +199,96 @@ def run(slug: str) -> int:
                 f"{matcher_error_count} matcher exception(s); first: {matcher_error_first}"
             )
 
+        # Stage 5.6 (CTK-094) — Canary check moved BEFORE persist_phase_a so
+        # cohort-OOS decisions can be gated on the canary outcome per §3
+        # short-circuit: cohort-OOS MUST NOT land on non-success runs
+        # (SchemaChangeError / canary-tripped / config-error). The per-item
+        # decisions persist regardless of canary outcome (today's semantic
+        # preserved — data parsed is data written). Only the synthetic cohort-
+        # OOS decisions hold behind the gate.
+        median_7d = db.get_7d_median_seen(conn, vendor_row["id"])
+        # CTK-094 D-2 (i): YAML opt-out of the median-ratio canary. POTO sets
+        # canary:false (volatile 21-164 buyable count false-trips median).
+        # Floor-of-5 still applies — outright-empty / total-failure detection
+        # survives. canary value present but truthy (or absent) → default ON.
+        canary_enabled = config.get("canary", True) is not False
+        if canary_enabled:
+            threshold = max(5.0, 0.2 * median_7d)
+        else:
+            threshold = 5.0  # floor-only on exempt vendors per D-2 (i)
+        canary_tripped = counters.seen < threshold
+        canary_msg: str | None = None
+        if canary_tripped:
+            canary_msg = (
+                f"silent canary tripped: listings_seen={counters.seen} < "
+                f"{'max(5, 0.2 * ' + f'7d_median={median_7d:.1f})' if canary_enabled else 'floor=5'} "
+                f"= {threshold:.1f}"
+            )
+            log.error(canary_msg)
+
+        # Stage 5.7 (CTK-094) — Cohort-OOS gate. Per §3: cohort decisions
+        # only land when status will be 'success' (no canary trip AND no
+        # matcher exceptions yet). matcher_error_count above is the partial-
+        # status signal; canary_tripped is the failed-status signal. Either
+        # one drops the cohort decisions. SchemaChangeError / BlockedError /
+        # FetchError / ConfigError all raise before reaching this point —
+        # the except-block handlers below take over and persist_phase_a
+        # never runs, so cohort-OOS decisions can't slip through there.
+        cohort_safe = not canary_tripped and matcher_error_count == 0
+        if cohort_safe and cohort_oos_decisions:
+            decisions = per_item_decisions + cohort_oos_decisions
+            counters = diff.counters_from(decisions)
+            log.info(
+                "cohort_oos: gate passed — appending %d absent-set OOS decisions; "
+                "counters now seen=%d new=%d price_changed=%d restocked=%d oos=%d",
+                len(cohort_oos_decisions),
+                counters.seen, counters.new, counters.price_changed, counters.restocked, counters.oos,
+            )
+        else:
+            decisions = per_item_decisions
+            if cohort_oos_decisions:
+                log.info(
+                    "cohort_oos: gate failed — dropping %d decisions (canary_tripped=%s matcher_errors=%d)",
+                    len(cohort_oos_decisions), canary_tripped, matcher_error_count,
+                )
+
+        # Stage 5.8 (CTK-094 §4.2) — completeness signal. Soft WARN when
+        # pages_fetched falls below 50% of the per-vendor 7d median (NOT
+        # max_pages ratio; max_pages is a runaway ceiling, not an expected
+        # count). Observability-only — does NOT flip status. Fires only when
+        # the canary is silent (no double-signal) AND median exists (no
+        # first-7-days false-fire). Accumulates into error_message so the
+        # transient log lands on the persistent row.
+        if pages_fetched is not None and not canary_tripped:
+            median_pages_7d = db.get_7d_median_pages_fetched(conn, vendor_row["id"])
+            if median_pages_7d > 0 and pages_fetched < 0.5 * median_pages_7d:
+                completeness_msg = (
+                    f"completeness signal: pages_fetched={pages_fetched} < "
+                    f"0.5 * 7d_median_pages={median_pages_7d:.1f}"
+                )
+                log.warning(completeness_msg)
+                error_message = (
+                    f"{error_message}; {completeness_msg}" if error_message else completeness_msg
+                )
+
         # Stage 6 Phase A — synchronous, fast. Bulk UPSERT vendor_listings +
         # touch + price_history INSERT. Returns Phase B image-mirror queue.
         # Per CTK-024 Session 2 fix: image-fetch I/O is no longer inline with
         # the persist loop — Phase B handles it best-effort after status is
         # finalized so a mirror-loop timeout no longer loses scrape data
         # (CTK-019 #55: 'image-only failure does NOT fail the listing row').
+        # CTK-094: `decisions` includes cohort-OOS entries when cohort_safe.
         mirror_queue = diff.persist_phase_a(conn, vendor_row, decisions, existing_by_url, run_id)
 
-        # Silent canary per arch §2.4. F4: no-op until day 8 (median=0 →
-        # threshold collapses to floor of 5); floor-of-5 catches outright-empty
-        # blocks but week-1 partial failures (5 ≤ seen < eventual 0.2 × median)
-        # slip past — Slack `if: failure()` is the load-bearing alert there.
-        median_7d = db.get_7d_median_seen(conn, vendor_row["id"])
-        threshold = max(5.0, 0.2 * median_7d)
-        if counters.seen < threshold:
+        # Status assignment uses canary outcome computed above (CTK-094
+        # reorder). Per-item decisions wrote regardless of canary; status
+        # reflects the canary result + matcher exceptions.
+        if canary_tripped:
             status = "failed"
             error_class = "block"
             error_message = (
-                f"silent canary tripped: listings_seen={counters.seen} < "
-                f"max(5, 0.2 * 7d_median={median_7d:.1f}) = {threshold:.1f}"
+                f"{error_message}; {canary_msg}" if error_message else canary_msg
             )
-            log.error(error_message)
         elif matcher_error_count > 0:
             # Arch §3.2: matcher exceptions flip status to 'partial' (data
             # persisted with null match fields, error_message accumulated).
@@ -215,6 +304,8 @@ def run(slug: str) -> int:
         db.finish_scraper_run(
             conn, run_id, status, error_class, error_message,
             counters, html_hash, http_status_last,
+            per_category_counts=per_category_counts,
+            pages_fetched=pages_fetched,
         )
         status_finalized = True
         log.info("scraper_runs.id=%d finalized status=%s before Phase B", run_id, status)
@@ -272,6 +363,8 @@ def run(slug: str) -> int:
             db.finish_scraper_run(
                 conn, run_id, status, error_class, error_message,
                 counters, html_hash, http_status_last,
+                per_category_counts=per_category_counts,
+                pages_fetched=pages_fetched,
             )
             log.info("scraper_runs.id=%d finished status=%s error_class=%s", run_id, status, error_class)
 
