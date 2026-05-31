@@ -211,12 +211,16 @@ def run(slug: str) -> int:
             # CTK-094 Session 4 fold #2 (/code-review F2): persist the
             # partial-bucket signal to scraper_runs.error_message via the
             # canary_msg / completeness_msg accumulator pattern. Status
-            # stays 'partial' on the healthy categories (Session 5 fold #4
-            # sets error_class so CTK-097 alerting queries filtering by
-            # error_class IS NOT NULL surface the row) — error_message
-            # carries the marker-side observability so ops queries surface
-            # partial-bucket drift events rather than relying on transient
-            # WARN logs.
+            # stays 'success' on the healthy categories — the per-vendor
+            # PartialCategoryWarning catch sets cohort_unsafe_partial +
+            # error_class='other' (Session 5 fold #4) + accumulates
+            # error_message, but does NOT escalate status (only the sibling
+            # marker-broken catch below sets marker_broken_force_partial
+            # → status='partial'). CTK-097 alerting queries filtering by
+            # `error_class IS NOT NULL` surface this row at status='success'
+            # — error_message carries the marker-side observability so ops
+            # queries surface partial-bucket drift events rather than
+            # relying on transient WARN logs.
             partial_msg = (
                 f"partial-category WARN: {', '.join(e.partial_paths)}"
             )
@@ -459,7 +463,17 @@ def run(slug: str) -> int:
         # the louder signal wins.
         if canary_tripped:
             status = "failed"
-            error_class = "block"
+            # CTK-094 Session 6 fold #3 (/code-review F3): preserve a prior
+            # error_class from the in-try catches (marker-broken catch sets
+            # 'html_schema_change' at L258) when both fire on the same run.
+            # Plain assignment would clobber the louder marker-broken signal
+            # with 'block' on canary trip — CTK-097 alerting queries filtering
+            # by error_class='html_schema_change' would then miss the row
+            # despite the marker-broken cause being in error_message free-text.
+            # `error_class or 'block'` keeps 'block' as the canary default when
+            # error_class is None (the typical canary-only run) while
+            # preserving an in-try-catch-set value when one exists.
+            error_class = error_class or "block"
             error_message = (
                 f"{error_message}; {canary_msg}" if error_message else canary_msg
             )
