@@ -36,7 +36,7 @@ interface PageProps {
     page?: string;
     sort?: string;
     category?: string;
-    'in-stock'?: string;
+    'include-oos'?: string;
   }>;
 }
 
@@ -78,7 +78,7 @@ function parseCategory(raw: string | undefined): ListingCategory | null {
     : null;
 }
 
-function parseInStock(raw: string | undefined): boolean {
+function parseIncludeOOS(raw: string | undefined): boolean {
   return raw === '1';
 }
 
@@ -131,20 +131,20 @@ async function Inventory({
   page,
   sort,
   category,
-  inStock,
+  includeOOS,
 }: {
   vendor: Vendor;
   page: number;
   sort: ListingSort;
   category: ListingCategory | null;
-  inStock: boolean;
+  includeOOS: boolean;
 }) {
   const listings = await getVendorInventory(
     vendor.id,
     page,
     sort,
     category,
-    inStock,
+    includeOOS,
   );
 
   if (listings.length === 0) {
@@ -202,13 +202,14 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
   // CTK-053: sort/category/in-stock params parsed against allowlists; invalid
   // inputs silently default. Total query uses filter params (page-count
   // shrinks under filter); inventory query uses all four (page + sort +
-  // filters).
+  // filters). CTK-098 (2026-05-31): in-stock semantic flipped — default is
+  // in-stock-only; ?include-oos=1 opt-in restores mixed render.
   const sort = parseSort(sp.sort);
   const category = parseCategory(sp.category);
-  const inStock = parseInStock(sp['in-stock']);
+  const includeOOS = parseIncludeOOS(sp['include-oos']);
   const rawPage = parsePage(sp.page);
   const [total, latestScrapeAt] = await Promise.all([
-    getVendorInventoryTotal(vendor.id, category, inStock),
+    getVendorInventoryTotal(vendor.id, category, includeOOS),
     getLatestScrapeFinishedAt(vendor.id),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / 50));
@@ -238,7 +239,7 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
     const params = new URLSearchParams();
     if (sort !== 'newest') params.set('sort', sort);
     if (category !== null) params.set('category', category);
-    if (inStock) params.set('in-stock', '1');
+    if (includeOOS) params.set('include-oos', '1');
     if (p !== 1) params.set('page', String(p));
     const qs = params.toString();
     return qs ? `/vendor/${slug}?${qs}` : `/vendor/${slug}`;
@@ -271,7 +272,7 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
           slug={slug}
           sort={sort}
           category={category}
-          inStock={inStock}
+          includeOOS={includeOOS}
         />
         <h2 className="text-sm font-bold pb-2 mb-2 border-b border-ink/20">
           Current inventory.
@@ -282,7 +283,7 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
             page={page}
             sort={sort}
             category={category}
-            inStock={inStock}
+            includeOOS={includeOOS}
           />
         </Suspense>
         <PaginationNav
@@ -291,7 +292,7 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
           slug={slug}
           sort={sort}
           category={category}
-          inStock={inStock}
+          includeOOS={includeOOS}
         />
       </div>
     </main>

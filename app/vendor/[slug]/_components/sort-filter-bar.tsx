@@ -1,11 +1,12 @@
 // §"Mono uppercase register" — Plex Mono uppercase letterspaced ~0.08em chrome
 // above the row stack on paginated inventory surfaces. Brand-canon shape
 // locked at /brand-manager session 2026-05-19 (CTK-053 INV-02 pre-first-
-// implementation-session gate §Q-1 / §Q-2 / §Q-3):
+// implementation-session gate §Q-1 / §Q-2 / §Q-3); third-axis label flipped
+// at /brand-manager session 2026-05-31 (CTK-098 INV-02 gate §Q-1):
 //
 //   SORT:   NEWEST · PRICE ↑ · PRICE ↓
 //   FILTER: LPS · SPS · ZOA · MUSHROOM · CHALICE · CLAM · ANEMONE · SOFTIE
-//           IN STOCK ONLY
+//           INCLUDE OUT OF STOCK
 //
 // Three stacked axis-rows. Each option is bare Plex Mono uppercase text with
 // forest mid-dot separators per <PaginationNav> precedent (register-chrome
@@ -14,6 +15,11 @@
 // returns to default state via canonical-chain ?param= omission (same
 // discipline as <PaginationNav> page=1 → bare-route at hrefForPage()
 // pagination-nav.tsx:31-33).
+//
+// CTK-098 (2026-05-31): toggle inverted — default state is in-stock-only;
+// active state ?include-oos=1 drops the in_stock predicate. Label tracks the
+// active semantic (vocabulary-coherent with row-level OUT OF STOCK marker
+// per branding-guide.md L228) instead of the prior IN STOCK ONLY framing.
 //
 // Filter-change href construction omits the ?page= query param entirely —
 // changing sort or filter resets pagination to page=1 (which routes bare per
@@ -32,7 +38,7 @@ interface SortFilterBarProps {
   slug: string;
   sort: ListingSort;
   category: ListingCategory | null;
-  inStock: boolean;
+  includeOOS: boolean;
 }
 
 // Category list locked at CTK-053 Session 1 Q-CTK053-3: 8 schema-aligned
@@ -68,12 +74,12 @@ function buildHref(
   slug: string,
   sort: ListingSort,
   category: ListingCategory | null,
-  inStock: boolean,
+  includeOOS: boolean,
 ): string {
   const params = new URLSearchParams();
   if (sort !== 'newest') params.set('sort', sort);
   if (category !== null) params.set('category', category);
-  if (inStock) params.set('in-stock', '1');
+  if (includeOOS) params.set('include-oos', '1');
   const qs = params.toString();
   return qs ? `/vendor/${slug}?${qs}` : `/vendor/${slug}`;
 }
@@ -82,7 +88,7 @@ export function SortFilterBar({
   slug,
   sort,
   category,
-  inStock,
+  includeOOS,
 }: SortFilterBarProps) {
   const linkClass =
     'hover:underline focus-visible:underline underline-offset-[3px] decoration-1';
@@ -111,7 +117,7 @@ export function SortFilterBar({
           const isActive = sort === opt.value;
           // Active option clicks clear back to default sort ('newest').
           const targetSort: ListingSort = isActive ? 'newest' : opt.value;
-          const href = buildHref(slug, targetSort, category, inStock);
+          const href = buildHref(slug, targetSort, category, includeOOS);
           const isLast = i === SORT_OPTIONS.length - 1;
           // Mid-dot TRAILS the preceding option so wrap-breaks keep the dot
           // at end-of-line-N with the previous label, not at start-of-line-N+1
@@ -140,7 +146,7 @@ export function SortFilterBar({
           const targetCategory: ListingCategory | null = isActive
             ? null
             : opt.value;
-          const href = buildHref(slug, sort, targetCategory, inStock);
+          const href = buildHref(slug, sort, targetCategory, includeOOS);
           const isLast = i === CATEGORY_OPTIONS.length - 1;
           return (
             <span key={opt.value}>
@@ -159,11 +165,11 @@ export function SortFilterBar({
 
       <div>
         <Link
-          href={buildHref(slug, sort, category, !inStock)}
-          className={inStock ? activeClass : linkClass}
-          aria-current={inStock ? 'true' : undefined}
+          href={buildHref(slug, sort, category, !includeOOS)}
+          className={includeOOS ? activeClass : linkClass}
+          aria-current={includeOOS ? 'true' : undefined}
         >
-          IN STOCK ONLY
+          INCLUDE OUT OF STOCK
         </Link>
       </div>
     </nav>

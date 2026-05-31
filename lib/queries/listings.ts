@@ -181,9 +181,14 @@ export async function getCoralAvailability(namedCoralId: number): Promise<Listin
 // (current_price IS NULL per project_auctions_in_scope.md) sink below priced
 // rows regardless of direction. Category = exact-match against the schema
 // enum (architecture-v1.md §1.4 L360-362) — NULL silent in unfiltered state.
-// In-stock toggle adds AND vl.in_stock = true when on. Cache key tuples
-// extend per CTK-053 plan §Scope #8 — (vendorId, page, sort, category,
-// inStock) avoids cross-filter bleed.
+// CTK-098 (2026-05-31): in-stock semantic flipped — default RESTRICTS to
+// in_stock=true; includeOOS=true drops the predicate (mixed render). URL
+// param renamed ?in-stock=1 → ?include-oos=1 per /brand-manager INV-02 lock.
+// Predicate flipped from (NOT inStockParam OR in_stock=true) to
+// (includeOOSParam OR in_stock=true). Cache-key prefix bumped to *V2 to
+// invalidate pre-flip Data Cache entries (Next.js 15 unstable_cache persists
+// across deploys per feedback_unstable_cache_shape_change.md) — cache key
+// tuple shape unchanged.
 
 export type ListingSort = 'newest' | 'price-asc' | 'price-desc';
 
@@ -202,7 +207,7 @@ export async function getVendorInventory(
   page: number = 1,
   sort: ListingSort = 'newest',
   category: ListingCategory | null = null,
-  inStock: boolean = false,
+  includeOOS: boolean = false,
 ): Promise<Listing[]> {
   return unstable_cache(
     async () => {
@@ -212,12 +217,13 @@ export async function getVendorInventory(
 
       // Optional filters collapse via SQL-side NULL/false constant folding:
       // `(${category}::text IS NULL OR vl.category = ${category})` lets a null
-      // category short-circuit through the planner; same shape for inStock.
-      // ORDER BY can't be parameterized — switch on the allowlisted sort
-      // string and emit one of three full SQL queries. Sort is validated at
-      // the view layer (page.tsx allowlist parse).
+      // category short-circuit through the planner. includeOOS predicate
+      // reads: false → (false OR in_stock=true) requires in_stock; true →
+      // (true OR …) drops constraint. ORDER BY can't be parameterized —
+      // switch on the allowlisted sort string and emit one of three full SQL
+      // queries. Sort is validated at the view layer (page.tsx allowlist).
       const categoryParam = category ?? null;
-      const inStockParam = inStock;
+      const includeOOSParam = includeOOS;
 
       const rows = (await (() => {
         if (sort === 'price-asc') {
@@ -236,7 +242,7 @@ export async function getVendorInventory(
             WHERE vl.vendor_id = ${vendorId}
               AND vl.last_seen_at > ${fourteenDaysAgo}
               AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
-              AND (NOT ${inStockParam}::boolean OR vl.in_stock = true)
+              AND (${includeOOSParam}::boolean OR vl.in_stock = true)
             ORDER BY vl.current_price ASC NULLS LAST, vl.first_seen_at DESC
             LIMIT ${PAGE_SIZE} OFFSET ${offset}
           `;
@@ -257,7 +263,7 @@ export async function getVendorInventory(
             WHERE vl.vendor_id = ${vendorId}
               AND vl.last_seen_at > ${fourteenDaysAgo}
               AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
-              AND (NOT ${inStockParam}::boolean OR vl.in_stock = true)
+              AND (${includeOOSParam}::boolean OR vl.in_stock = true)
             ORDER BY vl.current_price DESC NULLS LAST, vl.first_seen_at DESC
             LIMIT ${PAGE_SIZE} OFFSET ${offset}
           `;
@@ -278,7 +284,7 @@ export async function getVendorInventory(
           WHERE vl.vendor_id = ${vendorId}
             AND vl.last_seen_at > ${fourteenDaysAgo}
             AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
-            AND (NOT ${inStockParam}::boolean OR vl.in_stock = true)
+            AND (${includeOOSParam}::boolean OR vl.in_stock = true)
           ORDER BY vl.first_seen_at DESC
           LIMIT ${PAGE_SIZE} OFFSET ${offset}
         `;
@@ -287,60 +293,60 @@ export async function getVendorInventory(
       return rows.map(rowToListing);
     },
     [
-      'getVendorInventory',
+      'getVendorInventoryV2',
       String(vendorId),
       String(page),
       sort,
       category ?? '_',
-      inStock ? '1' : '0',
+      includeOOS ? '1' : '0',
     ],
     {
       revalidate: 600,
       tags: [
-        `vendor-${vendorId}-page-${page}-${sort}-${category ?? '_'}-${inStock ? '1' : '0'}`,
+        `vendor-${vendorId}-page-${page}-${sort}-${category ?? '_'}-${includeOOS ? '1' : '0'}`,
       ],
     },
   )();
 }
 
 // /vendor/[slug] total-pages math per site.md §4.5 + CTK-046 + CTK-053.
-// COUNT against the same 14-day in-stock-recency window as getVendorInventory().
-// No JOINs — vendor_id + last_seen_at + optional category + optional in_stock
+// COUNT against the same 14-day recency window as getVendorInventory().
+// No JOINs — vendor_id + last_seen_at + optional category + includeOOS
 // drive the count; vendors / named_corals do not constrain row count.
 // unstable_cache wrap per ISR-fold. Cache key drops sort + page (totals are
-// invariant to both) — keeps cache footprint linear in category × inStock
-// rather than category × inStock × page × sort.
+// invariant to both). CTK-098 (2026-05-31): cache-key prefix bumped to *V2
+// to invalidate pre-flip Data Cache entries on the semantic flip.
 export async function getVendorInventoryTotal(
   vendorId: number,
   category: ListingCategory | null = null,
-  inStock: boolean = false,
+  includeOOS: boolean = false,
 ): Promise<number> {
   return unstable_cache(
     async () => {
       const sql = getNeonSql();
       const fourteenDaysAgo = new Date(Date.now() - VENDOR_RECENCY_DAYS * MS_PER_DAY).toISOString();
       const categoryParam = category ?? null;
-      const inStockParam = inStock;
+      const includeOOSParam = includeOOS;
       const rows = (await sql`
         SELECT COUNT(*) AS total
         FROM vendor_listings vl
         WHERE vl.vendor_id = ${vendorId}
           AND vl.last_seen_at > ${fourteenDaysAgo}
           AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
-          AND (NOT ${inStockParam}::boolean OR vl.in_stock = true)
+          AND (${includeOOSParam}::boolean OR vl.in_stock = true)
       `) as unknown as { total: number | string }[];
       const first = rows[0];
       return first ? Number(first.total) : 0;
     },
     [
-      'getVendorInventoryTotal',
+      'getVendorInventoryTotalV2',
       String(vendorId),
       category ?? '_',
-      inStock ? '1' : '0',
+      includeOOS ? '1' : '0',
     ],
     {
       revalidate: 600,
-      tags: [`vendor-${vendorId}-total-${category ?? '_'}-${inStock ? '1' : '0'}`],
+      tags: [`vendor-${vendorId}-total-${category ?? '_'}-${includeOOS ? '1' : '0'}`],
     },
   )();
 }

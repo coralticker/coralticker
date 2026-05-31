@@ -31,24 +31,26 @@ interface PaginationNavProps {
   // untouched.
   sort?: ListingSort;
   category?: ListingCategory | null;
-  inStock?: boolean;
+  includeOOS?: boolean;
 }
 
 // Page 1 routes to bare URL per site.md §6 SEO discipline (canonical = bare
 // route, no ?page query) — keeps prev/next href shape consistent with the
 // canonical chain. CTK-053: sort + category + in-stock params preserved on
 // every prev/next href so pagination stays inside the filtered subset.
+// CTK-098 (2026-05-31): in-stock param renamed ?in-stock=1 → ?include-oos=1
+// per /brand-manager INV-02 lock; semantic flipped to default-in-stock-only.
 function hrefForPage(
   slug: string,
   page: number,
   sort: ListingSort,
   category: ListingCategory | null,
-  inStock: boolean,
+  includeOOS: boolean,
 ): string {
   const params = new URLSearchParams();
   if (sort !== 'newest') params.set('sort', sort);
   if (category !== null) params.set('category', category);
-  if (inStock) params.set('in-stock', '1');
+  if (includeOOS) params.set('include-oos', '1');
   if (page !== 1) params.set('page', String(page));
   const qs = params.toString();
   return qs ? `/vendor/${slug}?${qs}` : `/vendor/${slug}`;
@@ -60,7 +62,7 @@ export function PaginationNav({
   slug,
   sort = 'newest',
   category = null,
-  inStock = false,
+  includeOOS = false,
 }: PaginationNavProps) {
   const prevDisabled = currentPage <= 1;
   const nextDisabled = currentPage >= totalPages;
@@ -73,7 +75,7 @@ export function PaginationNav({
     <span aria-disabled="true" className={disabledClass}>PREV</span>
   ) : (
     <Link
-      href={hrefForPage(slug, currentPage - 1, sort, category, inStock)}
+      href={hrefForPage(slug, currentPage - 1, sort, category, includeOOS)}
       className={linkClass}
     >
       PREV
@@ -84,7 +86,7 @@ export function PaginationNav({
     <span aria-disabled="true" className={disabledClass}>NEXT</span>
   ) : (
     <Link
-      href={hrefForPage(slug, currentPage + 1, sort, category, inStock)}
+      href={hrefForPage(slug, currentPage + 1, sort, category, includeOOS)}
       className={linkClass}
     >
       NEXT
