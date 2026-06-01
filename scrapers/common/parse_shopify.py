@@ -139,6 +139,16 @@ def fetch_and_parse(config: dict) -> ParseResult:
     title_denylist_lower = [
         e.lower() for e in ((category_filter or {}).get("title_denylist") or [])
     ]
+    # CTK-096 close-fold F5 2026-06-01: hoist tag_denylist as a lowercased set
+    # at fetch_and_parse scope too — needed at the call-site attribution to
+    # detect the dual-hit case (tag_denylist + title_denylist both match the
+    # same product, intentional UC belt-and-suspenders overlap on Dalua /
+    # Illumagic / Panta Rhei per unique_corals.yaml). Pre-fold the attribution
+    # branch checked title_denylist first and over-counted skipped_title_denylist
+    # by ~70 rows per UC scrape — see F5 disposition below.
+    tag_denylist_lower = {
+        e.lower() for e in ((category_filter or {}).get("tag_denylist") or [])
+    }
 
     for page in range(1, max_pages + 1):
         url = f"{base_url}{products_path}?limit={page_size}&page={page}"
@@ -197,16 +207,36 @@ def fetch_and_parse(config: dict) -> ParseResult:
                 if in_stock_only and not any(v.get("available") for v in (p.get("variants") or [])):
                     skipped_unavailable += 1
                 else:
-                    # CTK-096 D-1: attribute between category-axis and title-
-                    # axis drops. Discrimination mirrors _should_keep's axis
-                    # order (title_denylist runs LAST and short-circuits): when
-                    # an earlier axis (allowlist / tag_allowlist / tag_denylist)
-                    # already rejected, that's the discriminating axis — leave
-                    # this re-check tighter than _should_keep's short-circuit
-                    # so a row caught by both axes attributes to the first
-                    # one. Cheap: hoisted title_denylist_lower + O(N) title
-                    # substring scan per dropped row.
-                    if title_denylist_lower and any(
+                    # CTK-096 close-fold F5 2026-06-01: attribute the drop to
+                    # the FIRST-firing axis per _should_keep's short-circuit
+                    # order (in_stock_only > allowlist > tag_allowlist >
+                    # tag_denylist > title_denylist). The DOMINANT mis-
+                    # attribution class fixed here is the tag_denylist +
+                    # title_denylist dual-hit (intentional UC belt-and-
+                    # suspenders overlap on Dalua / Illumagic / Panta Rhei —
+                    # ~70 rows per UC scrape): tag_denylist fires first in
+                    # _should_keep, so attribution must go to skipped_
+                    # category. The check below mirrors that axis order:
+                    # tag_denylist re-check first; if it would have fired,
+                    # attribute to category. Otherwise fall through to the
+                    # title_denylist check.
+                    #
+                    # SCOPE LIMITATION: allowlist-rejected + title-coincidence
+                    # still attributes to skipped_title_denylist (the
+                    # title-hit elif fires). Not corrected here — would
+                    # require re-checking product_type_allowlist + tag_
+                    # allowlist + axis-order-flag from _should_keep. UC's
+                    # equipment-row class is dominated by tag-hits so the
+                    # residue is small; if a future audit shows the residue
+                    # matters, evolve _should_keep to return a tagged-reason
+                    # enum (altitude-correct fix).
+                    tags_lower = [(t or "").lower() for t in (p.get("tags") or [])]
+                    tag_denylist_hit = bool(tag_denylist_lower) and any(
+                        t in tag_denylist_lower for t in tags_lower
+                    )
+                    if tag_denylist_hit:
+                        skipped_category += 1
+                    elif title_denylist_lower and any(
                         e in (p.get("title") or "").lower() for e in title_denylist_lower
                     ):
                         skipped_title_denylist += 1
