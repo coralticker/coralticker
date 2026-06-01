@@ -63,12 +63,19 @@ function RenderValue({ value }: { value: DataRowFieldValue }) {
   // vendor-markdown shares price-drop-new's DOM per /brand-manager Lock 2
   // (CTK-100 brand-manager-session-2026-06-01). Explicit branch — not a
   // fall-through — so future canon-divergence is a one-line edit.
-  return (
-    <span className="font-mono">
-      <del className="font-normal">{value.oldValue}</del>{' '}
-      <span className="text-forest font-bold">{value.newValue}</span>
-    </span>
-  );
+  if (value.kind === 'vendor-markdown') {
+    return (
+      <span className="font-mono">
+        <del className="font-normal">{value.oldValue}</del>{' '}
+        <span className="text-forest font-bold">{value.newValue}</span>
+      </span>
+    );
+  }
+  // Exhaustiveness check — `_exhaustive: never` fails typecheck if a new
+  // DataRowFieldValue kind lands without a branch here, forcing explicit
+  // handling. Mirrors formatValue() at lib/format/data-row.ts:43-49.
+  const _exhaustive: never = value;
+  throw new Error(`RenderValue: unhandled value kind ${JSON.stringify(_exhaustive)}`);
 }
 
 export function DataRow({ fields, matchIndicator }: DataRowProps) {
