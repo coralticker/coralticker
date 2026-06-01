@@ -219,3 +219,9 @@ category_filter:
     - " Print"              # leading-space suffix substring; catches ~27 "X Print" merch rows + "4 pack of 20x20 prints" without false-firing on hypothetical "Imprint"/"Footprint" coral names
     - shipping              # service rows "UPS actual shipping" + "shipping for Replacements" (2 rows); FP-clean against coral catalog
     - Shirt                 # catches 4 "Tee Shirt" rows + 1 "Superb Owl Shirt" (superset of Tee Shirt); no coral-noun collision observed
+    # CTK-107 D-2-tris (2026-06-01) close-gate eyeball-fail: 6 Jebao pump/impeller SKUs slipping through empty-PT + empty-tag bucket
+    # ("DCS 400" / "DCS 700 Impeller" / "DCC 300" / "DCC 300 Impeller" / "DCC 200 SW2" / "DCC 200 SW2 Impeller"). All carry
+    # product_type='' + tags=[] — no tag-based reject possible. Title-based catches all 6 + future Jebao pump variants.
+    - "DCC "                # Jebao DCC pump model prefix — trailing space avoids partial matches; catches DCC 200/300 + variants
+    - "DCS "                # Jebao DCS pump model prefix — same shape as DCC
+    - Impeller              # universal pump-part suffix; catches Impeller SKUs across model lines; no coral-noun collision observed
