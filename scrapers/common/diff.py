@@ -202,7 +202,17 @@ def persist_phase_a(
 
     upserts: list[dict] = []
     history: list[dict] = []
-    touch_ids: list[int] = []
+    # CTK-100 Wave-2 hotfix 2026-06-01: was `touch_ids: list[int]`. Carrying
+    # the per-row compare_at_price payload through the unchanged-row branch
+    # so the chunked UPDATE below can write both last_seen_at AND
+    # compare_at_price. Wave-2 ship-day blind spot: F6's UPSERT-path wiring
+    # at L275-287 never fires for decision=='unchanged' rows (the dominant
+    # case for steady-state scrapes), so TG run 765 wrote 0 markdowns on
+    # 348 listings_seen including all 4 audit-confirmed live markdowns
+    # (Beginner Coral Pack / Feeling Lucky 10 / Feeling Lucky 5 / Leopard
+    # Discosoma). See [[feedback_capture_path_unchanged_blind_spot]] for the
+    # rule this incident established.
+    touch_payloads: list[dict] = []
     cohort_oos_ids: list[int] = []  # CTK-094 — direct UPDATE path; see below
     mirror_queue: list[MirrorTask] = []
     # Pre-declared so the CTK-094 cohort branch can pre-populate
@@ -244,7 +254,18 @@ def persist_phase_a(
                 ))
 
         if d.decision == "unchanged":
-            touch_ids.append(d.existing_id)  # type: ignore[arg-type]
+            # CTK-100 Wave-2 hotfix: carry compare_at_price into the touch
+            # path so the chunked UPDATE below writes the markdown reference
+            # alongside last_seen_at. Without this, F6's UPSERT-path wiring
+            # never reaches the dominant steady-state case (rows unchanged
+            # between scrapes). Write-amplification: the UPDATE writes
+            # compare_at_price on every unchanged row even when it hasn't
+            # changed — acceptable at current scale (~350-3000 rows/vendor/
+            # scrape × daily cron); revisit if write-side cost surfaces.
+            touch_payloads.append({
+                "id": d.existing_id,
+                "compare_at_price": _decimal_to_str(item.get("compare_at_price")),
+            })
             continue
 
         # CTK-094 cohort-OOS synthetic decisions take a direct UPDATE path
@@ -334,16 +355,30 @@ def persist_phase_a(
                 lid, purl = _upsert_listing_row(cur, row)
                 id_by_url[purl] = lid
 
-    # Touch unchanged rows (last_seen_at only). Single chunked UPDATE per
-    # 1000-row batch via ANY(%s); psycopg parameterizes the array as a single
-    # bind — no URL-length pressure (the chunk-of-500 cap under supabase-py
-    # was a PostgREST URL-length workaround, not a SQL constraint).
-    if touch_ids:
+    # Touch unchanged rows — UPDATE last_seen_at AND compare_at_price per
+    # row. CTK-100 Wave-2 hotfix 2026-06-01: pre-fix this UPDATE wrote only
+    # last_seen_at, so F6's UPSERT-path compare_at_price wiring at L275-287
+    # was dark for every decision=='unchanged' row (the dominant steady-
+    # state case). The UNNEST-into-data-table shape carries per-row
+    # compare_at_price; psycopg adapts the Decimal-or-None mixed list to
+    # numeric[] cleanly. Cast on the array side (%s::numeric[]) — without
+    # the cast, psycopg emits a text[] which won't match the column type.
+    # Single chunked UPDATE per 1000-row batch; chunk-size matches the
+    # pre-fix shape (PostgREST URL-length workaround inheritance, no SQL
+    # constraint).
+    if touch_payloads:
         with conn.cursor() as cur:
-            for chunk in _chunks(touch_ids, 1000):
+            for chunk in _chunks(touch_payloads, 1000):
+                ids = [p["id"] for p in chunk]
+                compare_ats = [p["compare_at_price"] for p in chunk]
                 cur.execute(
-                    "UPDATE vendor_listings SET last_seen_at = %s WHERE id = ANY(%s)",
-                    (now, chunk),
+                    "UPDATE vendor_listings AS vl "
+                    "SET last_seen_at = %s, "
+                    "    compare_at_price = data.compare_at_price "
+                    "FROM (SELECT * FROM UNNEST(%s::bigint[], %s::numeric[])) "
+                    "  AS data(id, compare_at_price) "
+                    "WHERE vl.id = data.id",
+                    (now, ids, compare_ats),
                 )
 
     # CTK-094 cohort-OOS chunked UPDATE — flip in_stock=false ONLY on the
@@ -400,7 +435,7 @@ def persist_phase_a(
 
     log.info(
         "Phase A complete: %d upserts + %d touches + %d cohort-oos + %d history rows; %d Phase B mirrors queued",
-        len(upserts), len(touch_ids), len(cohort_oos_ids), len(history), len(mirror_queue),
+        len(upserts), len(touch_payloads), len(cohort_oos_ids), len(history), len(mirror_queue),
     )
     return mirror_queue
 
