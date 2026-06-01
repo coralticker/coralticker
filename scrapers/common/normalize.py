@@ -87,6 +87,32 @@ def coerce_price(variants: list[dict]) -> Decimal | None:
     return None
 
 
+def coerce_compare_at_price(variants: list[dict], current_price: Decimal | None) -> Decimal | None:
+    """CTK-100: pull the first non-empty compare_at_price from variants as
+    Decimal. Null when no markdown OR markdown invalid per L2
+    (compare_at <= current). Returns None on missing field, empty string,
+    '0.00', or invalid Decimal — same shape as coerce_price. L4 carve-out
+    is structural via the current_price-None guard at the top: when L4
+    nulls current_price for auction rows, compare_at_price returns None
+    here automatically, so vendor markdown never lands on an auction row.
+    """
+    if current_price is None:
+        return None
+    for v in variants:
+        compare_at = v.get("compare_at_price")
+        if compare_at in (None, "", "0.00"):
+            continue
+        try:
+            value = Decimal(str(compare_at))
+        except InvalidOperation:
+            continue
+        if value > current_price:
+            return value
+        # L2: stale compare-at (vendor forgot to clear post-sale). Null out.
+        return None
+    return None
+
+
 def infer_category(product: dict) -> str | None:
     """Match against product_type + tags + title via _CATEGORY_PATTERNS. Returns
     a string from the arch §1.4 vendor_listings.category CHECK enum, or None

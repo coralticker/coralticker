@@ -438,6 +438,13 @@ def _normalize_product(
         log.info("auction detected: %s — null-out current_price", handle)
         current_price = None
 
+    # CTK-100 L4: sequence AFTER the auction null-out so compare_at_price
+    # inherits the auction carve-out structurally — coerce_compare_at_price's
+    # `current_price is None` guard returns None for auction rows regardless
+    # of source DOM (matches INV-05 writer-side obligation #1: auction rows
+    # never carry a vendor markdown).
+    compare_at_price = normalize.coerce_compare_at_price(variants, current_price)
+
     images = product.get("images") or []
     vendor_image_url = images[0].get("src") if images else None
 
@@ -447,6 +454,7 @@ def _normalize_product(
         "product_url": product_url,
         "vendor_sku": sku,
         "current_price": current_price,
+        "compare_at_price": compare_at_price,  # CTK-100: vendor-set markdown reference; NULL when no markdown / stale / auction
         "currency": "USD",                     # Phase 1 vendors all USD per Q1-3
         "in_stock": in_stock,
         "vendor_image_url": vendor_image_url,  # raw vendor URL; image-pipeline decides what becomes image_url
