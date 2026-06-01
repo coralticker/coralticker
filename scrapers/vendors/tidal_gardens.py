@@ -30,7 +30,10 @@ lifecycle from diff onward inherits unchanged):
      - price: `span[data-price-type="finalPrice"]` carries a clean
        `data-price-amount` integer/decimal (e.g. "50") — preferred over
        parsing the "$50.00" display text. Sale items expose finalPrice as the
-       current price (oldPrice is ignored).
+       current price; `oldPrice` captured as `compare_at_price` per L2 + L4
+       cleanup (CTK-100 Wave-2). Empirical confirm at audit 2026-06-01:
+       n=4 marked-downs across 3 genus subpaths, `oldPrice > finalPrice`
+       direction holds.
      - image: the grid `<img>` `src` is a lazy-load placeholder (a /static/...
        Loader.gif). The REAL media URL is in `data-original` (Magento
        /media/catalog/product/<x>/<y>/<file>.jpg?<resize params>). The bare
@@ -280,6 +283,11 @@ def _parse_one_page(
             page_first_title = raw_title
 
         current_price = _extract_price(card, category_path, raw_title)
+        # CTK-100 Wave-2 — vendor markdown capture (Magento oldPrice).
+        # Sequenced after _extract_price; the helper's current_price-None
+        # guard handles L4 (no auction surface on TG today, but the guard
+        # also catches price-on-request rows uniformly with Shopify/BC).
+        compare_at_price = _extract_compare_at_price(card, category_path, raw_title, current_price)
         vendor_image_url = _extract_image(card)
 
         # Magento cards carry no product_type field; the path's genus is the
@@ -296,6 +304,7 @@ def _parse_one_page(
             "product_url": product_url,
             "vendor_sku": None,  # Magento has no per-card vendor SKU in the grid
             "current_price": current_price,
+            "compare_at_price": compare_at_price,  # CTK-100 Wave-2 F9 — unconditional key (None on rows without markdown)
             "currency": "USD",
             "in_stock": True,  # Magento hides OOS from category view; silent-OOS gap (CTK-094)
             "vendor_image_url": vendor_image_url,
@@ -331,6 +340,46 @@ def _extract_price(card, category_path: str, raw_title: str) -> Decimal | None:
         log.warning("%s: card %r non-finite price %r — coercing None", category_path, raw_title, amt)
         return None
     return price
+
+
+def _extract_compare_at_price(card, category_path: str, raw_title: str, current_price: Decimal | None) -> Decimal | None:
+    """CTK-100 Wave-2: vendor markdown capture for Magento per Wave-2 Session
+    1 audit (2026-06-01). Reads `[data-price-type="oldPrice"]` element's
+    `data-price-amount` attribute and parses to Decimal. Direction
+    empirically confirmed at audit: oldPrice IS the regular price,
+    finalPrice IS the sale price; oldPrice > finalPrice on every
+    marked-down listing (n=4 across 3 distinct genus subpaths).
+
+    Same L2 + L4 + is_finite() + F15 discipline as the Shopify and BC
+    helpers — see normalize.coerce_compare_at_price docstring for the
+    full predicate set. data-price-amount is a clean integer/decimal
+    string (no '$' prefix, no commas; matches the existing _extract_price
+    shape) so no text-stripping is needed.
+
+    Returns None on: oldPrice element absent / data-price-amount empty
+    or missing / unparseable / non-finite / clamp-overflow / L2 stale.
+    """
+    if current_price is None:
+        return None
+    el = card.select_one('[data-price-type="oldPrice"]')
+    if el is None:
+        return None
+    amt = (el.get("data-price-amount") or "").strip()
+    if not amt:
+        return None
+    try:
+        value = Decimal(amt)
+    except InvalidOperation:
+        return None
+    if not value.is_finite():
+        log.warning("%s: card %r non-finite oldPrice %r — coercing None", category_path, raw_title, amt)
+        return None
+    if value >= Decimal("100000000"):
+        log.warning("%s: card %r oldPrice >= 1e8 %r — coercing None (numeric(10,2) clamp)", category_path, raw_title, amt)
+        return None
+    if value > current_price:
+        return value
+    return None
 
 
 def _extract_image(card) -> str | None:

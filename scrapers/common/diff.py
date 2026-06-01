@@ -279,6 +279,7 @@ def persist_phase_a(
             "raw_title": item["raw_title"],
             "normalized_title": item["normalized_title"],
             "current_price": _decimal_to_str(item.get("current_price")),
+            "compare_at_price": _decimal_to_str(item.get("compare_at_price")),  # CTK-100 Wave-2 F6 — turns capture into writes. item.get returns None cleanly when parsers don't set the key (e.g., pre-Wave-2 BC/Magento scrapes still in-flight); _decimal_to_str returns None for None input.
             "currency": item.get("currency", "USD"),
             "in_stock": item["in_stock"],
             "category": item.get("category"),
@@ -494,6 +495,7 @@ _UPSERT_ALLOWED_COLS = frozenset({
     "raw_title",
     "normalized_title",
     "current_price",
+    "compare_at_price",  # CTK-100 Wave-2 F6 — flips the Wave-1 dark column on. Sits adjacent to current_price (semantic sibling). Both nullable numeric(10,2); _decimal_to_str returns None cleanly for None input.
     "currency",
     "in_stock",
     "category",

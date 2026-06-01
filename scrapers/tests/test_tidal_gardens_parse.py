@@ -115,7 +115,8 @@ def test_item_shape():
     items, _, _ = _parse_one_page(_load("sps_p1.sample.html"), "/corals/sps.html", "sps", None)
     expected_keys = {
         "raw_title", "normalized_title", "product_url", "vendor_sku",
-        "current_price", "currency", "in_stock", "vendor_image_url",
+        "current_price", "compare_at_price",  # CTK-100 Wave-2 — unconditional key (F9)
+        "currency", "in_stock", "vendor_image_url",
         "category", "lineage_flag",
     }
     got = set(items[0].keys())

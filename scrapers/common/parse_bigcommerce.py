@@ -367,6 +367,15 @@ def _parse_one_page(
         if is_auction_path:
             current_price = None
 
+        # CTK-100 Wave-2 — vendor markdown capture (Option B per audit Session 1
+        # 2026-06-01). Sequenced AFTER the auction null-out so auction rows
+        # inherit compare_at_price=None structurally (L4 carve-out via the
+        # helper's current_price-None guard). F9 ack: items-dict key is set
+        # UNCONDITIONALLY below regardless of whether the helper returned a
+        # value — None on rows without markdown is the belt-and-suspenders
+        # default the persist layer expects.
+        compare_at_price = _extract_compare_at_price(card, current_price)
+
         img = card.select_one("img.card-image")
         vendor_image_url = (img.get("src") if img else None) or None
 
@@ -388,6 +397,7 @@ def _parse_one_page(
             "product_url": product_url,
             "vendor_sku": None,  # BC data-entity-id is internal, not a vendor SKU
             "current_price": current_price,
+            "compare_at_price": compare_at_price,  # CTK-100 Wave-2 F9 — unconditional key (None on rows without markdown)
             "currency": "USD",
             "in_stock": True,  # Stencil hides OOS from category view; CTK-094 cohort_oos_at_persist (aquasd.yaml) is the persist-layer mechanism that flips absent rows to in_stock=false — do not change this hardcode without removing the YAML opt-in
             "vendor_image_url": vendor_image_url,
@@ -407,6 +417,64 @@ def _parse_one_page(
         )
 
     return items, first_card_html, False
+
+
+def _extract_compare_at_price(card, current_price: Decimal | None) -> Decimal | None:
+    """CTK-100 Wave-2: vendor markdown capture for BC Stencil per Wave-2
+    Session 1 audit (2026-06-01). Reads `.price--non-sale` ("Was:") text,
+    strips '$' + thousands separators + whitespace, parses to Decimal, and
+    applies the L2 + L4 + is_finite() + F15 discipline shared with the
+    Shopify and Magento helpers.
+
+    L4 — current_price is None (auction null-out OR price-on-request) →
+    return None. Auction rows on BC inherit the carve-out via the
+    is_auction_path null-out at the call site.
+
+    L2 — compare_at <= current_price → return None (vendor left a stale
+    compare_at populated after a sale ended; render predicate is strict
+    >, the parse-side null-out keeps invalid rows out of the column
+    entirely).
+
+    F2 (Wave-1.5) — is_finite() guard catches NaN / Infinity / -Infinity /
+    sNaN. Decimal accepts these literals but Decimal-comparison raises
+    InvalidOperation outside the parse try/except.
+
+    F15 (Wave-2) — numeric(10,2) clamp at Decimal("100000000"). A vendor
+    typo (e.g. 99999999999.99) parses as a finite Decimal, passes the L2
+    > current_price gate, then raises NumericValueOutOfRange at UPSERT.
+    Same predicate shape as normalize.coerce_compare_at_price's clamp.
+
+    Returns None on: missing selector / empty text / unparseable Decimal /
+    non-finite / clamp-overflow / L2 stale.
+
+    NOTE on text format: BC Stencil convention is `$XX.XX` with leading
+    `$` + optional thousands separators. Verified at audit Session 1 via
+    selector presence + theme-engine convention across 786 cards × 21
+    genus paths (zero live marked-downs at audit time; populated shape
+    inferred). Operator runbook trigger: first non-NULL compare_at_price
+    write for vendor_id=aquasd flips a manual sanity-check obligation —
+    if the populated text format diverges (locale prefix, comma decimal,
+    USD suffix), the strip-and-parse sequence below needs adjustment."""
+    if current_price is None:
+        return None
+    el = card.select_one(".price--non-sale")
+    if el is None:
+        return None
+    txt = el.get_text(strip=True)
+    if not txt:
+        return None
+    cleaned = txt.replace("$", "").replace(",", "").strip()
+    try:
+        value = Decimal(cleaned)
+    except InvalidOperation:
+        return None
+    if not value.is_finite():
+        return None
+    if value >= Decimal("100000000"):
+        return None
+    if value > current_price:
+        return value
+    return None
 
 
 def _is_empty_category_page(soup: BeautifulSoup) -> bool:

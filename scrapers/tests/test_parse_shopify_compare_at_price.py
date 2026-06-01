@@ -277,6 +277,34 @@ def test_nan_compare_at_does_not_crash():
         )
 
 
+# --- F15 clamp pins (Wave-2 fold 2026-06-01) ---
+
+def test_clamp_billion_dollar_typo_nulls():
+    """F15 — vendor typo (compare_at_price='100000000.00' = 1e8) → None.
+    Without the clamp, the typo parses as a finite Decimal, passes L2
+    (> current_price), and writes to numeric(10,2) which raises
+    NumericValueOutOfRange mid-batch — taking out the whole scrape.
+    Clamp predicate `value >= Decimal("100000000")` returns None
+    silently. Same shape mirrored at parse_bigcommerce + tidal_gardens
+    helpers."""
+    variants = [{"sku": "X", "available": True, "price": "80.00", "compare_at_price": "100000000.00"}]
+    result = normalize.coerce_compare_at_price(variants, Decimal("80.00"))
+    assert result is None, f"clamp should null at 1e8; got {result!r}"
+    # And the worst-case typo — what a real billion-dollar misclick looks like
+    variants = [{"sku": "X", "available": True, "price": "80.00", "compare_at_price": "99999999999.99"}]
+    result = normalize.coerce_compare_at_price(variants, Decimal("80.00"))
+    assert result is None, f"clamp should null at ~1e11; got {result!r}"
+
+
+def test_clamp_boundary_just_under_overflow_captures():
+    """F15 boundary — '99999999.99' (numeric(10,2) max) MUST capture,
+    not null. Pins the boundary so the clamp predicate doesn't drift to
+    `>` instead of `>=` and accidentally widen the silent-null window."""
+    variants = [{"sku": "X", "available": True, "price": "80.00", "compare_at_price": "99999999.99"}]
+    result = normalize.coerce_compare_at_price(variants, Decimal("80.00"))
+    assert result == Decimal("99999999.99"), f"boundary value must capture; got {result!r}"
+
+
 # --- Bonus: ensure current_price=None alone (price-on-request) nulls compare_at ---
 
 def test_current_price_none_nulls_compare_at():
@@ -301,6 +329,8 @@ def main() -> int:
         test_heterogeneous_variants_pair_compare_at_with_chosen_variant,
         test_stale_then_valid_variants_stop_at_chosen,
         test_nan_compare_at_does_not_crash,
+        test_clamp_billion_dollar_typo_nulls,
+        test_clamp_boundary_just_under_overflow_captures,
         test_current_price_none_nulls_compare_at,
     ]
     failed = 0

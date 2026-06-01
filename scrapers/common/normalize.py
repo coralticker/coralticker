@@ -120,6 +120,18 @@ def coerce_compare_at_price(variants: list[dict], current_price: Decimal | None)
     variants" hazard structurally dissolves under F1 — only the chosen
     variant is consulted; "later valid variants" no longer exist as a
     category.
+
+    /code-review F15 (Wave-2 fold 2026-06-01): numeric(10,2) parse-side
+    clamp. Without the clamp, a vendor typo (compare_at_price field
+    set to '99999999999.99' — billion-dollar misclick) parses as a
+    finite Decimal, passes the L2 > current_price gate, and writes to
+    the numeric(10,2) column which raises NumericValueOutOfRange
+    mid-batch — taking out the whole scrape. The clamp returns None on
+    values that won't fit numeric(10,2) (max = 99999999.99; boundary
+    sits at 10^8 = Decimal("100000000")). Same predicate mirrored at
+    the BC and Magento helpers (parse_bigcommerce._extract_compare_at_price,
+    tidal_gardens._extract_compare_at_price) for single-semantic
+    coverage across all three platforms.
     """
     if current_price is None:
         return None
@@ -140,6 +152,8 @@ def coerce_compare_at_price(variants: list[dict], current_price: Decimal | None)
         except InvalidOperation:
             return None
         if not value.is_finite():
+            return None
+        if value >= Decimal("100000000"):
             return None
         if value > current_price:
             return value
