@@ -57,6 +57,33 @@ originator_prefix: tsa  # CTK-026 pre-impl spot-check: 89/250 (~36%) carry "TSA 
 # 17-page live walk empirical (2,731 Livestock rows; ~120 catchable
 # non-coral; ~4.4% leak rate). Sales-bucket / rotating-content discipline
 # per open-items.md Open + memory feedback_rotating_bucket_allowlist.md.
+#
+# CTK-104 (2026-06-01) — structural discriminator + equipment gate. Fourth
+# fish-leak pass per CTK-037 → CTK-041 → CTK-095 → CTK-104 cadence
+# (Borbonius Anthias / Copperband + Yellow Longnose Butterfly / Magnificent
+# Foxface / Harlequin Basslet leaked in_stock pre-R2R-launch). Per-genus
+# enumeration is whack-a-mole — TSA tags every fish with a reef-safety
+# rating tag corals never carry. D-1 adds the rating family
+# (Reef Safe / Reef Safe Caution / Non Reef Safe / Not Reef Safe /
+# EXPERT ONLY / Predator) as the primary structural fish gate. D-2 adds
+# Aquariums / All-in-One Aquariums / Jellyfish Art to plug the
+# empty-product_type allowlist entry (kept for ~62 blank-PT coral recovery
+# per CTK-037 Q-8 path (a)) against jellyfish-tank equipment leaks (3 in
+# stock 2026-06-01: Kreisel 10 / Kreisel 15 / Jelly Cylinder 5). D-1A:
+# retain the prior per-genus fish entries as belt-and-suspenders alongside
+# the structural family — additive cost is zero, drift insurance if TSA
+# ever ships a fish without a reef-safety tag.
+#
+# D-4 structural-taxonomy classification (CTK-104 plan §D-4 + open-items L56
+# rotating-bucket discipline): reef-safety rating tags are stable Shopify-
+# platform metadata TSA emits on every fish row (not a vendor-rotated sales
+# bucket). 0-false-kill verification at live full-catalog scan 2026-06-01:
+# 83 in-stock products carry a reef-safety tag (filtered to allowlisted
+# product_type), 0 coral, 0 anemone. Three jellyfish tanks under blank-PT
+# × equipment-tag filter (D-2 pre-lock verify); 0 coral. Multi-day
+# re-sample window (3 cycles) per Jon directive belt-and-suspenders,
+# despite structural-taxonomy classification not strictly binding the
+# rotating-bucket multi-day requirement.
 category_filter:
   product_type_allowlist:
     - ""                  # empty product_type bucket; 9/10 sample real coral (Blastomussa/Acropora/Chalice/Acan) per CTK-037 Session 4.5; remaining ~7 rows imageless test-data per /lead-backend spot-check 2026-05-11 (frontend has_image filter excludes); ~62 real-coral recovery; Q-8 path (a) (CTK-037 Session 5 2026-05-11)
@@ -74,20 +101,34 @@ category_filter:
   # in live walk 2026-05-30); singular+plural Wrasse pairs for defensive
   # coverage. Sticker/Hoodie/T-Shirt PT='Aquarium Supplies' already
   # excluded by allowlist; no defensive tag add needed.
+  #
+  # CTK-104 (2026-06-01): 6 reef-safety tag family entries + 3 equipment
+  # entries added below per D-1 + D-2. Per-genus fish + invert / bio-media
+  # entries retained per D-1A belt-and-suspenders. Final 28 = 6 reef-safety
+  # (D-1) + 3 equipment (D-2) + 12 per-genus fish + 7 invert / bio-media.
   tag_denylist:
     - Algae Eater         # algae-utility inverts, 26 items (CTK-041 2026-05-21)
+    - All-in-One Aquariums # equipment — jellyfish-tank leak via blank-PT allowlist (CTK-104 D-2 2026-06-01)
     - Angelfish           # fish, 18 items in Livestock (CTK-037 2026-05-10)
+    - Aquariums           # equipment — jellyfish-tank leak via blank-PT allowlist (CTK-104 D-2 2026-06-01)
     - Beginner Fish       # fish, 31 items in Livestock (CTK-037 2026-05-10)
     - Clam                # clam (TSA out-of-scope per CTK-095 Axis 2 2026-05-30; 12 Maxima/Hippopus/Squamosa/Derasa leaks in_stock)
     - Clownfish           # fish, 19 items in Livestock (CTK-037 2026-05-10)
+    - EXPERT ONLY         # reef-safety rating family — fish gate per CTK-104 D-1 structural discriminator (2026-06-01)
     - Filefish            # fish (Aiptasia Eating Filefish; CTK-095 Axis 2 2026-05-30)
     - Goby                # fish umbrella (catches Dartfish + Tilefish at TSA per live walk; CTK-095 Axis 2 2026-05-30)
     - Hawkfish            # fish (Arc Eye Hawkfish; CTK-095 Axis 2 2026-05-30)
     - Invert              # umbrella tag catches Shrimp/Crab/Urchin/Starfish/Snail/Lobster/Chiton/Sand Sifter/Cucumber co-carry, 77 items (CTK-041 2026-05-21)
+    - Jellyfish Art       # equipment — jellyfish-tank leak via blank-PT allowlist (CTK-104 D-2 2026-06-01)
     - Live Rock           # bio-media substrate, 1 item (CTK-041 2026-05-21)
     - Macroalgae          # bio-media algae, 9 items (CTK-041 2026-05-21)
     - Mangrove            # bio-media refugium plant, 1 item (CTK-041 2026-05-21)
     - Nano Fish           # fish, 22 items in Livestock (CTK-037 2026-05-10)
+    - Non Reef Safe       # reef-safety rating family — fish gate per CTK-104 D-1 structural discriminator (2026-06-01)
+    - Not Reef Safe       # reef-safety rating family — fish gate per CTK-104 D-1 structural discriminator (2026-06-01)
+    - Predator            # reef-safety rating family — fish gate per CTK-104 D-1 structural discriminator (2026-06-01)
+    - Reef Safe           # reef-safety rating family — fish gate per CTK-104 D-1 structural discriminator (2026-06-01)
+    - Reef Safe Caution   # reef-safety rating family — fish gate per CTK-104 D-1 structural discriminator (2026-06-01)
     - Refugiums           # bio-media umbrella future-proof, 6 items (CTK-041 2026-05-21)
     - Tang                # fish, 33 items in Livestock (CTK-037 2026-05-10)
     - Tilefish            # fish (Purple Tilefish; defensive plural-tag-form coverage; CTK-095 Axis 2 2026-05-30)

@@ -55,10 +55,18 @@ IMAGE_STRATEGY = "mirror"
 # by allowlist default.
 TSA_CATEGORY_FILTER = {
     "product_type_allowlist": ["", "Coral-POS", "Livestock"],
+    # CTK-104 (2026-06-01) — mirrors the production scrapers/vendors/tsa.yaml
+    # 28-entry tag_denylist: 6 reef-safety tag family (D-1 structural fish gate)
+    # + 3 equipment tags (D-2 jellyfish-aquarium plug for the blank-PT allowlist
+    # entry) + 12 per-genus fish (D-1A belt-and-suspenders) + 7 invert / bio-
+    # media (CTK-041 + CTK-095). Sorted alphabetically to match YAML.
     "tag_denylist": [
-        "Algae Eater", "Angelfish", "Beginner Fish", "Clownfish", "Invert",
-        "Live Rock", "Macroalgae", "Mangrove", "Nano Fish", "Refugiums",
-        "Tang", "WYSIWYG Fish",
+        "Algae Eater", "All-in-One Aquariums", "Angelfish", "Aquariums",
+        "Beginner Fish", "Clam", "Clownfish", "EXPERT ONLY", "Filefish",
+        "Goby", "Hawkfish", "Invert", "Jellyfish Art", "Live Rock",
+        "Macroalgae", "Mangrove", "Nano Fish", "Non Reef Safe",
+        "Not Reef Safe", "Predator", "Reef Safe", "Reef Safe Caution",
+        "Refugiums", "Tang", "Tilefish", "Wrasse", "Wrasses", "WYSIWYG Fish",
     ],
 }
 
@@ -375,6 +383,80 @@ def test_filter_rejects_livestock_algae_eater(products):
     assert _should_keep(p, TSA_CATEGORY_FILTER) is False
 
 
+# ─── CTK-104 D-1 happy-path: reef-safety tag rejects even on Livestock allowlist ─
+def test_filter_rejects_reef_safety_tag_family(products):
+    """CTK-104 D-1 (2026-06-01) — reef-safety rating tag family
+    (Reef Safe / Reef Safe Caution / Non Reef Safe / Not Reef Safe / EXPERT ONLY
+    / Predator) is the primary structural fish gate. TSA tags every fish with
+    one of these; corals carry none (live full-catalog scan 2026-06-01: 83
+    in-stock reef-safety-tagged rows, 0 coral, 0 anemone). The denylist gate
+    must fire on the reef-safety tag ALONE — even when no per-genus fish tag
+    co-carries — so the structural family catches future fish leaks without
+    waiting on per-genus enumeration. Synthetic fixtures pin each tag of the
+    family individually so a YAML drop of any one entry breaks this test."""
+    for rs_tag in ("Reef Safe", "Reef Safe Caution", "Non Reef Safe",
+                   "Not Reef Safe", "EXPERT ONLY", "Predator"):
+        product = {
+            "title": f"Fictitious Test Fish ({rs_tag})",
+            "product_type": "Livestock",
+            "tags": [rs_tag],
+            "variants": [{"available": True}],
+        }
+        assert _should_keep(product, TSA_CATEGORY_FILTER) is False, (
+            f"reef-safety tag {rs_tag!r} should reject on its own; product passed"
+        )
+
+
+# ─── CTK-104 D-1 false-kill guard: coral with no reef-safety tag still passes ─
+def test_filter_keeps_coral_without_reef_safety_tag(products):
+    """CTK-104 D-1 false-kill guard — the reef-safety discriminator must not
+    false-fire on corals. All four real-shape coral fixtures (TSA Deep Soul
+    Favia / TSA Berry Bash Echinata / Beast Boy Favia / Krak God Zoanthids)
+    carry no reef-safety tag in the live catalog and must pass the filter post-
+    CTK-104. Pin behavior across the full coral fixture surface — drop of a
+    coral row would surface as a fixture maintenance failure, not as a silent
+    discriminator regression."""
+    coral_titles = [
+        "TSA Deep Soul Favia Coral",
+        "TSA Berry Bash Echinata Coral",
+        "Beast Boy Favia Coral",
+        "Krak God Zoanthids Coral",
+    ]
+    reef_safety_set = {"Reef Safe", "Reef Safe Caution", "Non Reef Safe",
+                       "Not Reef Safe", "EXPERT ONLY", "Predator"}
+    for title in coral_titles:
+        p = _by_title(products, title)
+        tags = set(p.get("tags") or [])
+        assert not (tags & reef_safety_set), (
+            f"coral fixture {title!r} carries reef-safety tag {tags & reef_safety_set!r}; "
+            f"fixture drift — false-kill-guard test no longer pinning the intended invariant"
+        )
+        assert _should_keep(p, TSA_CATEGORY_FILTER) is True, (
+            f"coral {title!r} rejected by post-CTK-104 filter (false-kill); "
+            f"tags={p.get('tags')}"
+        )
+
+
+# ─── CTK-104 D-2: equipment tag rejects jellyfish-aquarium leak under blank-PT ─
+def test_filter_rejects_equipment_tag_under_blank_pt(products):
+    """CTK-104 D-2 (2026-06-01) — the blank-product_type allowlist entry was
+    retained at CTK-037 for ~62-row real-coral recovery (Q-8 path (a)) but
+    leaks Kreisel / Jelly Cylinder jellyfish aquariums (3 in stock 2026-06-01:
+    `product_type=''`, tags=['Aquariums', 'All-in-One Aquariums', 'Jellyfish
+    Art']). Three equipment tags added to tag_denylist to plug the leak.
+    Synthetic fixture pins each equipment tag individually."""
+    for eq_tag in ("Aquariums", "All-in-One Aquariums", "Jellyfish Art"):
+        product = {
+            "title": f"Fictitious Test Equipment ({eq_tag})",
+            "product_type": "",  # the load-bearing leak surface
+            "tags": [eq_tag],
+            "variants": [{"available": True}],
+        }
+        assert _should_keep(product, TSA_CATEGORY_FILTER) is False, (
+            f"equipment tag {eq_tag!r} should reject under blank-PT; product passed"
+        )
+
+
 # ─── Test 19 (CTK-037 Session 5.5): predicate normalization keeps None/absent ─
 def test_filter_normalizes_none_product_type_to_empty_string(products):
     """CTK-037 Session 5.5 — None or key-absent product_type normalizes to "" so
@@ -422,6 +504,9 @@ def main() -> int:
         test_filter_rejects_livestock_invert,
         test_filter_rejects_livestock_macroalgae,
         test_filter_rejects_livestock_algae_eater,
+        test_filter_rejects_reef_safety_tag_family,
+        test_filter_keeps_coral_without_reef_safety_tag,
+        test_filter_rejects_equipment_tag_under_blank_pt,
         test_filter_normalizes_none_product_type_to_empty_string,
         test_filter_rejects_none_product_type_when_empty_not_in_allowlist,
     ]
