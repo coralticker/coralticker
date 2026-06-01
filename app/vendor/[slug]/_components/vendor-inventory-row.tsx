@@ -8,7 +8,7 @@
 // Auction listings carry currentPrice === null per project_auctions_in_scope.md
 // — rendered as "price on request" via formatPrice() below.
 
-import { type DataRowField } from '@/components/ui/data-row';
+import { type DataRowField, type DataRowFieldValue } from '@/components/ui/data-row';
 import { ListingRowFrame } from '@/components/ui/listing-row-frame';
 import type { Listing } from '@/lib/queries/listings';
 
@@ -26,14 +26,30 @@ export function VendorInventoryRow({ listing }: VendorInventoryRowProps) {
   const isOutOfStock = !listing.inStock;
   const priceFormatted = formatPrice(listing.currentPrice);
 
+  // OOS > vendor-markdown > bare per CTK-100 L5 OOS precedence + Wave-3
+  // Path A extension. Predicate verbatim across <ListingCard>,
+  // <VendorInventoryRow>, <VendorAvailabilityRow>; currentPrice !== null
+  // guards auction rows.
+  let priceValue: DataRowFieldValue;
+  if (isOutOfStock) {
+    priceValue = { kind: 'invalidated', value: priceFormatted };
+  } else if (
+    listing.compareAtPrice !== null &&
+    listing.currentPrice !== null &&
+    listing.compareAtPrice >= listing.currentPrice * 1.05
+  ) {
+    priceValue = {
+      kind: 'vendor-markdown',
+      oldValue: formatPrice(listing.compareAtPrice),
+      newValue: priceFormatted,
+    };
+  } else {
+    priceValue = priceFormatted;
+  }
+
   const fields: DataRowField[] = [
     { label: 'Coral', value: coralName },
-    {
-      label: 'Price',
-      value: isOutOfStock
-        ? { kind: 'invalidated', value: priceFormatted }
-        : priceFormatted,
-    },
+    { label: 'Price', value: priceValue },
     {
       label: 'Listed',
       value: { kind: 'relative-time', timestamp: listing.firstSeenAt },

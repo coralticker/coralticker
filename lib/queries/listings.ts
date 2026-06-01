@@ -32,6 +32,7 @@ export interface Listing {
   vendorDisplayName: string;
   rawTitle: string;
   currentPrice: number | null;
+  compareAtPrice: number | null;
   inStock: boolean;
   imageUrl: string | null;
   productUrl: string;
@@ -52,6 +53,7 @@ interface VendorListingRow {
   id: number;
   raw_title: string;
   current_price: number | string | null;
+  compare_at_price: number | string | null;
   in_stock: boolean;
   image_url: string | null;
   product_url: string;
@@ -72,6 +74,7 @@ function rowToListing(row: VendorListingRow): Listing {
     vendorDisplayName: row.vendor_display_name,
     rawTitle: row.raw_title,
     currentPrice: row.current_price !== null ? Number(row.current_price) : null,
+    compareAtPrice: row.compare_at_price !== null ? Number(row.compare_at_price) : null,
     inStock: row.in_stock,
     imageUrl: row.image_url,
     productUrl: row.product_url,
@@ -100,6 +103,7 @@ export async function getRecentDrops(limit = 10): Promise<Listing[]> {
       vl.id,
       vl.raw_title,
       vl.current_price,
+      vl.compare_at_price,
       vl.in_stock,
       vl.image_url,
       vl.product_url,
@@ -143,6 +147,7 @@ export async function getCoralAvailability(namedCoralId: number): Promise<Listin
       vl.id,
       vl.raw_title,
       vl.current_price,
+      vl.compare_at_price,
       vl.in_stock,
       vl.image_url,
       vl.product_url,
@@ -229,7 +234,7 @@ export async function getVendorInventory(
         if (sort === 'price-asc') {
           return sql`
             SELECT
-              vl.id, vl.raw_title, vl.current_price, vl.in_stock,
+              vl.id, vl.raw_title, vl.current_price, vl.compare_at_price, vl.in_stock,
               vl.image_url, vl.product_url, vl.first_seen_at,
               vl.match_confidence, vl.named_coral_id,
               v.slug AS vendor_slug, v.display_name AS vendor_display_name,
@@ -250,7 +255,7 @@ export async function getVendorInventory(
         if (sort === 'price-desc') {
           return sql`
             SELECT
-              vl.id, vl.raw_title, vl.current_price, vl.in_stock,
+              vl.id, vl.raw_title, vl.current_price, vl.compare_at_price, vl.in_stock,
               vl.image_url, vl.product_url, vl.first_seen_at,
               vl.match_confidence, vl.named_coral_id,
               v.slug AS vendor_slug, v.display_name AS vendor_display_name,
@@ -271,7 +276,7 @@ export async function getVendorInventory(
         // sort === 'newest'
         return sql`
           SELECT
-            vl.id, vl.raw_title, vl.current_price, vl.in_stock,
+            vl.id, vl.raw_title, vl.current_price, vl.compare_at_price, vl.in_stock,
             vl.image_url, vl.product_url, vl.first_seen_at,
             vl.match_confidence, vl.named_coral_id,
             v.slug AS vendor_slug, v.display_name AS vendor_display_name,
@@ -293,7 +298,11 @@ export async function getVendorInventory(
       return rows.map(rowToListing);
     },
     [
-      'getVendorInventoryV2',
+      // V3 prefix bump 2026-06-01 (CTK-100 Wave-3) — Listing shape widened
+      // with compareAtPrice; Next.js 15 unstable_cache persists Data Cache
+      // across deploys per feedback_unstable_cache_shape_change.md, so V2
+      // entries would deserialize without the new field for up to 600s.
+      'getVendorInventoryV3',
       String(vendorId),
       String(page),
       sort,
@@ -389,6 +398,12 @@ function rpcRowToPriceDrop(row: RpcPriceDropRow): PriceDropListing {
     vendorDisplayName: row.vendor_display_name,
     rawTitle: row.raw_title,
     currentPrice: row.current_price !== null ? Number(row.current_price) : null,
+    // get_recent_price_drops() RPC (migration 0008) does not return
+    // compare_at_price. /deals consumes CT-observed price-drop events from
+    // price_history; vendor-side markdown lives on vendor_listings and never
+    // enters price_history (CTK-100 L4). Wave-3 leaves the /deals integration
+    // for a follow-up CTK (plan L3 deferral).
+    compareAtPrice: null,
     inStock: row.in_stock,
     imageUrl: row.image_url,
     productUrl: row.product_url,
@@ -443,6 +458,10 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
     vendorDisplayName: row.vendor_display_name,
     rawTitle: row.raw_title,
     currentPrice: row.current_price !== null ? Number(row.current_price) : null,
+    // get_recent_arrivals() RPC (migration 0007) does not return
+    // compare_at_price. Backend-lane RPC widen is the path to expose vendor
+    // markdown on /new — Wave-3 defers per directive (out of scope).
+    compareAtPrice: null,
     inStock: row.in_stock,
     imageUrl: row.image_url,
     productUrl: row.product_url,

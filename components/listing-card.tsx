@@ -41,7 +41,11 @@ function buildFields(props: ListingCardProps, isOutOfStock: boolean): DataRowFie
 
   // Event-driven price-drop-new render takes precedence over the
   // invalidated-render when both could apply; the OUT OF STOCK label above
-  // the lead carries the row-state declaration independently.
+  // the lead carries the row-state declaration independently. Vendor-set
+  // markdown (CTK-100 vendor-markdown value-kind) ranks below OOS per L5
+  // OOS precedence and above bare-price; predicate guards auction rows
+  // (currentPrice === null per project_auctions_in_scope.md L4 parse-side)
+  // and folds F7 (≥5% threshold) inline.
   if (event === 'price-dropped') {
     fields.push({
       label: 'Price',
@@ -55,6 +59,19 @@ function buildFields(props: ListingCardProps, isOutOfStock: boolean): DataRowFie
     fields.push({
       label: 'Price',
       value: { kind: 'invalidated', value: formatPrice(listing.currentPrice) },
+    });
+  } else if (
+    listing.compareAtPrice !== null &&
+    listing.currentPrice !== null &&
+    listing.compareAtPrice >= listing.currentPrice * 1.05
+  ) {
+    fields.push({
+      label: 'Price',
+      value: {
+        kind: 'vendor-markdown',
+        oldValue: formatPrice(listing.compareAtPrice),
+        newValue: formatPrice(listing.currentPrice),
+      },
     });
   } else {
     fields.push({ label: 'Price', value: formatPrice(listing.currentPrice) });

@@ -10,6 +10,7 @@ export type DataRowFieldValue =
   | string
   | { kind: 'relative-time'; timestamp: string }
   | { kind: 'price-drop-new'; oldValue: string; newValue: string }
+  | { kind: 'vendor-markdown'; oldValue: string; newValue: string }
   | { kind: 'invalidated'; value: string }
   | { kind: 'italic'; value: string };
 
@@ -51,6 +52,17 @@ function RenderValue({ value }: { value: DataRowFieldValue }) {
       </span>
     );
   }
+  if (value.kind === 'price-drop-new') {
+    return (
+      <span className="font-mono">
+        <del className="font-normal">{value.oldValue}</del>{' '}
+        <span className="text-forest font-bold">{value.newValue}</span>
+      </span>
+    );
+  }
+  // vendor-markdown shares price-drop-new's DOM per /brand-manager Lock 2
+  // (CTK-100 brand-manager-session-2026-06-01). Explicit branch — not a
+  // fall-through — so future canon-divergence is a one-line edit.
   return (
     <span className="font-mono">
       <del className="font-normal">{value.oldValue}</del>{' '}
