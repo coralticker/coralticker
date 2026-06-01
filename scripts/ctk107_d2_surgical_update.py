@@ -42,13 +42,23 @@ from scrapers.common.db import get_conn
 from scrapers.common.parse_shopify import _should_keep
 
 # (vendor_id, slug, audit_anchor_run_id) — audit anchors are per-vendor
-# most-recent status='success' scraper_runs row, picked at session-open
-# (BC=764 finished 2026-06-01 13:48 UTC; UC=781 finished 2026-06-01 16:59
-# UTC). Per-vendor anchors keep the price_history audit semantically
-# correct (a UC row's history entry FKs to a UC scraper_run, not BC's).
+# most-recent status='success' scraper_runs row, picked at session-open.
+# Per-vendor anchors keep the price_history audit semantically correct (a
+# UC row's history entry FKs to a UC scraper_run, not BC's). Anchors:
+#   BC = 764 (finished 2026-06-01 13:48 UTC)
+#   UC = 781 (finished 2026-06-01 16:59 UTC)
+#   PE = 782 (finished 2026-06-01 17:04 UTC; D-2-bis addition 2026-06-01)
+#   JF = 784 (finished 2026-06-01 19:49 UTC; D-2-bis addition 2026-06-01)
+# BC + UC stay in the list — script is idempotent (post-Session-2 stale
+# rowsets are 0; PARTITION-B re-derive returns [] for both, no UPDATE
+# fires). PE + JF added per /lead-backend Q-NEW-A disposition (a) at
+# Session 2 wrap: roll 19 PE + 1 JF PARTITION-B residuals into expanded
+# CTK-107 D-2-bis UPDATE scope.
 VENDORS_TO_FIX = [
     (5, "battlecorals", 764),
     (6, "unique_corals", 781),
+    (1, "pacific_east", 782),
+    (4, "jf", 784),
 ]
 
 
