@@ -45,6 +45,18 @@ hash_anchor: first_product_keys
 
 originator_prefix: tsa  # CTK-026 pre-impl spot-check: 89/250 (~36%) carry "TSA " prefix (page 1 limit=250); matches WWC ~30% pattern that locked CTK-025 to 'wwc'. First-20 sample at 5% was recency-skewed (fish-heavy) per /backend-engineer 2026-05-07. Aligns with arch §3.4 stage 3 + decision #23 (TSA absent from null-prefix vendor list).
 
+# cohort_oos_at_persist: true — CTK-105 D-4 (Phase 2 close-window; aggregator
+# trust-floor remediation; HARD R2R-launch gate per Jon 2026-06-01). TSA is
+# the canary in the per-vendor opt-in sequence per plan §D-4 (TSA -> BC/PE/JF/UC
+# batch -> Vivid/RC fold -> WWC last). D-2 (WWC) cleared 2026-06-01 (20/20
+# delisted); D-3 --classify per-vendor sample-check cleared TSA at 10/10
+# delisted (under_intake=0). Q-2 ratified by /lead-backend 2026-06-01 — opt-in
+# safety gate is under_intake=0 fleet-wide, not the strict >=9/10 cut. Post-
+# flip TSA scrape expected listings_oos ~196 (D-3 dry-run 202 minus 6 CTK-104
+# Session 1 manual flips); CTK-104 results.md gets a one-time spike note on
+# commit-land so D-5 cycles 2+3 readings aren't misread as scraper regression.
+cohort_oos_at_persist: true
+
 # CTK-037 category-filter: Livestock product_type covers both coral + fish
 # (~96% coral / ~4% fish by tag at full-catalog 2026-05-10). tag_denylist
 # rejects fish within Livestock. Anemone tag (20 within Livestock) NOT in
