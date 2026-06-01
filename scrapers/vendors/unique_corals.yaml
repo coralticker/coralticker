@@ -203,14 +203,19 @@ category_filter:
   # combined) is intentional belt-and-suspenders — title_denylist fires
   # when the brand-name appears in raw_title but the brand tag is absent.
   # 'ARID ' carries trailing space to avoid SUFFIX-class collisions
-  # (PARIDA / Aridana / Floridan-class — substring 'arid' followed by a
+  # (PARIDA / Aridana / Aridoxa-class — substring 'arid' followed by a
   # non-space char doesn't match 'arid '). Does NOT protect PREFIX-class
   # collisions ('Marid ' lowercase literally contains 'arid ' because the
   # original word-break space matches the entry's trailing space). UC
   # catalog 2026-05-31 walk-confirm carries zero 'marid '/'narid '-class
-  # coral titles; the asymmetry is theoretical FP risk only. Disciplined
-  # claim pinned at test_parse_shopify_unique_corals.py:test_uc_keeps_
-  # arida_suffix_fp_control docstring.
+  # coral titles; the asymmetry is theoretical FP risk only. Also does
+  # NOT protect END-of-string occurrences ('arid ' requires a trailing
+  # char to match; title 'Replacement Cord ARID' would slip through —
+  # current UC ARID rows all carry text after 'ARID' but a vendor title-
+  # trim could surface this). Disciplined claim pinned at
+  # test_parse_shopify_unique_corals.py:test_uc_keeps_arida_suffix_fp_control
+  # docstring; full /code-review CTK-096 F14 + sweep S1 + F8 disposition
+  # at .claude/plans/tickets/CTK-096/results.md Session 2.
   # Alphabetized.
   title_denylist:
     - "ARID "

@@ -97,14 +97,16 @@ class ParseResult:
     # Downstream consumers (CTK-097 operator alerting) MUST treat these as
     # raw-card-per-path observability, not unique-product-per-category.
     per_category_counts: dict = field(default_factory=dict)
-    # CTK-094 fold #4 (/code-review F4): URLs the parser actively rejected
-    # via YAML filter (in_stock_only sold-out drop, product_type_allowlist
-    # mismatch, tag_denylist match, tag_allowlist miss). diff.classify
-    # excludes these from the cohort-OOS absent-set so a parser-filter
-    # rejection (vendor re-categorized item to a non-allowlisted bucket)
-    # doesn't conflate with vendor-sold-out. parse_bigcommerce +
-    # tidal_gardens return empty set (no filter axis today; plumbing
-    # exists for future filter additions on those platforms).
+    # CTK-094 fold #4 (/code-review F4) + CTK-096 close-fold F9 2026-06-01:
+    # URLs the parser actively rejected via YAML filter (in_stock_only sold-
+    # out drop, product_type_allowlist mismatch, tag_allowlist miss,
+    # tag_denylist match, title_denylist match). diff.classify excludes these
+    # from the cohort-OOS absent-set so a parser-filter rejection (vendor
+    # re-categorized item to a non-allowlisted bucket, vendor renamed item
+    # to hit a title-denylist substring) doesn't conflate with vendor-sold-
+    # out. parse_bigcommerce + tidal_gardens return empty set (no filter
+    # axis today; plumbing exists for future filter additions on those
+    # platforms).
     filtered_urls: set = field(default_factory=set)
 
 
@@ -325,19 +327,23 @@ def _should_keep(product: dict, category_filter: dict | None, in_stock_only: boo
     # the tag_denylist mitigation shape below. RC's load-bearing
     # `tag_allowlist: ['Coral']` would otherwise empty the catalog on an
     # API-side drift to lowercase 'coral'.
-    if tag_allowlist and not any(
-        t.lower() in {e.lower() for e in tag_allowlist} for t in tags
-    ):
-        return False
-    # CTK-096 D-2: lowercase both sides at membership for future-proof tag-
-    # case-mismatch defense (cross-fleet). Closes the silent-miss class where
-    # a vendor's API returns 'Triton' while the YAML carries 'triton' (or
-    # vice-versa). Per-row cost is trivial — bounded by ~10 denylist entries
-    # x ~5 tags x .lower() per scrape page.
-    if tag_denylist and any(
-        t.lower() in {e.lower() for e in tag_denylist} for t in tags
-    ):
-        return False
+    #
+    # CTK-096 close-fold F11 2026-06-01: hoist the lowercased allow/deny sets
+    # ABOVE their any(...) generators. Pre-fold the set-comprehension
+    # `{e.lower() for e in <list>}` lived inside the any(...) body, so Python
+    # rebuilt it once per outer tag (O(tags × entries) lowers + per-tag set
+    # allocation). Hoisted shape is O(entries + tags) lowers + one set
+    # allocation per axis per call. Bounded today by ~10-13 entries × ~5 tags
+    # × catalog-size — non-load-bearing perf, but the pre-fold comment
+    # under-stated cost by a factor of ~5 (tags/row).
+    if tag_allowlist:
+        tag_allowlist_lc = {e.lower() for e in tag_allowlist}
+        if not any(t.lower() in tag_allowlist_lc for t in tags):
+            return False
+    if tag_denylist:
+        tag_denylist_lc = {e.lower() for e in tag_denylist}
+        if any(t.lower() in tag_denylist_lc for t in tags):
+            return False
     # CTK-096 D-1: 5th axis. Case-insensitive substring against raw_title.
     if title_denylist:
         title_lower = (product.get("title") or "").lower()

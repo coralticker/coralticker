@@ -114,14 +114,19 @@ def test_uc_keeps_arida_suffix_fp_control():
     """Trailing-space `ARID ` substring discipline pins SUFFIX collisions only.
     A hypothetical coral titled `Aridana Cyclamen` (substring `arid` followed
     by `a`, not space) must NOT false-fire — trailing-space protection works
-    for suffix-extension words (Aridana / Aridoxa / Floridan-class).
+    for suffix-extension words (PARIDA / Aridana / Aridoxa-class — all carry
+    `arid` then a non-space char).
 
-    Asymmetry observation (flagged to /lead-backend): trailing-space does NOT
-    protect against PREFIX collisions — `Marid Smith` lowercase contains
-    `arid ` as substring (position 1, with the original space after `marid`
-    matching the entry's trailing space). UC catalog 2026-05-31 walk-confirm
-    contains no `marid `/`narid `-class coral titles, so the asymmetry is
-    theoretical FP risk only; documented for future tag-shape drift watch."""
+    Asymmetry observation (CTK-096 close-fold F14 + sweep S1 correction
+    2026-06-01): trailing-space does NOT protect against PREFIX collisions —
+    `Marid Smith` lowercase contains `arid ` as substring (position 1, with
+    the original space after `marid` matching the entry's trailing space). Also
+    does NOT protect END-of-string occurrences — `arid ` requires a trailing
+    char to match, so a title like `Replacement Cord ARID` (vendor title-trim)
+    would slip through. UC catalog 2026-05-31 walk-confirm contains no `marid `
+    / `narid `-class coral titles AND no end-of-string ARID titles, so both
+    asymmetries are theoretical FP/FN risk only; documented for future
+    tag-shape drift watch."""
     p = _p("Aridana Cyclamen Echinata", product_type="CORAL", tags=[])
     assert _should_keep(p, UC_FILTER) is True
 
