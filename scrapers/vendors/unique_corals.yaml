@@ -183,6 +183,8 @@ category_filter:
     - goods                       # 146 items catalog-wide; universal dry-goods signal; appears on PNS supplements + Dalua/illumagic equipment in empty-PT bucket (CTK-085 Session 3 2026-05-25)
     - illumagic                   # LED brand; co-tagged with Dalua on AQUARIUM PIXEL LED equipment (CTK-085 Session 3 2026-05-25)
     - maintenance                 # 76 items; supplements / dosing / additive equipment; never observed on coral listings at 2026-05-25 walk (CTK-085 Session 3 2026-05-25)
+    - Marco Rocks                 # MarcoRocks Coralline rock SKUs slipping through empty-PT bucket — tagged brand-only with no coral tag (CTK-107 D-2-tris 2026-06-01 close-gate eyeball-fail)
+    - MarcoRocks                  # variant tag form (no space); same SKU class as "Marco Rocks" (CTK-107 D-2-tris 2026-06-01)
     - openbox                     # used / refurbished equipment marker (e.g., Ecotech Marine Radion XR30 G5 LED Light Fixture - Used) (CTK-085 Session 3 2026-05-25)
     - Other DG                    # 34 items; explicit dry-goods miscellaneous (CTK-085 Session 3 2026-05-25)
     - Panta Rhei                  # 50 items; equipment brand (pumps, surge devices); same as Panta Rhei PT for some, tagged on cross-PT equipment for others (CTK-085 Session 3 2026-05-25)
