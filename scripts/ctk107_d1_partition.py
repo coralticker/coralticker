@@ -1,8 +1,8 @@
-"""CTK-107 D-1 — partition mechanism for BC + UC stale rowset.
+"""CTK-107 D-1 — partition mechanism for BC + UC stale rowset (+ CTK-105
+§D-5 cross-CTK anchor tightening for PE + JF, added 2026-06-01).
 
-Classifies each row in the CTK-105 D-3 stale rowset for BC + UC into one
-of three structural partitions keyed on CTK-094 §3 cohort-OOS-at-persist
-semantics:
+Classifies each row in the CTK-105 D-3 stale rowset into one of three
+structural partitions keyed on CTK-094 §3 cohort-OOS-at-persist semantics:
 
   PARTITION-A — cohort-OOS absent-pass class.
     row.product_url NOT in current /products.json url-set.
@@ -61,10 +61,30 @@ PARTITION_C_HAND_DISPOSITION_THRESHOLD = 3  # <=3 hand-dispose; >3 sibling CTK
 VENDOR_YAML_DIR = Path(__file__).parent.parent / "scrapers" / "vendors"
 
 # (vendor_id, slug, expected_per_hypothesis_dict)
-# Hypothesis per plan §D-1: BC ~34 A / 0 B / 0 C; UC ~96 B / 0 A / 0 C.
+#
+# CTK-107 D-1 empirical lock (BC + UC): both vendors classified as
+# 0 A / 34 B (BC) and 0 A / 96 B (UC) at D-1 run 2026-06-01 (SHA 05e0b06).
+# Post-CTK-107 D-2 surgical UPDATE (SHA TBD this session), all 130
+# PARTITION-B rows are in_stock=false -> stale rowset for BC + UC drops
+# to 0 -> partition reports 0 / 0 / 0 (the post-fix expected state). The
+# script short-circuits at the empty-stale-rowset check; hypothesis = 0/0/0
+# locks the post-fix expectation so any future DRIFT flag surfaces residual
+# leakage (a new parser-filtered-stuck class accumulating before CTK-106
+# lands the durable fix).
+#
+# PE + JF added 2026-06-01 for CTK-105 §D-5 cross-CTK anchor tightening.
+# PE has 69 stale rows; D-3 sample classified 7/8 delisted + 1
+# parser_filter_edge -> extrapolation hypothesis: ~60 A / ~9 B / 0 C.
+# JF has 89 stale rows; D-3 sample classified 8/9 delisted + 1
+# oos_at_vendor (WYSIWYG-tagged tang in allowlist) -> extrapolation
+# hypothesis: ~79 A / ~10 B / 0 C. D-3 hypotheses are sample-extrapolated
+# only; empirical partition is the load-bearing signal for CTK-105 §D-5
+# `listings_oos` calibration.
 VENDORS = [
-    (5, "battlecorals", {"A": 34, "B": 0, "C": 0}),
-    (6, "unique_corals", {"A": 0, "B": 96, "C": 0}),
+    (5, "battlecorals", {"A": 0, "B": 0, "C": 0}),  # post-CTK-107-D-2 expected
+    (6, "unique_corals", {"A": 0, "B": 0, "C": 0}),  # post-CTK-107-D-2 expected
+    (1, "pacific_east", {"A": 60, "B": 9, "C": 0}),  # D-3-extrapolated
+    (4, "jf", {"A": 79, "B": 10, "C": 0}),  # D-3-extrapolated
 ]
 
 
