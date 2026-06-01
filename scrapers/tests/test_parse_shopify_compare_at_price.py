@@ -214,6 +214,69 @@ def test_auction_listing_nulls_compare_at_regardless():
     )
 
 
+# --- F1 pair-discipline pins (Wave-1.5 /code-review fold 2026-06-01) ---
+
+def test_heterogeneous_variants_pair_compare_at_with_chosen_variant():
+    """F1 phantom-markdown regression pin. Pre-fix the helper walked all
+    variants looking for any non-empty compare_at, which paired
+    variant[1]'s compare_at with variant[0]'s price on multi-variant
+    frags. Post-fix the helper consults ONLY the variant coerce_price
+    chose (variant[0] here, since variant[0]'s price is non-empty and
+    parseable). variant[0] has no compare_at → None."""
+    variants = [
+        {"sku": "A", "available": True, "price": "80.00"},
+        {"sku": "B", "available": True, "price": "50.00", "compare_at_price": "100.00"},
+    ]
+    # current_price comes from coerce_price(variants) which picks variant[0]'s '80.00'.
+    current_price = Decimal("80.00")
+    result = normalize.coerce_compare_at_price(variants, current_price)
+    assert result is None, (
+        f"heterogeneous-variant must NOT pull variant[1]'s compare_at when "
+        f"variant[0] is the chosen-price variant; got {result!r} (pre-fix "
+        f"shape would return Decimal('100.00') — phantom markdown)"
+    )
+
+
+def test_stale_then_valid_variants_stop_at_chosen():
+    """F1 walk-discipline pin. variant[0] has a stale compare_at
+    ($60 <= $80); variant[1] has a valid compare_at ($100 > $80). The
+    chosen variant under coerce_price is variant[0] (first non-empty
+    price), so the helper consults variant[0]'s compare_at — L2 stale —
+    nulls. variant[1] is never read. Pre-fix the helper also returned
+    None here, but via L2-early-return-after-skipping-empty (different
+    mechanism); post-fix the mechanism is pair-discipline. Behavior
+    parity, different reason — this pin guards against a future
+    refactor that "fixes" L2 by walking forward to later variants."""
+    variants = [
+        {"sku": "A", "available": True, "price": "80.00", "compare_at_price": "60.00"},
+        {"sku": "B", "available": True, "price": "80.00", "compare_at_price": "100.00"},
+    ]
+    current_price = Decimal("80.00")
+    result = normalize.coerce_compare_at_price(variants, current_price)
+    assert result is None, (
+        f"stale-then-valid must null at variant[0]'s L2-stale compare_at; "
+        f"got {result!r}. variant[1]'s valid compare_at is structurally "
+        f"unreachable post-F1 (pair-discipline) and that's the invariant."
+    )
+
+
+def test_nan_compare_at_does_not_crash():
+    """F2 NaN-guard pin. Decimal accepts 'NaN' as a literal, but
+    NaN-comparison (NaN > Decimal('80.00')) raises InvalidOperation
+    outside the parse try/except — pre-fix this would take out the
+    whole scrape on any vendor row carrying compare_at_price='NaN'.
+    Post-fix the is_finite() guard returns None silently. Also covers
+    Infinity / -Infinity / sNaN by the same predicate."""
+    for bad_value in ("NaN", "Infinity", "-Infinity", "sNaN"):
+        variants = [{"sku": "X", "available": True, "price": "80.00", "compare_at_price": bad_value}]
+        current_price = Decimal("80.00")
+        # Must not raise.
+        result = normalize.coerce_compare_at_price(variants, current_price)
+        assert result is None, (
+            f"compare_at_price={bad_value!r} must null silently; got {result!r}"
+        )
+
+
 # --- Bonus: ensure current_price=None alone (price-on-request) nulls compare_at ---
 
 def test_current_price_none_nulls_compare_at():
@@ -235,6 +298,9 @@ def main() -> int:
         test_stale_compare_at_nulls,
         test_no_compare_at_field_nulls,
         test_auction_listing_nulls_compare_at_regardless,
+        test_heterogeneous_variants_pair_compare_at_with_chosen_variant,
+        test_stale_then_valid_variants_stop_at_chosen,
+        test_nan_compare_at_does_not_crash,
         test_current_price_none_nulls_compare_at,
     ]
     failed = 0

@@ -88,27 +88,63 @@ def coerce_price(variants: list[dict]) -> Decimal | None:
 
 
 def coerce_compare_at_price(variants: list[dict], current_price: Decimal | None) -> Decimal | None:
-    """CTK-100: pull the first non-empty compare_at_price from variants as
-    Decimal. Null when no markdown OR markdown invalid per L2
-    (compare_at <= current). Returns None on missing field, empty string,
-    '0.00', or invalid Decimal — same shape as coerce_price. L4 carve-out
-    is structural via the current_price-None guard at the top: when L4
-    nulls current_price for auction rows, compare_at_price returns None
-    here automatically, so vendor markdown never lands on an auction row.
+    """CTK-100: read the compare_at_price of the SAME variant whose price
+    coerce_price would have chosen as current_price. Pair-discipline —
+    variant[i]'s compare_at is consulted only when variant[i] is also the
+    one whose price became current_price.
+
+    Returns None on:
+      - current_price is None (price-on-request OR auction null-out per L4
+        structural carve-out — INV-05 writer-side obligation #1)
+      - chosen variant's compare_at_price missing / empty / '0.00'
+      - chosen variant's compare_at_price unparseable / NaN / Infinity
+      - chosen variant's compare_at_price <= current_price (L2 stale; vendors
+        forget to clear compare_at after a sale ends, so any non-strictly-
+        greater value is treated as stale)
+      - all variants have empty/unparseable price (coerce_price would also
+        return None; nothing to pair against)
+
+    /code-review F1 (Wave-1.5 fold 2026-06-01): pre-fix the helper walked
+    ALL variants looking for any non-empty compare_at, which on multi-
+    variant frags would pair variant[1]'s compare_at with variant[0]'s
+    price ("phantom markdown"). The walk now mirrors coerce_price's:
+    first non-empty/parseable price wins; THAT variant's compare_at is
+    the only one consulted. Single-variant rows are unaffected.
+
+    /code-review F2 (same fold): explicit is_finite() guard catches NaN
+    / Infinity / -Infinity which Decimal(str(...)) accepts but
+    Decimal-comparison raises InvalidOperation on, taking out the whole
+    scrape.
+
+    /code-review F3 (same fold): the "early-return drops later valid
+    variants" hazard structurally dissolves under F1 — only the chosen
+    variant is consulted; "later valid variants" no longer exist as a
+    category.
     """
     if current_price is None:
         return None
     for v in variants:
+        price = v.get("price")
+        if price in (None, "", "0.00"):
+            continue
+        try:
+            Decimal(str(price))
+        except InvalidOperation:
+            continue
+        # Chosen variant — its compare_at is the only one we consult.
         compare_at = v.get("compare_at_price")
         if compare_at in (None, "", "0.00"):
-            continue
+            return None
         try:
             value = Decimal(str(compare_at))
         except InvalidOperation:
-            continue
+            return None
+        if not value.is_finite():
+            return None
         if value > current_price:
             return value
-        # L2: stale compare-at (vendor forgot to clear post-sale). Null out.
+        # L2 stale: compare_at <= current_price (vendor forgot to clear
+        # post-sale, or no markdown at all). Null out.
         return None
     return None
 
