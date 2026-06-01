@@ -124,6 +124,7 @@ category_filter:
     - Angelfish           # fish, 18 items in Livestock (CTK-037 2026-05-10)
     - Aquariums           # equipment — jellyfish-tank leak via blank-PT allowlist (CTK-104 D-2 2026-06-01)
     - Beginner Fish       # fish, 31 items in Livestock (CTK-037 2026-05-10)
+    - Biomedia            # bio-media seeded substrate ("Wild Reef Pre-Seeded Bio Media"); empty-tag bypass closed via brand tag (CTK-107 D-2-tris 2026-06-01 close-gate eyeball-fail)
     - Clam                # clam (TSA out-of-scope per CTK-095 Axis 2 2026-05-30; 12 Maxima/Hippopus/Squamosa/Derasa leaks in_stock)
     - Clownfish           # fish, 19 items in Livestock (CTK-037 2026-05-10)
     - EXPERT ONLY         # reef-safety rating family — fish gate per CTK-104 D-1 structural discriminator (2026-06-01)
@@ -147,3 +148,9 @@ category_filter:
     - Wrasse              # fish singular form (defensive; CTK-095 Axis 2 2026-05-30)
     - Wrasses             # fish plural form (Common Cleaner Wrasse; CTK-095 Axis 2 2026-05-30)
     - WYSIWYG Fish        # fish, 48 items in Livestock (CTK-037 2026-05-10)
+  # CTK-107 D-2-tris (2026-06-01) close-gate eyeball-fail: 2 "Test Livestock"
+  # rows (id 35385 + 35386, $0.51 + $None) — TSA vendor placeholder products
+  # under product_type='Livestock' (in allowlist) + empty tags. Title-based
+  # reject catches both + future Test/placeholder rows.
+  title_denylist:
+    - Test Livestock      # vendor test placeholder rows; catches "Test Livestock" + "Test Livestock Product" (CTK-107 D-2-tris 2026-06-01)
