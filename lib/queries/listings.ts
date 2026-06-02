@@ -44,6 +44,13 @@ export interface Listing {
   // when namedCoralCanonicalName is non-null (LEFT JOIN named_corals).
   // year_introduced removed per CTK-092 / Q-040-11 hold-position path-a.
   namedCoralOriginVendor: string | null;
+  // CTK-047 B-3 cross-surface medal — populated by getListingDropContext()
+  // LEFT JOIN against get_listing_drop_context() RPC (migration 0027) at
+  // getRecentDrops / getCoralAvailability / getVendorInventory. Null when no
+  // CT-observed price-drop event exists within the 24h window for the listing,
+  // or on helpers that don't merge (getRecentArrivals, getRecentPriceDrops).
+  priorPrice: number | null;
+  priceDropObservedAt: string | null;
 }
 
 // Flat row shape returned by the JOIN below. PostgREST's nested-relation
@@ -83,7 +90,43 @@ function rowToListing(row: VendorListingRow): Listing {
     namedCoralCanonicalName: row.named_coral_canonical_name,
     namedCoralSlug: row.named_coral_slug,
     namedCoralOriginVendor: row.named_coral_origin_vendor,
+    // CTK-047 B-3 — defaulted null; the LEFT JOIN merge in getRecentDrops /
+    // getCoralAvailability / getVendorInventory populates these post-
+    // rowToListing for listings present in get_listing_drop_context().
+    priorPrice: null,
+    priceDropObservedAt: null,
   };
+}
+
+// CTK-047 B-1 — per-listing price-drop context.
+// Wraps the get_listing_drop_context() RPC (migration 0027) for the four non-
+// /deals consumers (homepage strip, /coral/[slug], /vendor/[slug]). RPC returns
+// rows only for listings with a CT-observed drop in the window; helpers LEFT
+// JOIN the returned Map back into their primary Listing rows post-fetch, so a
+// listing with no drop event simply doesn't appear in the map.
+//
+// Map keys coerced to Number() because @neondatabase/serverless returns bigint
+// columns as strings; existing rowToListing-shape code treats id as number per
+// the cast-site interface, so the merge must coerce on both sides to keep key
+// equality consistent.
+export async function getListingDropContext(
+  listingIds: number[],
+  windowHours: number = 24,
+): Promise<Map<number, { priorPrice: number; observedAt: string }>> {
+  if (listingIds.length === 0) return new Map();
+  const sql = getNeonSql();
+  const rows = (await sql`
+    SELECT id, prior_price, observed_at
+    FROM get_listing_drop_context(${listingIds}::bigint[], ${windowHours})
+  `) as unknown as { id: number | string; prior_price: number | string; observed_at: string }[];
+  const out = new Map<number, { priorPrice: number; observedAt: string }>();
+  for (const row of rows) {
+    out.set(Number(row.id), {
+      priorPrice: Number(row.prior_price),
+      observedAt: row.observed_at,
+    });
+  }
+  return out;
 }
 
 // Homepage strip per site.md §4.2 + Q-E default policy.
@@ -133,7 +176,15 @@ export async function getRecentDrops(limit = 10): Promise<Listing[]> {
     out.push(rowToListing(row));
     if (out.length >= limit) break;
   }
-  return out;
+  // CTK-047 B-5 — LEFT JOIN drop context onto the rendered set so the strip's
+  // B-4 deriveEvent() can surface price-drop variants alongside just-listed.
+  const context = await getListingDropContext(out.map((l) => l.id));
+  return out.map((l) => {
+    const ctx = context.get(Number(l.id));
+    return ctx
+      ? { ...l, priorPrice: ctx.priorPrice, priceDropObservedAt: ctx.observedAt }
+      : l;
+  });
 }
 
 // /coral/[slug] per site.md §4.1.
@@ -167,7 +218,17 @@ export async function getCoralAvailability(namedCoralId: number): Promise<Listin
     ORDER BY vl.first_seen_at DESC
   `) as unknown as VendorListingRow[];
 
-  return rows.map(rowToListing);
+  const listings = rows.map(rowToListing);
+  // CTK-047 B-5 — LEFT JOIN drop context for cross-surface medal on
+  // <VendorAvailabilityRow>. In-stock rows with priorPrice non-null render
+  // price-drop-new at position 2 in the precedence chain.
+  const context = await getListingDropContext(listings.map((l) => l.id));
+  return listings.map((l) => {
+    const ctx = context.get(Number(l.id));
+    return ctx
+      ? { ...l, priorPrice: ctx.priorPrice, priceDropObservedAt: ctx.observedAt }
+      : l;
+  });
 }
 
 // /vendor/[slug] per site.md §4.5.
@@ -295,14 +356,29 @@ export async function getVendorInventory(
         `;
       })()) as unknown as VendorListingRow[];
 
-      return rows.map(rowToListing);
+      const listings = rows.map(rowToListing);
+      // CTK-047 B-5 — LEFT JOIN drop context for cross-surface medal on
+      // <VendorInventoryRow>. Same merge pattern as getRecentDrops /
+      // getCoralAvailability; per-function call to getListingDropContext()
+      // stays inline (below abstraction threshold per directive 2026-06-02).
+      const context = await getListingDropContext(listings.map((l) => l.id));
+      return listings.map((l) => {
+        const ctx = context.get(Number(l.id));
+        return ctx
+          ? { ...l, priorPrice: ctx.priorPrice, priceDropObservedAt: ctx.observedAt }
+          : l;
+      });
     },
     [
       // V3 prefix bump 2026-06-01 (CTK-100 Wave-3) — Listing shape widened
       // with compareAtPrice; Next.js 15 unstable_cache persists Data Cache
       // across deploys per feedback_unstable_cache_shape_change.md, so V2
       // entries would deserialize without the new field for up to 600s.
-      'getVendorInventoryV3',
+      // V4 prefix bump 2026-06-02 (CTK-047 B-3) — Listing shape widened again
+      // with priorPrice + priceDropObservedAt; same persistence concern. The
+      // V3 entries would deserialize the new fields as undefined for up to
+      // the revalidate window, breaking medal render on cached pages.
+      'getVendorInventoryV4',
       String(vendorId),
       String(page),
       sort,
@@ -310,7 +386,12 @@ export async function getVendorInventory(
       includeOOS ? '1' : '0',
     ],
     {
-      revalidate: 600,
+      // CTK-047 B-2 cascade — /vendor/[slug] medal-bearing surface; cadence
+      // equalized to 5min with /coral/[slug] + /deals + homepage strip per
+      // /lead-architect re-disposition 2026-06-02. Page-level revalidate at
+      // app/vendor/[slug]/page.tsx:31 also drops 600 → 300 so the wrapped
+      // data-cache doesn't outlast the page cache.
+      revalidate: 300,
       tags: [
         `vendor-${vendorId}-page-${page}-${sort}-${category ?? '_'}-${includeOOS ? '1' : '0'}`,
       ],
@@ -413,6 +494,9 @@ function rpcRowToPriceDrop(row: RpcPriceDropRow): PriceDropListing {
     namedCoralSlug: row.named_coral_slug,
     namedCoralOriginVendor: row.named_coral_origin_vendor,
     priorPrice: Number(row.prior_price),
+    // CTK-047 B-3 base-Listing field — same data as observedAt below; PriceDropListing
+    // extension narrows to non-null observedAt for the /deals discriminated union.
+    priceDropObservedAt: row.observed_at,
     observedAt: row.observed_at,
   };
 }
@@ -470,6 +554,10 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
     namedCoralCanonicalName: row.named_coral_canonical_name,
     namedCoralSlug: row.named_coral_slug,
     namedCoralOriginVendor: row.named_coral_origin_vendor,
+    // CTK-047 B-3 — /new is no-price-drop-arm per brand-canon (branding-guide
+    // L252-253); arrival rows never carry drop context.
+    priorPrice: null,
+    priceDropObservedAt: null,
     event: row.event,
     eventAt: row.event_at,
   };

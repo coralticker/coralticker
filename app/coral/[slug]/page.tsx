@@ -12,7 +12,11 @@ import { formatRelativeTime } from '@/lib/format/relative-time';
 import { buildLineageFields } from '@/lib/format/lineage-fields';
 import { VendorAvailabilityRow } from './_components/vendor-availability-row';
 
-export const revalidate = 1800;
+// CTK-047 B-2 — medal-bearing surface; cadence equalized to 5min with /deals
+// + /vendor/[slug] + homepage strip per /lead-architect 2026-06-02. Wrapped
+// data-fetch in getCoralAvailability is plain (no unstable_cache), so the
+// page-level revalidate IS the cache TTL for this surface.
+export const revalidate = 300;
 
 interface PageProps {
   params: Promise<{ slug: string }>;

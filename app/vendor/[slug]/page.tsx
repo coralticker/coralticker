@@ -28,7 +28,12 @@ import { VendorInventoryRow } from './_components/vendor-inventory-row';
 import { PaginationNav } from './_components/pagination-nav';
 import { SortFilterBar } from './_components/sort-filter-bar';
 
-export const revalidate = 600;
+// CTK-047 B-2 cascade — medal-bearing surface; cadence equalized to 5min per
+// /lead-architect re-disposition 2026-06-02. Wrapped data-fetch in
+// getVendorInventory's unstable_cache also drops 600 → 300 in tandem at
+// lib/queries/listings.ts so the data cache doesn't outlast the page cache.
+// /vendors index (no medal) is unaffected.
+export const revalidate = 300;
 
 interface PageProps {
   params: Promise<{ slug: string }>;
