@@ -82,7 +82,6 @@ async function PriceDropsFeed() {
 
 function FeedSkeleton() {
   const fields = [
-    { label: 'Ref', value: '' },
     { label: 'Price', value: '' },
     { label: 'Listed', value: '' },
   ];

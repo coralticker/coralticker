@@ -1,6 +1,8 @@
-// Price-dropped lead sentence omits the vendor by design — the new price is
-// the headline; vendor is recoverable via image alt, Ref field, and card
-// grouping. just-listed / back-in-stock leads keep the vendor inline.
+// Vendor surfaces inline in the lead on every variant via parallel `at {vendor}.`
+// grammar per branding-guide.md §"Lead + row composition" — "Vendor attribution
+// across lead variants" (CTK-047 Q1 lock 2026-06-02). One rule across all three
+// event types; Ref omitted from data row per "Ref. field-presence by composition"
+// (same lock).
 
 import { type DataRowField } from '@/components/ui/data-row';
 import { ListingRowFrame } from '@/components/ui/listing-row-frame';
@@ -23,21 +25,9 @@ function formatPrice(value: number | null): string {
   return `$${value.toFixed(2)}`;
 }
 
-function derivedRef(productUrl: string): string {
-  try {
-    const u = new URL(productUrl);
-    const tail = u.pathname.split('/').filter(Boolean).pop() ?? '';
-    return tail || u.hostname;
-  } catch {
-    return productUrl;
-  }
-}
-
 function buildFields(props: ListingCardProps, isOutOfStock: boolean): DataRowField[] {
   const { listing, event } = props;
-  const fields: DataRowField[] = [
-    { label: 'Ref', value: derivedRef(listing.productUrl) },
-  ];
+  const fields: DataRowField[] = [];
 
   // Event-driven price-drop-new render takes precedence over the
   // invalidated-render when both could apply; the OUT OF STOCK label above
@@ -102,7 +92,7 @@ function buildFields(props: ListingCardProps, isOutOfStock: boolean): DataRowFie
 function leadVerb(props: ListingCardProps): string {
   if (props.event === 'just-listed') return 'listed at';
   if (props.event === 'back-in-stock') return 'back in stock at';
-  return `price dropped — was ${formatPrice(props.priorPrice)}, now ${formatPrice(props.listing.currentPrice)}.`;
+  return 'price dropped at';
 }
 
 export function ListingCard(props: ListingCardProps) {
@@ -119,13 +109,8 @@ export function ListingCard(props: ListingCardProps) {
       leadSlot={
         <p className="text-base leading-snug">
           <strong className="font-bold">{coralName}</strong>{' '}
-          <span className="font-normal">{leadVerb(props)}</span>
-          {props.event === 'price-dropped' ? null : (
-            <>
-              {' '}
-              <span>{listing.vendorDisplayName}</span>.
-            </>
-          )}
+          <span className="font-normal">{leadVerb(props)}</span>{' '}
+          <span>{listing.vendorDisplayName}</span>.
         </p>
       }
     />

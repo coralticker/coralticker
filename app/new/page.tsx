@@ -82,7 +82,6 @@ async function ArrivalsFeed() {
 
 function FeedSkeleton() {
   const fields = [
-    { label: 'Ref', value: '' },
     { label: 'Price', value: '' },
     { label: 'Listed', value: '' },
   ];
