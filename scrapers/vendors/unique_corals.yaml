@@ -106,6 +106,18 @@ hash_anchor: first_product_keys
 # cross-vendor coverage is a seed-list-side concern, not scraper-side.
 originator_prefix: uc
 
+# cohort_oos_at_persist: true — CTK-105 D-4 (Phase 2 close-window; aggregator
+# trust-floor remediation; HARD R2R-launch gate per Jon 2026-06-01). Per Q-1-NEW
+# path (a) ratified 2026-06-02 (Session 1a re-baseline): forward-hygiene only —
+# CTK-107 D-2 + D-2-tris cleared UC's 96-row pre-CTK-094 stale backlog via
+# surgical UPDATE on PARTITION-B rows + tag_denylist (Marco Rocks / MarcoRocks)
+# + fleet-wide chaeto/macroalgae title_denylist forward-binding. Post-CTK-107
+# D-3 dry-run 2026-06-02: 0 would-flip rows on UC. Opt-in locks the cohort-OOS
+# absent-pass mechanism against future delistings that escape the tag_denylist
+# / title_denylist filters. No sample-check required (backlog=0; rowset empty).
+# Expected post-flip listings_oos ~0 on next UC scrape.
+cohort_oos_at_persist: true
+
 # Category filter: structural-class granularity (CORAL bucket + Drygoods
 # variants + niche buckets), distinct from Battlecorals taxonomic-genus
 # (~70 entries) and JF bucket shape (SPS / LPS / WYSIWYG / Frag / etc.).
