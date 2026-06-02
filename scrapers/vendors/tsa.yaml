@@ -154,3 +154,11 @@ category_filter:
   # reject catches both + future Test/placeholder rows.
   title_denylist:
     - Test Livestock      # vendor test placeholder rows; catches "Test Livestock" + "Test Livestock Product" (CTK-107 D-2-tris 2026-06-01)
+    # CTK-107 D-2-quater (2026-06-02) fleet-wide defensive chaeto/macroalgae
+    # add per Jon's "filter chaeto from all vendors just to be safe" 2026-06-01.
+    # TSA already had Macroalgae tag-deny (CTK-041 2026-05-21); title-axis
+    # belt-and-suspenders for tag-shape drift.
+    - Chaeto              # canonical + Chaetomorpha substring catch
+    - Cheato              # misspelling forward-binding
+    - Macroalgae          # generic
+    - Macro Algae         # space-separated variant

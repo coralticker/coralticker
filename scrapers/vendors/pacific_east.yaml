@@ -93,3 +93,13 @@ category_filter:
     - Nerite              # snail belt-and-suspenders (CTK-041 2026-05-21)
     - Snail               # Nerites/Nassarius/Strawberry Conch (CTK-041 2026-05-14)
     - Trochus             # Banded Trochus (CTK-041 2026-05-14)
+  # CTK-107 D-2-quater (2026-06-02) fleet-wide defensive chaeto/macroalgae
+  # add per Jon's "filter chaeto from all vendors just to be safe" 2026-06-01.
+  # No active leak on PE today (in_stock=true scan returned 0 chaeto rows)
+  # but Shopify empty-tag bypass class is structurally identical to BC/POTO/
+  # Vivid; forward-binding deny here.
+  title_denylist:
+    - Chaeto              # canonical + Chaetomorpha substring catch
+    - Cheato              # misspelling forward-binding
+    - Macroalgae          # generic
+    - Macro Algae         # space-separated variant

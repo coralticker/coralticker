@@ -96,3 +96,9 @@ category_filter:
   # would false-fire; compound "Hybrid Tang" is clean).
   title_denylist:
     - Hybrid Tang
+    # CTK-107 D-2-quater (2026-06-02) fleet-wide defensive chaeto/macroalgae
+    # add per Jon's "filter chaeto from all vendors just to be safe" 2026-06-01.
+    - Chaeto                # canonical + Chaetomorpha substring catch
+    - Cheato                # misspelling forward-binding
+    - Macroalgae            # generic
+    - Macro Algae           # space-separated variant

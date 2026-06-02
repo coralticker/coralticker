@@ -158,3 +158,13 @@ category_filter:
     - fragtech                  # 32 items; CFT/fragtech frag racks + coral mounts + plugs (2026-05-28)
     - aquarium                  # 8 items (2026-05-28)
     - sticker                   # 10 items (2026-05-28)
+  # CTK-107 D-2-quater (2026-06-02) fleet-wide defensive chaeto/macroalgae
+  # add per Jon's "filter chaeto from all vendors just to be safe" 2026-06-01.
+  # No active leak on Reef Chasers today (in_stock=true scan returned 0
+  # chaeto rows) — RC's tag_allowlist=['Coral'] gates strictly, so leak risk
+  # is inherently low. Defensive forward-binding for parity with the fleet.
+  title_denylist:
+    - Chaeto                    # canonical + Chaetomorpha substring catch
+    - Cheato                    # misspelling forward-binding
+    - Macroalgae                # generic
+    - Macro Algae               # space-separated variant

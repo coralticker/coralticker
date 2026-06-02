@@ -68,6 +68,16 @@ category_filter:
     - WWC Colony          # WWC-house colonies, 65 items (CTK-037 2026-05-10)
     - WYSIWYG Frag        # WYSIWYG-photographed frags, 159 items (CTK-037 2026-05-10)
   tag_denylist: []  # WWC not needed: Fish has its own product_type (CTK-037 2026-05-10)
+  # CTK-107 D-2-quater (2026-06-02) fleet-wide defensive chaeto/macroalgae
+  # add per Jon's "filter chaeto from all vendors just to be safe" 2026-06-01.
+  # No active leak on WWC today (in_stock=true scan returned 0 chaeto rows)
+  # but Shopify empty-tag bypass class is structurally identical to BC/POTO/
+  # Vivid; forward-binding deny here.
+  title_denylist:
+    - Chaeto              # canonical + Chaetomorpha substring catch
+    - Cheato              # misspelling forward-binding
+    - Macroalgae          # generic
+    - Macro Algae         # space-separated variant
 
 # CTK-041 auction_detection: null-out current_price on auction listings per
 # Jon 2026-05-14 directive. Auctions stay visible in /new (rendered as

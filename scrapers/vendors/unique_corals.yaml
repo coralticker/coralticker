@@ -220,6 +220,12 @@ category_filter:
   # at .claude/plans/tickets/CTK-096/results.md Session 2.
   # Alphabetized.
   title_denylist:
+    # CTK-107 D-2-quater (2026-06-02) fleet-wide defensive chaeto/macroalgae add
+    # per Jon's "filter chaeto from all vendors just to be safe" 2026-06-01.
+    - Chaeto                # canonical + Chaetomorpha substring catch
+    - Cheato                # misspelling forward-binding
+    - Macroalgae            # generic
+    - Macro Algae           # space-separated variant
     - "ARID "
     - Dalua
     - DaStaCo
