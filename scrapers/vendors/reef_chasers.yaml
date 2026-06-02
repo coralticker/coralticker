@@ -100,6 +100,15 @@ hash_anchor: first_product_keys
 # no special YAML config needed.
 originator_prefix: null
 
+# cohort_oos_at_persist: true — CTK-105 D-4 (Phase 2 close-window; aggregator
+# trust-floor remediation; HARD R2R-launch gate per Jon 2026-06-01). Q-4-NEW
+# path (a) batch member; /lead-backend signed off RC sample-check 2026-06-02
+# at 1/1 delisted (full rowset, single stale URL). D-3 would-flip rowset = 1
+# PARTITION-A (`RC Dream Catcher Acropora`, last_seen_at 2026-05-28). Expected
+# post-flip listings_oos ~1 on next RC scrape (Session 3a recalibrated anchor;
+# trivial absolute count). RC = hourly cadence.
+cohort_oos_at_persist: true
+
 # Category filter: TAG-based allowlist (Q-4 framework extension, CTK-086
 # Session 2). RC's product_type is EMPTY ('') universally across all 249
 # products — taxonomy lives entirely in tags. Distinct from all prior
