@@ -162,3 +162,15 @@ category_filter:
     - Starfish                  # singular per Vivid's canon (2026-05-27)
     - Tube Worms                # plural (2026-05-27)
     - Urchin                    # singular per Vivid's canon (2026-05-27)
+  # CTK-107 D-2-quater (2026-06-02) close-gate eyeball-fail round 2: Vivid
+  # "Chaetomorpha Macro Algae" (id 72681) leaked via product_type='Corals
+  # and Inverts' (in allowlist) + soft-coral-tagged ('Soft Corals',
+  # 'sarcophyton-sp'). Tag-based reject would conflict with legit soft-coral
+  # tags, so title-based is the durable path. 4 entries deny chaeto/
+  # macroalgae patterns; "Chaeto" substring catches Chaetomorpha
+  # case-insensitively.
+  title_denylist:
+    - Chaeto                    # canonical chaeto + Chaetomorpha substring catch
+    - Cheato                    # POTO-spelling misspelling forward-binding
+    - Macroalgae                # generic macroalgae catch
+    - Macro Algae               # space-separated variant
