@@ -28,6 +28,17 @@
 --
 -- Idempotent per the CTK-028/032/033/034/038/061 convention:
 -- CREATE OR REPLACE FUNCTION with unchanged signature.
+--
+-- ─── Disposition note (added 2026-06-02 at CTK-047 + CTK-109 plan-draft) ───
+-- The auction_end_time IS NULL predicate this header punts to CTK-047
+-- territory lands at migration 0027 inside the generalized
+-- get_listing_drop_context(listing_ids, window_hours) function. CTK-109
+-- frontend swaps /deals from get_recent_price_drops() to
+-- get_listing_drop_context(NULL, 24) — same row set as today bit-for-bit
+-- plus the auction predicate plus compare_at_price in the projection.
+-- No rework of 0026's body needed — get_recent_price_drops() stays in
+-- place but unused after CTK-109 frontend swap; future cleanup CTK drops
+-- it once caller-audit confirms zero remaining callers.
 
 CREATE OR REPLACE FUNCTION get_recent_price_drops()
 RETURNS TABLE (
