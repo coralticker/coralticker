@@ -225,3 +225,16 @@ category_filter:
     - "DCC "                # Jebao DCC pump model prefix — trailing space avoids partial matches; catches DCC 200/300 + variants
     - "DCS "                # Jebao DCS pump model prefix — same shape as DCC
     - Impeller              # universal pump-part suffix; catches Impeller SKUs across model lines; no coral-noun collision observed
+    # CTK-107 D-2-quater (2026-06-02) close-gate eyeball-fail round 2: 3 BC-specific promo/event/macroalgae rows + 4 fleet-wide
+    # defensive chaeto/macroalgae patterns per Jon's "filter chaeto from all vendors just to be safe" directive 2026-06-01.
+    # "All stars" catches "BC All stars grow out 2025!!!" without false-killing the 3 Awarewolf/Calacali/Copps grow-out
+    # 2025 entries (those are legit competition coral frags). "Battle 2022" catches the Blood Bank Battle 2022 tee without
+    # false-killing the 13 other BC "Battle"-prefixed rows (Battlebox grade bundles + Battle De Fuego/Battleberry/Battlestag
+    # corals + Battlegrass macroalgae — Battlebox stays per Jon "fragpack precedent for PEA" 2026-06-01).
+    - All stars             # BC All stars grow out 2025!!! promo entry — specific to BC promo lineup, no coral collision
+    - Battlegrass           # BC house chaeto/macroalgae brand-name; single specific match
+    - Battle 2022           # Blood Bank Battle 2022 tee; year-stamped event/tournament merch shape
+    - Chaeto                # fleet-wide chaeto/macroalgae catch (CTK-107 D-2-quater 2026-06-02) — case-insensitive substring also catches Chaetomorpha
+    - Cheato                # POTO-style misspelling forward-binding (CTK-107 D-2-quater 2026-06-02)
+    - Macroalgae            # generic macroalgae catch (CTK-107 D-2-quater 2026-06-02)
+    - Macro Algae           # space-separated variant catch (CTK-107 D-2-quater 2026-06-02)
