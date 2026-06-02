@@ -85,6 +85,15 @@ hash_anchor: first_product_keys
 # matcher §3.4 stages 1-2 directly without YAML config.
 originator_prefix: null
 
+# cohort_oos_at_persist: true — CTK-105 D-4 (Phase 2 close-window; aggregator
+# trust-floor remediation; HARD R2R-launch gate per Jon 2026-06-01). Q-4-NEW
+# path (a) batch member; /lead-backend signed off Vivid sample-check
+# 2026-06-02 at 4/4 delisted (full rowset; BLOCK A = BLOCK B by row count).
+# D-3 would-flip rowset = 4 PARTITION-A. Expected post-flip listings_oos ~4
+# (Session 3a recalibrated anchor; small absolute count). Vivid = hourly
+# cadence; cohort-OOS pass fires on next scheduled scrape.
+cohort_oos_at_persist: true
+
 # Category filter: bucket-shape allowlist (similar to JF SPS/LPS/WYSIWYG
 # pattern), distinct from Battlecorals' taxonomic-genus (~70 entries) and
 # UC's structural-class shape.
