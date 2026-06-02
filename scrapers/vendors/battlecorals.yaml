@@ -93,6 +93,19 @@ hash_anchor: first_product_keys
 # behavior change.
 originator_prefix: battlecorals
 
+# cohort_oos_at_persist: true — CTK-105 D-4 (Phase 2 close-window; aggregator
+# trust-floor remediation; HARD R2R-launch gate per Jon 2026-06-01). Per Q-1-NEW
+# path (a) ratified 2026-06-02 (Session 1a re-baseline): forward-hygiene only —
+# CTK-107 D-2 + D-2-tris + D-2-quater cleared BC's 34-row pre-CTK-094 stale
+# backlog via surgical UPDATE on PARTITION-B rows + title_denylist forward-
+# binding (Jebao pumps + All stars / Battlegrass / Battle 2022 + fleet-wide
+# chaeto/macroalgae). Post-CTK-107 D-3 dry-run 2026-06-02: 0 would-flip rows
+# on BC. Opt-in locks the cohort-OOS absent-pass mechanism against future
+# delistings that escape the title_denylist (e.g., a new product_type bypassing
+# both allowlist and title-substring filter). No sample-check required
+# (backlog=0; rowset empty). Expected post-flip listings_oos ~0 on next scrape.
+cohort_oos_at_persist: true
+
 # Category filter: taxonomic-granularity (genus + species) product_types,
 # distinct from JF's bucket shape (SPS/LPS/WYSIWYG/etc.).
 #
