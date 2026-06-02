@@ -168,6 +168,18 @@ category_filter:
   # Excluded by allowlist omission: 'merch' (4 buyable: tee/lens/glasses/hoodie),
   # 'Gift Card' (1), 'addon' (5), 'auction' (1 — auctions are ReefnBid/CTK-007's
   # contract, NOT POTO Shopify; auction_end_time stays NULL per plan §INV-05).
+  # CTK-107 D-2-quater (2026-06-02) close-gate eyeball-fail round 2: POTO
+  # "Nice bag full of CHEATO" (id 72921) + "Atomic Broccoli Macroalgae"
+  # (id 72884) leaked via empty-tag bypass of product_type=live sale (in
+  # allowlist) + product_type='' (in allowlist). title_denylist axis opens
+  # here (previously absent on POTO). 4 entries deny chaeto/macroalgae
+  # patterns across Cheato (POTO spelling) + Chaeto (canonical) +
+  # Macroalgae + Macro Algae (space variant).
+  title_denylist:
+    - Chaeto                    # canonical chaeto + Chaetomorpha catch (case-insensitive substring)
+    - Cheato                    # POTO-spelling misspelling forward-binding
+    - Macroalgae                # generic macroalgae catch
+    - Macro Algae               # space-separated variant
 
 # POST-SHIP WATCH (CTK-088 fold-2; /lead-backend per-vendor close-monitor):
 #   (a) NEW-BUCKET DROP — did a new product_type appear that the allowlist
