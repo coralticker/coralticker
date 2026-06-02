@@ -45,6 +45,17 @@ hash_anchor: first_product_keys
 # for this vendor.
 originator_prefix: null
 
+# cohort_oos_at_persist: true — CTK-105 D-4 (Phase 2 close-window; aggregator
+# trust-floor remediation; HARD R2R-launch gate per Jon 2026-06-01). Q-4-NEW
+# path (a) batch member; /lead-backend signed off PE sample-check 2026-06-02
+# at 10/10 delisted (BLOCK A top-5 by price + BLOCK B random-5, seed=42). D-3
+# would-flip rowset = 52 PARTITION-A (CTK-094 fold #4 excludes 19 PARTITION-B
+# per CTK-107 D-1 partition extension Session 3a). Expected post-flip
+# listings_oos ~50 (Session 3a recalibrated anchor); halt-and-surface fires
+# materially below per CTK-094 §3.5 partial-success signals. PE = hourly
+# cadence; cohort-OOS pass fires on next scheduled scrape.
+cohort_oos_at_persist: true
+
 # CTK-037 category-filter: coral + anemones + clams (per D1 lean (a) locked
 # 2026-05-10 by Jon — keep named-anemone + named-clam seed-list coverage
 # intact; ECC Sherman/Rainbow BTA + ORA Maxima Clam Ultra Gold all match here).
