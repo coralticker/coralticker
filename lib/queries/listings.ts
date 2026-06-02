@@ -457,6 +457,7 @@ interface RpcPriceDropRow {
   vendor_id: number;
   raw_title: string;
   current_price: number | string | null;
+  compare_at_price: number | string | null;
   in_stock: boolean;
   image_url: string | null;
   product_url: string;
@@ -479,12 +480,11 @@ function rpcRowToPriceDrop(row: RpcPriceDropRow): PriceDropListing {
     vendorDisplayName: row.vendor_display_name,
     rawTitle: row.raw_title,
     currentPrice: row.current_price !== null ? Number(row.current_price) : null,
-    // get_recent_price_drops() RPC (migration 0008) does not return
-    // compare_at_price. /deals consumes CT-observed price-drop events from
-    // price_history; vendor-side markdown lives on vendor_listings and never
-    // enters price_history (CTK-100 L4). Wave-3 leaves the /deals integration
-    // for a follow-up CTK (plan L3 deferral).
-    compareAtPrice: null,
+    // CTK-109: get_listing_drop_context() (migration 0027) projects
+    // compare_at_price. Mirrors the plain-JOIN mapper at rowToListing().
+    // Supersedes the migration-0008 deferral noted in earlier comment —
+    // /deals now renders vendor-markdown alongside the price-drop medal.
+    compareAtPrice: row.compare_at_price !== null ? Number(row.compare_at_price) : null,
     inStock: row.in_stock,
     imageUrl: row.image_url,
     productUrl: row.product_url,
@@ -501,9 +501,15 @@ function rpcRowToPriceDrop(row: RpcPriceDropRow): PriceDropListing {
   };
 }
 
+// CTK-109: /deals consumes the generalized RPC (migration 0027) called fleet-
+// wide with listing_ids = NULL — behaviorally identical to the retired
+// get_recent_price_drops() byte-for-byte (verified C2 equivalence at cf7e2ff)
+// but now projects compare_at_price for vendor-markdown render parity. The old
+// function is orphan post-deploy; migration 0028 DROPs it once the deploy
+// smoke confirms the swap is live.
 export async function getRecentPriceDrops(): Promise<PriceDropListing[]> {
   const sql = getNeonSql();
-  const rows = (await sql`SELECT * FROM get_recent_price_drops()`) as unknown as RpcPriceDropRow[];
+  const rows = (await sql`SELECT * FROM get_listing_drop_context(NULL, 24)`) as unknown as RpcPriceDropRow[];
   return rows.map(rpcRowToPriceDrop);
 }
 
@@ -520,6 +526,7 @@ interface RpcArrivalRow {
   vendor_id: number;
   raw_title: string;
   current_price: number | string | null;
+  compare_at_price: number | string | null;
   in_stock: boolean;
   image_url: string | null;
   product_url: string;
@@ -542,10 +549,10 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
     vendorDisplayName: row.vendor_display_name,
     rawTitle: row.raw_title,
     currentPrice: row.current_price !== null ? Number(row.current_price) : null,
-    // get_recent_arrivals() RPC (migration 0007) does not return
-    // compare_at_price. Backend-lane RPC widen is the path to expose vendor
-    // markdown on /new — Wave-3 defers per directive (out of scope).
-    compareAtPrice: null,
+    // CTK-109: get_recent_arrivals() RPC widened with compare_at_price in
+    // migration 0027. /new now renders vendor-markdown on arrival rows
+    // alongside the just-listed / back-in-stock event-type lead.
+    compareAtPrice: row.compare_at_price !== null ? Number(row.compare_at_price) : null,
     inStock: row.in_stock,
     imageUrl: row.image_url,
     productUrl: row.product_url,
