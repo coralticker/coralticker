@@ -75,8 +75,12 @@ def _apply_cohort_gate(
     Gate predicate: cohort decisions fire only when the run is going to be
     treated as fully-successful — no canary trip, no matcher exceptions, no
     partial-category degradation. Any one of these signals disables cohort
-    OOS persistence for this run (cohort decisions dropped; per-item rows
-    persist normally; status determined separately downstream).
+    OOS persistence for this run (cohort decisions dropped; per-item
+    decisions still flow to the caller; status determined separately
+    downstream). CTK-116: on canary trip the caller additionally skips
+    persist_phase_a entirely, so neither list reaches the data plane on a
+    failed run — this gate's job stays the same (cohort drop), the persist
+    gate lives at the run.py Stage 6 call site.
 
     Extracted from inline run.py code so the gate logic can be unit-tested
     independently of the orchestrator's db + parser dependencies. The three
@@ -344,13 +348,16 @@ def run(slug: str) -> int:
                 f"{error_message}; {matcher_msg}" if error_message else matcher_msg
             )
 
-        # Stage 5.6 (CTK-094) — Canary check moved BEFORE persist_phase_a so
-        # cohort-OOS decisions can be gated on the canary outcome per §3
-        # short-circuit: cohort-OOS MUST NOT land on non-success runs
-        # (SchemaChangeError / canary-tripped / config-error). The per-item
-        # decisions persist regardless of canary outcome (today's semantic
-        # preserved — data parsed is data written). Only the synthetic cohort-
-        # OOS decisions hold behind the gate.
+        # Stage 5.6 (CTK-094) — Canary check runs BEFORE persist_phase_a.
+        # CTK-116: the canary outcome now gates ALL persistence, not just
+        # the cohort-OOS decisions. A canary-tripped run is a failed run,
+        # and a failed run leaves zero data-plane footprint (vendor_listings
+        # + price_history untouched; the scraper_runs row still lands with
+        # full counters). The CTK-094 "data parsed is data written" semantic
+        # died here: TSA run 842 (canary-blocked at listings_seen=333 vs
+        # ~2,470 7d-median) diffed a truncated fetch against the full DB
+        # catalog and restock-flipped an operator-bridged row — individually
+        # plausible decisions computed from a corrupt premise.
         median_7d = db.get_7d_median_seen(conn, vendor_row["id"])
         # CTK-094 D-2 (i): YAML opt-out of the median-ratio canary. POTO sets
         # canary:false (volatile 21-164 buyable count false-trips median).
@@ -453,14 +460,28 @@ def run(slug: str) -> int:
         # finalized so a mirror-loop timeout no longer loses scrape data
         # (CTK-019 #55: 'image-only failure does NOT fail the listing row').
         # CTK-094: `decisions` includes cohort-OOS entries when cohort_safe.
-        mirror_queue = diff.persist_phase_a(conn, vendor_row, decisions, existing_by_url, run_id)
+        # CTK-116 D-1 — canary gates persist. The decisions were classified
+        # against a fetch the canary judged untrustworthy (truncated/partial
+        # catalog), so persisting them writes corrupt-premise data. Skip
+        # Phase A entirely; mirror_queue stays empty (Phase B additionally
+        # gates on status == 'success'). Counters still flow to
+        # finish_scraper_run below — get_7d_median_seen's ratchet inclusion
+        # needs listings_seen from canary-only failures.
+        if canary_tripped:
+            log.error(
+                "persist skipped (canary): %d classified decision(s) not persisted",
+                len(decisions),
+            )
+        else:
+            mirror_queue = diff.persist_phase_a(conn, vendor_row, decisions, existing_by_url, run_id)
 
         # Status assignment uses canary outcome computed above (CTK-094
-        # reorder). Per-item decisions wrote regardless of canary; status
-        # reflects the canary result + matcher exceptions + marker-broken
-        # escalation (Session 5 fold #2). Canary supersedes — a partial-result
-        # marker-broken run that ALSO trips canary lands status='failed' so
-        # the louder signal wins.
+        # reorder). CTK-116: a canary trip means NOTHING persisted (D-1 gate
+        # above) — status='failed' describes a zero-data-plane-footprint run.
+        # Status reflects the canary result + matcher exceptions + marker-
+        # broken escalation (Session 5 fold #2). Canary supersedes — a
+        # partial-result marker-broken run that ALSO trips canary lands
+        # status='failed' so the louder signal wins.
         if canary_tripped:
             status = "failed"
             # CTK-094 Session 6 fold #3 (/code-review F3): preserve a prior
@@ -477,6 +498,12 @@ def run(slug: str) -> int:
             error_message = (
                 f"{error_message}; {canary_msg}" if error_message else canary_msg
             )
+            # CTK-116 D-1 — disambiguator for ops queries: this run's counters
+            # describe classified-but-not-persisted work. Appended AFTER
+            # canary_msg so the get_7d_median_seen ratchet substring
+            # ('silent canary tripped:' — contains-LIKE per db.py:162-195)
+            # survives intact.
+            error_message = f"{error_message}; persist skipped (canary)"
         elif marker_broken_force_partial:
             # CTK-094 Session 5 fold #2 (/code-review F2): marker-broken
             # escalation persisted healthy-categories' items via the in-try

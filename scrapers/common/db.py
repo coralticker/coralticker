@@ -6,11 +6,14 @@ psycopg 3 against NEON_DATABASE_URL after the 2026-05-15 Supabase org-level
 
 Connection shape: psycopg 3 with autocommit=True + dict_row row_factory.
 autocommit matches the per-statement write pattern the scrapers had under
-PostgREST (no multi-statement transactions in Phase 1; Phase B's per-row
-UPDATE on fail-soft also wants autocommit so a single UPDATE doesn't sit
-in an open tx if the next row raises). dict_row preserves the supabase-py
-".data is list-of-dicts" shape that diff.py / matcher.py / the canary test
-already assume, so the cut is mechanical for callers.
+PostgREST (Phase B's per-row UPDATE on fail-soft wants autocommit so a
+single UPDATE doesn't sit in an open tx if the next row raises). dict_row
+preserves the supabase-py ".data is list-of-dicts" shape that diff.py /
+matcher.py / the canary test already assume, so the cut is mechanical for
+callers. One explicit transaction exists (CTK-116 D-2): persist_phase_a
+wraps its write blocks in `with conn.transaction():` so a mid-persist
+exception rolls back to zero data-plane footprint — psycopg issues
+BEGIN/COMMIT around the block and autocommit resumes after exit.
 
 Public API (parameter name client→conn for clarity; positional callers
 unaffected):

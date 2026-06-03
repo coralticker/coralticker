@@ -182,6 +182,13 @@ def persist_phase_a(
     price_history on (price, stock) change. Returns the Phase B mirror queue
     (mirror-strategy rows whose image_url is NULL after Phase A).
 
+    CTK-116 D-2: all writes run inside one conn.transaction() block — a
+    mid-persist exception rolls the data plane back to zero footprint
+    instead of stranding a partial upsert set under autocommit. The caller
+    (run.py Stage 6) additionally skips this function entirely on canary
+    trip (CTK-116 D-1) — failed runs leave no vendor_listings /
+    price_history footprint by either path.
+
     Per arch §3.2 + CTK-023 Call 2: NO matcher call between stage 5 and stage 6
     in CTK-024 — Pacific East ships matcher-naive. Retro-fit when CTK-025
     lands the inline scaffold (one method-call addition between Phase A
@@ -340,98 +347,115 @@ def persist_phase_a(
                 "_product_url": product_url,  # join key; stripped before INSERT
             })
 
-    # UPSERT vendor_listings per-row with dynamic column list — preserves the
-    # absent-column = keep-existing contract via per-row dynamic ON CONFLICT
-    # DO UPDATE in _upsert_listing_row, by including only the row's actual
-    # keys in both the INSERT column list and the ON CONFLICT DO UPDATE SET
-    # clause. Per-row execute keeps the heterogeneous-column path clean
-    # (CTK-025 match-field preservation rule + CTK-024 image_url-on-NEW-only
-    # rule both ride on this); RETURNING id, product_url builds the
-    # listing_id-by-url map inline (CTK-024 Session 5 — replaces the
-    # post-upsert SELECT round-trip).
-    if upserts:
-        with conn.cursor() as cur:
-            for row in upserts:
-                lid, purl = _upsert_listing_row(cur, row)
-                id_by_url[purl] = lid
-
-    # Touch unchanged rows — UPDATE last_seen_at AND compare_at_price per
-    # row. CTK-100 Wave-2 hotfix 2026-06-01: pre-fix this UPDATE wrote only
-    # last_seen_at, so F6's UPSERT-path compare_at_price wiring at L275-287
-    # was dark for every decision=='unchanged' row (the dominant steady-
-    # state case). The UNNEST-into-data-table shape carries per-row
-    # compare_at_price; psycopg adapts the Decimal-or-None mixed list to
-    # numeric[] cleanly. Cast on the array side (%s::numeric[]) — without
-    # the cast, psycopg emits a text[] which won't match the column type.
-    # Single chunked UPDATE per 1000-row batch; chunk-size matches the
-    # pre-fix shape (PostgREST URL-length workaround inheritance, no SQL
-    # constraint).
-    if touch_payloads:
-        with conn.cursor() as cur:
-            for chunk in _chunks(touch_payloads, 1000):
-                ids = [p["id"] for p in chunk]
-                compare_ats = [p["compare_at_price"] for p in chunk]
-                cur.execute(
-                    "UPDATE vendor_listings AS vl "
-                    "SET last_seen_at = %s, "
-                    "    compare_at_price = data.compare_at_price "
-                    "FROM (SELECT * FROM UNNEST(%s::bigint[], %s::numeric[])) "
-                    "  AS data(id, compare_at_price) "
-                    "WHERE vl.id = data.id",
-                    (now, ids, compare_ats),
-                )
-
-    # CTK-094 cohort-OOS chunked UPDATE — flip in_stock=false ONLY on the
-    # absent-set rows. Same chunked-ANY shape as touch_ids above. Direct
-    # UPDATE (no UPSERT/ON CONFLICT) because the synthetic row would fail
-    # NOT NULL on raw_title/normalized_title at the INSERT-side of an
-    # UPSERT before ON CONFLICT could route to DO UPDATE — Postgres
-    # evaluates NOT NULL before unique-conflict resolution. existing_id is
-    # known from classify (URL was in existing_by_url with in_stock=True),
-    # so the UPDATE-by-id path is both correct and cheaper than the UPSERT
-    # round-trip.
-    #
-    # CTK-094 fold #3 (/code-review F3): last_seen_at deliberately NOT
-    # touched. The column semantic is "last time we saw this URL in a
-    # scrape"; cohort-OOS rows are absent FROM the scrape, so bumping
-    # last_seen_at would falsify the staleness clock and break downstream
-    # consumers — coral page 7d window (lib/queries/listings.ts), vendor +
-    # deals 14d windows, rematch.py 7d backfill, named-corals
-    # MAX(last_seen_at) surface, and the arch §2.2 stale-window mechanism
-    # documented at poto.py:75 ("absent → no touch → goes stale → filtered
-    # out"). The stale-window ages cohort-flipped rows out on its own
-    # timeline; the in_stock=false flip is the cohort branch's only write.
-    if cohort_oos_ids:
-        with conn.cursor() as cur:
-            for chunk in _chunks(cohort_oos_ids, 1000):
-                cur.execute(
-                    "UPDATE vendor_listings SET in_stock = false "
-                    "WHERE id = ANY(%s)",
-                    (chunk,),
-                )
-
-    # Hand listing_ids back to the mirror queue.
-    for t in mirror_queue:
-        if t.listing_id is None:
-            t.listing_id = id_by_url.get(t.product_url)
-
-    # Insert price_history. Homogeneous columns — executemany pipelines the
-    # batch cleanly.
-    if history:
-        history_rows = []
-        for h in history:
-            lid = id_by_url.get(h["_product_url"])
-            if lid is None:
-                log.warning("price_history: no listing_id for %s — skip", h["_product_url"])
-                continue
-            history_rows.append((lid, h["price"], h["in_stock"], h["scraper_run_id"]))
-        if history_rows:
+    # CTK-116 D-2 — Phase A atomicity boundary. The connection is
+    # autocommit=True (db.py CTK-043 cut-1), so without an explicit
+    # transaction an exception at row N of the write blocks below strands
+    # N committed rows while the outer catch finalizes status='failed' —
+    # partial footprint, same failed-run write-integrity class as the
+    # canary gap D-1 closes. conn.transaction() issues BEGIN on entry,
+    # COMMIT on clean exit, ROLLBACK on exception (psycopg 3 explicit
+    # transaction on an autocommit connection). One transaction across
+    # ~2,500 upserts + history INSERTs + chunked UPDATEs is sub-minute on
+    # Neon at v1 volume — no lock-duration concern. Boundaries per plan
+    # D-2: finish_scraper_run stays OUTSIDE (the run row must land even
+    # when Phase A rolls back; it executes after this function returns or
+    # raises) and Phase B stays outside (its per-row fail-soft UPDATE
+    # pattern wants autocommit per db.py:8-10).
+    with conn.transaction():
+        # UPSERT vendor_listings per-row with dynamic column list — preserves the
+        # absent-column = keep-existing contract via per-row dynamic ON CONFLICT
+        # DO UPDATE in _upsert_listing_row, by including only the row's actual
+        # keys in both the INSERT column list and the ON CONFLICT DO UPDATE SET
+        # clause. Per-row execute keeps the heterogeneous-column path clean
+        # (CTK-025 match-field preservation rule + CTK-024 image_url-on-NEW-only
+        # rule both ride on this); RETURNING id, product_url builds the
+        # listing_id-by-url map inline (CTK-024 Session 5 — replaces the
+        # post-upsert SELECT round-trip).
+        if upserts:
             with conn.cursor() as cur:
-                cur.executemany(
-                    "INSERT INTO price_history (listing_id, price, in_stock, scraper_run_id) "
-                    "VALUES (%s, %s, %s, %s)",
-                    history_rows,
-                )
+                for row in upserts:
+                    lid, purl = _upsert_listing_row(cur, row)
+                    id_by_url[purl] = lid
+
+        # Touch unchanged rows — UPDATE last_seen_at AND compare_at_price per
+        # row. CTK-100 Wave-2 hotfix 2026-06-01: pre-fix this UPDATE wrote only
+        # last_seen_at, so F6's UPSERT-path compare_at_price wiring at L275-287
+        # was dark for every decision=='unchanged' row (the dominant steady-
+        # state case). The UNNEST-into-data-table shape carries per-row
+        # compare_at_price; psycopg adapts the Decimal-or-None mixed list to
+        # numeric[] cleanly. Cast on the array side (%s::numeric[]) — without
+        # the cast, psycopg emits a text[] which won't match the column type.
+        # Single chunked UPDATE per 1000-row batch; chunk-size matches the
+        # pre-fix shape (PostgREST URL-length workaround inheritance, no SQL
+        # constraint).
+        if touch_payloads:
+            with conn.cursor() as cur:
+                for chunk in _chunks(touch_payloads, 1000):
+                    ids = [p["id"] for p in chunk]
+                    compare_ats = [p["compare_at_price"] for p in chunk]
+                    cur.execute(
+                        "UPDATE vendor_listings AS vl "
+                        "SET last_seen_at = %s, "
+                        "    compare_at_price = data.compare_at_price "
+                        "FROM (SELECT * FROM UNNEST(%s::bigint[], %s::numeric[])) "
+                        "  AS data(id, compare_at_price) "
+                        "WHERE vl.id = data.id",
+                        (now, ids, compare_ats),
+                    )
+
+        # CTK-094 cohort-OOS chunked UPDATE — flip in_stock=false ONLY on the
+        # absent-set rows. Same chunked-ANY shape as touch_ids above. Direct
+        # UPDATE (no UPSERT/ON CONFLICT) because the synthetic row would fail
+        # NOT NULL on raw_title/normalized_title at the INSERT-side of an
+        # UPSERT before ON CONFLICT could route to DO UPDATE — Postgres
+        # evaluates NOT NULL before unique-conflict resolution. existing_id is
+        # known from classify (URL was in existing_by_url with in_stock=True),
+        # so the UPDATE-by-id path is both correct and cheaper than the UPSERT
+        # round-trip.
+        #
+        # CTK-094 fold #3 (/code-review F3): last_seen_at deliberately NOT
+        # touched. The column semantic is "last time we saw this URL in a
+        # scrape"; cohort-OOS rows are absent FROM the scrape, so bumping
+        # last_seen_at would falsify the staleness clock and break downstream
+        # consumers — coral page 7d window (lib/queries/listings.ts), vendor +
+        # deals 14d windows, rematch.py 7d backfill, named-corals
+        # MAX(last_seen_at) surface, and the arch §2.2 stale-window mechanism
+        # documented at poto.py:75 ("absent → no touch → goes stale → filtered
+        # out"). The stale-window ages cohort-flipped rows out on its own
+        # timeline; the in_stock=false flip is the cohort branch's only write.
+        if cohort_oos_ids:
+            with conn.cursor() as cur:
+                for chunk in _chunks(cohort_oos_ids, 1000):
+                    cur.execute(
+                        "UPDATE vendor_listings SET in_stock = false "
+                        "WHERE id = ANY(%s)",
+                        (chunk,),
+                    )
+
+        # Hand listing_ids back to the mirror queue. (In-memory only; lives
+        # inside the transaction block to preserve the pre-CTK-116 statement
+        # order, not because it needs the boundary.)
+        for t in mirror_queue:
+            if t.listing_id is None:
+                t.listing_id = id_by_url.get(t.product_url)
+
+        # Insert price_history. Homogeneous columns — executemany pipelines the
+        # batch cleanly.
+        if history:
+            history_rows = []
+            for h in history:
+                lid = id_by_url.get(h["_product_url"])
+                if lid is None:
+                    log.warning("price_history: no listing_id for %s — skip", h["_product_url"])
+                    continue
+                history_rows.append((lid, h["price"], h["in_stock"], h["scraper_run_id"]))
+            if history_rows:
+                with conn.cursor() as cur:
+                    cur.executemany(
+                        "INSERT INTO price_history (listing_id, price, in_stock, scraper_run_id) "
+                        "VALUES (%s, %s, %s, %s)",
+                        history_rows,
+                    )
 
     log.info(
         "Phase A complete: %d upserts + %d touches + %d cohort-oos + %d history rows; %d Phase B mirrors queued",
