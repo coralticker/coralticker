@@ -68,6 +68,15 @@ TSA_CATEGORY_FILTER = {
         "Not Reef Safe", "Predator", "Reef Safe", "Reef Safe Caution",
         "Refugiums", "Tang", "Tilefish", "Wrasse", "Wrasses", "WYSIWYG Fish",
     ],
+    # Mirrors scrapers/vendors/tsa.yaml title_denylist. The prior mirror omitted
+    # this axis entirely (stale vs. CTK-107's title-axis additions); brought to
+    # full parity here so the CTK-112 "Late Fees" reject + false-kill guard tests
+    # exercise the same predicate the production YAML carries. Entries: CTK-107
+    # placeholder + chaeto/macroalgae belt-and-suspenders, CTK-112 store-credit SKU.
+    "title_denylist": [
+        "Test Livestock", "Chaeto", "Cheato", "Macroalgae", "Macro Algae",
+        "Late Fees",
+    ],
 }
 
 
@@ -457,6 +466,47 @@ def test_filter_rejects_equipment_tag_under_blank_pt(products):
         )
 
 
+# ─── CTK-112: title_denylist rejects the "Late Fees" store-credit/penalty SKU ──
+def test_filter_rejects_late_fees_store_credit_sku(products):
+    """CTK-112 (2026-06-03) — "Late Fees" ($361) is a store-credit / penalty SKU,
+    not livestock. It leaked to /new because product_type='' is allowlisted (for
+    blank-PT coral recovery, CTK-037 Q-8 path (a)) and tags=[] blinds the
+    tag_denylist — only the title axis catches it. Pin the structural shape that
+    made it leak (blank PT + empty tags) so the reject is attributed to the
+    title_denylist axis, not an incidental tag/PT block."""
+    product = {
+        "title": "Late Fees",
+        "product_type": "",   # blank-PT allowlist entry — the leak surface
+        "tags": [],           # empty tags — tag_denylist is blind here
+        "variants": [{"available": True}],
+    }
+    assert _should_keep(product, TSA_CATEGORY_FILTER) is False, (
+        "'Late Fees' should reject via title_denylist under blank-PT + empty-tags; "
+        "product passed the filter"
+    )
+
+
+# ─── CTK-112 false-kill guard: coral with a "fee" substring still passes ───────
+def test_filter_keeps_coral_with_fee_substring(products):
+    """CTK-112 false-kill guard — the "Late Fees" entry is a COMPOUND phrase, not
+    a bare "fee"/"fees", precisely so it can't substring-fire on coral lineages
+    that carry "fee" inside a word (Toffee / Coffee zoanthid morphs are real reef
+    names). Live /products.json pull 2026-06-03 (4,220 products) confirmed "late
+    fees" substring-matches exactly 1 row (the SKU itself), 0 coral. This synthetic
+    coral — "Toffee Nuclear Zoanthid", blank-PT to share Late Fees' leak surface —
+    must survive the filter; a regression to a bare "fee"/"fees" entry breaks it."""
+    coral = {
+        "title": "Toffee Nuclear Zoanthid Coral",
+        "product_type": "",   # same blank-PT path Late Fees travels
+        "tags": [],
+        "variants": [{"available": True}],
+    }
+    assert _should_keep(coral, TSA_CATEGORY_FILTER) is True, (
+        "coral with 'fee' substring ('Toffee') false-killed by title_denylist — "
+        "the 'Late Fees' entry must stay compound, never bare 'fee'/'fees'"
+    )
+
+
 # ─── Test 19 (CTK-037 Session 5.5): predicate normalization keeps None/absent ─
 def test_filter_normalizes_none_product_type_to_empty_string(products):
     """CTK-037 Session 5.5 — None or key-absent product_type normalizes to "" so
@@ -507,6 +557,8 @@ def main() -> int:
         test_filter_rejects_reef_safety_tag_family,
         test_filter_keeps_coral_without_reef_safety_tag,
         test_filter_rejects_equipment_tag_under_blank_pt,
+        test_filter_rejects_late_fees_store_credit_sku,
+        test_filter_keeps_coral_with_fee_substring,
         test_filter_normalizes_none_product_type_to_empty_string,
         test_filter_rejects_none_product_type_when_empty_not_in_allowlist,
     ]

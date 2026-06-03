@@ -162,3 +162,14 @@ category_filter:
     - Cheato              # misspelling forward-binding
     - Macroalgae          # generic
     - Macro Algae         # space-separated variant
+    # CTK-112 (2026-06-03) store-credit / fee / penalty SKU class. "Late Fees"
+    # ($361, product_type='', tags=[]) leaked to /new because empty tags blind
+    # the tag_denylist and blank-PT is allowlisted for coral recovery — only the
+    # title axis catches it. Compound phrase, not a bare "fee"/"fees": live
+    # /products.json pull 2026-06-03 (4,220 products) shows "Late Fees" substring-
+    # matches exactly 1 row (itself), 0 coral; bare "fee" would substring-hit
+    # ~10 feeder/equipment rows (all Aquarium Supplies, allowlist-denied, 0 coral)
+    # but is needless false-kill surface. Family-of-one at TSA today: Gift Card
+    # (own excluded PT) + the "Platinum Credit Card" scraper / "NP-Bacto-Balance"
+    # supplement are Aquarium Supplies, allowlist-denied — no additional entries.
+    - Late Fees           # store-credit/penalty SKU; 0 coral false-kills at live pull (CTK-112 2026-06-03)
