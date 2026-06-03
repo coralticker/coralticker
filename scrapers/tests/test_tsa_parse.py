@@ -55,16 +55,18 @@ IMAGE_STRATEGY = "mirror"
 # by allowlist default.
 TSA_CATEGORY_FILTER = {
     "product_type_allowlist": ["", "Coral-POS", "Livestock"],
-    # CTK-104 (2026-06-01) — mirrors the production scrapers/vendors/tsa.yaml
-    # 28-entry tag_denylist: 6 reef-safety tag family (D-1 structural fish gate)
-    # + 3 equipment tags (D-2 jellyfish-aquarium plug for the blank-PT allowlist
-    # entry) + 12 per-genus fish (D-1A belt-and-suspenders) + 7 invert / bio-
-    # media (CTK-041 + CTK-095). Sorted alphabetically to match YAML.
+    # Mirrors the production scrapers/vendors/tsa.yaml 29-entry tag_denylist:
+    # 6 reef-safety tag family (CTK-104 D-1 structural fish gate) + 3 equipment
+    # tags (CTK-104 D-2 jellyfish-aquarium plug for the blank-PT allowlist
+    # entry) + 12 per-genus fish (D-1A belt-and-suspenders) + 8 invert / bio-
+    # media (CTK-041 + CTK-095 + Biomedia per CTK-107 D-2-tris; the Biomedia
+    # entry was missing from this mirror until the CTK-112 review-fold).
+    # Sorted alphabetically to match YAML.
     "tag_denylist": [
         "Algae Eater", "All-in-One Aquariums", "Angelfish", "Aquariums",
-        "Beginner Fish", "Clam", "Clownfish", "EXPERT ONLY", "Filefish",
-        "Goby", "Hawkfish", "Invert", "Jellyfish Art", "Live Rock",
-        "Macroalgae", "Mangrove", "Nano Fish", "Non Reef Safe",
+        "Beginner Fish", "Biomedia", "Clam", "Clownfish", "EXPERT ONLY",
+        "Filefish", "Goby", "Hawkfish", "Invert", "Jellyfish Art",
+        "Live Rock", "Macroalgae", "Mangrove", "Nano Fish", "Non Reef Safe",
         "Not Reef Safe", "Predator", "Reef Safe", "Reef Safe Caution",
         "Refugiums", "Tang", "Tilefish", "Wrasse", "Wrasses", "WYSIWYG Fish",
     ],
@@ -382,6 +384,37 @@ def test_filter_rejects_livestock_macroalgae(products):
     assert _should_keep(p, TSA_CATEGORY_FILTER) is False
 
 
+# ─── CTK-112 review-fold: tag-axis isolation for bio-media tags ───────────────
+def test_filter_rejects_biomedia_tags_on_tag_axis_alone(products):
+    """CTK-112 review-fold finding #2 — the 'Chaeto Macroalgae' fixture above is
+    double-covered post-CTK-112: its TITLE also matches the mirror's
+    title_denylist ('Chaeto'/'Macroalgae'), so test_filter_rejects_livestock_
+    macroalgae would keep passing even if the Macroalgae/Refugiums tag entries
+    were deleted — the title axis masks a tag-axis regression. Pin the tag axis
+    in isolation: synthetic products whose titles carry NO denylist substring
+    must reject on the bio-media tag alone (one product per tag, mirroring the
+    reef-safety family test shape). Biomedia included per review-fold finding #1
+    (entry was absent from this mirror until the fold; previously untested)."""
+    title_denylist_lc = [e.lower() for e in TSA_CATEGORY_FILTER["title_denylist"]]
+    for bio_tag in ("Macroalgae", "Refugiums", "Biomedia"):
+        # Title deliberately excludes the tag name — "Macroalgae" in the title
+        # would re-trigger the title axis and defeat the isolation.
+        product = {
+            "title": "Fictitious Green Bundle",
+            "product_type": "Livestock",
+            "tags": [bio_tag],
+            "variants": [{"available": True}],
+        }
+        assert not any(e in product["title"].lower() for e in title_denylist_lc), (
+            "self-check: synthetic title must carry no title_denylist substring, "
+            "or this test stops isolating the tag axis"
+        )
+        assert _should_keep(product, TSA_CATEGORY_FILTER) is False, (
+            f"bio-media tag {bio_tag!r} should reject on the tag axis alone "
+            f"(clean title); product passed"
+        )
+
+
 # ─── CTK-041 Session 2: tag_denylist rejects Livestock + Algae Eater tag ─────
 def test_filter_rejects_livestock_algae_eater(products):
     """CTK-041 Session 2 — Algae Eater catches algae-utility inverts (snails
@@ -494,17 +527,23 @@ def test_filter_keeps_coral_with_fee_substring(products):
     names). Live /products.json pull 2026-06-03 (4,220 products) confirmed "late
     fees" substring-matches exactly 1 row (the SKU itself), 0 coral. This synthetic
     coral — "Toffee Nuclear Zoanthid", blank-PT to share Late Fees' leak surface —
-    must survive the filter; a regression to a bare "fee"/"fees" entry breaks it."""
-    coral = {
-        "title": "Toffee Nuclear Zoanthid Coral",
-        "product_type": "",   # same blank-PT path Late Fees travels
-        "tags": [],
-        "variants": [{"available": True}],
-    }
-    assert _should_keep(coral, TSA_CATEGORY_FILTER) is True, (
-        "coral with 'fee' substring ('Toffee') false-killed by title_denylist — "
-        "the 'Late Fees' entry must stay compound, never bare 'fee'/'fees'"
-    )
+    must survive the filter; a regression to a bare "fee"/"fees" entry breaks it.
+
+    Two synthetics, one per regression shape (CTK-112 review-fold finding #3 —
+    "toffee" contains "fee" but not "fees", so a Toffee-only guard passed
+    vacuously against a bare-"fees" regression while claiming to cover it):
+    "Toffee ..." catches bare-"fee"; "Coffees ..." catches bare-"fees"."""
+    for title in ("Toffee Nuclear Zoanthid Coral", "Coffees & Cream Zoa Coral"):
+        coral = {
+            "title": title,
+            "product_type": "",   # same blank-PT path Late Fees travels
+            "tags": [],
+            "variants": [{"available": True}],
+        }
+        assert _should_keep(coral, TSA_CATEGORY_FILTER) is True, (
+            f"coral {title!r} false-killed by title_denylist — the 'Late Fees' "
+            f"entry must stay compound, never bare 'fee'/'fees'"
+        )
 
 
 # ─── Test 19 (CTK-037 Session 5.5): predicate normalization keeps None/absent ─
@@ -553,6 +592,7 @@ def main() -> int:
         test_filter_tsa_skip_count_matches,
         test_filter_rejects_livestock_invert,
         test_filter_rejects_livestock_macroalgae,
+        test_filter_rejects_biomedia_tags_on_tag_axis_alone,
         test_filter_rejects_livestock_algae_eater,
         test_filter_rejects_reef_safety_tag_family,
         test_filter_keeps_coral_without_reef_safety_tag,
