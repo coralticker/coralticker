@@ -25,12 +25,10 @@ const DOWNTIME_FALLBACK =
 const dropsCached = cache(() => getRecentPriceDrops());
 
 function priceDropToProps(d: PriceDropListing) {
-  return {
-    listing: d,
-    event: 'price-dropped' as const,
-    priorPrice: d.priorPrice,
-    observedAt: d.observedAt,
-  };
+  // CTK-047 Session 5 — <ListingCard> derives "price dropped at" from
+  // listing.priorPrice (non-null on every PriceDropListing row by the
+  // get_recent_price_drops() RPC contract). No explicit event prop needed.
+  return { listing: d };
 }
 
 async function Eyebrow() {

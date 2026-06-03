@@ -11,18 +11,18 @@
 // with dedup on named_coral_id LIMIT 10 per Q-E v1 default); this composition
 // iterates the array as passed.
 //
-// Event derivation per CTK-047 B-4 lock 2026-06-02: per-row deriveEvent()
-// inspects listing.priorPrice + priceDropObservedAt (populated upstream by
-// getRecentDrops()'s LEFT JOIN against get_listing_drop_context()). Rows with
-// a CT-observed price-drop in the 24h window surface as 'price-dropped'
-// variants in the strip; others fall through to 'just-listed'. Cross-surface
-// medal canon at branding-guide L232 — heterogeneous events across the 10
-// cards are intentional (row-level state, not surface-level decoration).
+// Event derivation per CTK-047 Session 5 lock 2026-06-03: the strip passes
+// listing-only to <ListingCard>; the composition derives the lead-event from
+// listing fields (CT-observed price-drop on listing.priorPrice / Q3 vendor-
+// markdown promotion on listing.compareAtPrice; OOS does not promote per
+// branding-guide L230). baseEvent defaults to 'just-listed'. The strip
+// surfaces heterogeneous lead events across the 10 cards — price-dropped
+// alongside just-listed — per branding-guide L232 row-level-state canon.
 //
 // CTK-080 bounded getRecentDrops() to first_seen_at > now() - 7d, so the
 // 'just-listed' fall-through is genuinely accurate — restock-then-relist
 // listings with old first_seen_at no longer surface here. back-in-stock
-// derivation still lives at /new (UNION two-arm CTE has the data shape to
+// derivation lives at /new (the lead-event RPC has the data shape to
 // distinguish first-seen vs. restock).
 //
 // No empty-state slot, no children, no styling slot — content shape is closed
@@ -39,17 +39,6 @@ interface RecentDropsStripProps {
 
 const DEFAULT_CTA = { label: 'view full feed →', href: '/new' };
 
-function deriveEvent(listing: Listing) {
-  if (listing.priorPrice !== null && listing.priceDropObservedAt !== null) {
-    return {
-      event: 'price-dropped' as const,
-      priorPrice: listing.priorPrice,
-      observedAt: listing.priceDropObservedAt,
-    };
-  }
-  return { event: 'just-listed' as const };
-}
-
 export function RecentDropsStrip({
   listings,
   cta = DEFAULT_CTA,
@@ -59,7 +48,7 @@ export function RecentDropsStrip({
       <ul className="divide-y divide-ink/10">
         {listings.map((listing) => (
           <li key={listing.id}>
-            <ListingCard listing={listing} {...deriveEvent(listing)} />
+            <ListingCard listing={listing} />
           </li>
         ))}
       </ul>

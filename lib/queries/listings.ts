@@ -52,6 +52,13 @@ export interface Listing {
   // /arrivals populate from the RPC's price-dropped arm directly).
   priorPrice: number | null;
   priceDropObservedAt: string | null;
+  // CTK-047 Session 5 — natural event timestamp for the Listed. relative-time
+  // field. Populated by getRecentArrivals (RPC event_at) + getRecentPriceDrops
+  // (RPC observed_at); null on getRecentDrops + getCoralAvailability +
+  // getVendorInventory (those surfaces fall back to firstSeenAt — the medal
+  // carries the price-drop recency separately via Price field). <ListingCard>
+  // Listed. consumes `listing.eventAt ?? listing.firstSeenAt`.
+  eventAt: string | null;
 }
 
 // Flat row shape returned by the JOIN below. PostgREST's nested-relation
@@ -97,6 +104,9 @@ function rowToListing(row: VendorListingRow): Listing {
     // price-dropped arm.
     priorPrice: null,
     priceDropObservedAt: null,
+    // CTK-047 Session 5 — plain-JOIN surfaces (strip / coral / vendor) carry
+    // no natural event timestamp; Listed. falls back to firstSeenAt.
+    eventAt: null,
   };
 }
 
@@ -503,6 +513,9 @@ function rpcRowToPriceDrop(row: RpcPriceDropRow): PriceDropListing {
     // CTK-047 B-3 base-Listing field — same data as observedAt below; PriceDropListing
     // extension narrows to non-null observedAt for the /deals discriminated union.
     priceDropObservedAt: row.observed_at,
+    // CTK-047 Session 5 — Listed. consumes eventAt ?? firstSeenAt; for /deals
+    // this is the drop time (matches pre-Session-5 behavior driven by props.observedAt).
+    eventAt: row.observed_at,
     observedAt: row.observed_at,
   };
 }

@@ -10,7 +10,6 @@ import { formatRelativeTime } from '@/lib/format/relative-time';
 import {
   getRecentArrivals,
   type ArrivalListing,
-  type Listing,
 } from '@/lib/queries/listings';
 
 export const revalidate = 300;
@@ -29,28 +28,14 @@ const DOWNTIME_FALLBACK =
 const arrivalsCached = cache(() => getRecentArrivals());
 
 function rowToProps(arrival: ArrivalListing) {
-  const { event, eventAt, ...listingFields } = arrival;
-  const listing: Listing = listingFields;
-  if (event === 'just-listed') {
-    return { listing, event: 'just-listed' } as const;
-  }
-  if (event === 'price-dropped') {
-    // priorPrice non-null by RPC contract: get_listing_lead_event()'s
-    // price-dropped arm projects prior_price from the LAG-window CTE and
-    // only emits rows where new_price < prior_price. Defensive fallback
-    // mirrors the strip's deriveEvent shape — if the contract drifts, the
-    // card degrades to just-listed rather than crashing on null priorPrice.
-    if (arrival.priorPrice !== null) {
-      return {
-        listing,
-        event: 'price-dropped' as const,
-        priorPrice: arrival.priorPrice,
-        observedAt: eventAt,
-      } as const;
-    }
-    return { listing, event: 'just-listed' } as const;
-  }
-  return { listing, event: 'back-in-stock', observedAt: eventAt } as const;
+  const { event, ...listing } = arrival;
+  // CTK-047 Session 5 — baseEvent carries the RPC's just-listed vs.
+  // back-in-stock hint; <ListingCard> derives "price dropped at" itself from
+  // listing.priorPrice + priceDropObservedAt + listing.compareAtPrice. The
+  // 'price-dropped' RPC arm falls back to 'just-listed' baseEvent (composition
+  // overrides via the derivation rule).
+  const baseEvent = event === 'back-in-stock' ? 'back-in-stock' : 'just-listed';
+  return { listing, baseEvent } as const;
 }
 
 async function Eyebrow() {
