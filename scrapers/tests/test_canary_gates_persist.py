@@ -69,11 +69,14 @@ def _make_item(product_url: str) -> dict:
     }
 
 
-def _run_orchestrator(n_items: int, median_seen: float):
+def _run_orchestrator(n_items: int, median_seen: float, n_new: int = 0, matcher_exc: Exception | None = None):
     """Execute run.run('tsa') with the db module boundary + parser mocked.
 
-    All n_items exist in the DB as unchanged rows (no 'new' decisions, so
-    the matcher loop is a no-op and stage 5.5 needs no patching). Real
+    By default all n_items exist in the DB as unchanged rows (no 'new'
+    decisions, so the matcher loop is a no-op). The first n_new items are
+    absent from the DB instead ('new' decisions — the matcher runs on them);
+    matcher_exc, when set, makes the patched matcher raise it (fail-soft
+    path: matcher_error_count accumulates into error_message). Real
     diff.classify + real canary threshold math + real status assignment run.
 
     Returns (exit_code, persist_spy, finish_spy, phase_b_spy).
@@ -88,6 +91,7 @@ def _run_orchestrator(n_items: int, median_seen: float):
             "image_url": None,
         }
         for i, it in enumerate(items)
+        if i >= n_new  # first n_new items absent from DB → 'new' decisions
     }
     parse_result = ParseResult(
         items=items,
@@ -102,6 +106,7 @@ def _run_orchestrator(n_items: int, median_seen: float):
          mock.patch.object(run_mod.db, "start_scraper_run", return_value=42), \
          mock.patch.object(run_mod, "_load_yaml", return_value={}), \
          mock.patch.object(run_mod.matcher, "load_match_cache", return_value={}), \
+         mock.patch.object(run_mod.matcher, "match_listing", side_effect=matcher_exc), \
          mock.patch.object(run_mod.parse_shopify, "fetch_and_parse", return_value=parse_result), \
          mock.patch.object(run_mod.db, "fetch_existing_listings", return_value=existing), \
          mock.patch.object(run_mod.db, "get_7d_median_seen", return_value=median_seen), \
@@ -161,6 +166,30 @@ def test_canary_trip_error_message_substrings():
     assert error_message.index("silent canary tripped:") < error_message.index(
         "persist skipped (canary)"
     )
+
+
+def test_ratchet_substring_survives_truncation_worst_case():
+    """CTK-116 review-fold #2 — the substring contract must hold at the
+    PERSISTED layer, not just in memory. db.finish_scraper_run truncates
+    error_message[:1000]; on a combined matcher+canary run the matcher
+    clause precedes the canary clause, so an unbounded matcher exception
+    string could push 'silent canary tripped:' past the cut and silently
+    exclude the run from get_7d_median_seen's ratchet (review finding #1).
+    Drives the REAL run.py construction: one 'new' decision whose matcher
+    raises a 5,000-char exception, canary tripping — then mirrors db.py's
+    [:1000] slice and asserts the ratchet substring survives. Fails if the
+    run.py [:200] bound on matcher_error_first is ever removed."""
+    _, _, finish_spy, _ = _run_orchestrator(
+        n_items=3, median_seen=1000.0,
+        n_new=1, matcher_exc=ValueError("x" * 5000),
+    )
+    args = finish_spy.call_args.args
+    status, error_message = args[2], args[4]
+    assert status == "failed"  # canary supersedes the matcher-partial signal
+    assert "matcher exception(s)" in error_message  # matcher clause present, ahead of canary
+    persisted = error_message[:1000]  # mirror db.finish_scraper_run's bound (db.py)
+    assert "silent canary tripped:" in persisted
+    assert "persist skipped (canary)" in persisted
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +311,7 @@ if __name__ == "__main__":
         test_canary_trip_skips_persist_phase_a,
         test_canary_trip_counters_flow_to_finish,
         test_canary_trip_error_message_substrings,
+        test_ratchet_substring_survives_truncation_worst_case,
         test_clean_run_still_persists,
         test_persist_phase_a_enters_transaction,
         test_persist_phase_a_mid_write_exception_propagates_through_transaction,

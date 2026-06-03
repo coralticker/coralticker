@@ -329,7 +329,15 @@ def run(slug: str) -> int:
                 d.match_result = matcher.MatchResult(None, None, None, None)
                 matcher_error_count += 1
                 if matcher_error_first is None:
-                    matcher_error_first = f"matcher: {type(e).__name__}: {e}"
+                    # CTK-116 review-fold #1: bound the exception snippet at
+                    # build. Unbounded {e} could push the ratchet-critical
+                    # 'silent canary tripped:' substring past db.py's
+                    # error_message[:1000] truncation on a combined
+                    # matcher+canary run, silently excluding the run from
+                    # get_7d_median_seen's contains-LIKE — the upward-median
+                    # bias the CTK-094 ratchet exists to prevent. 200 chars
+                    # keeps the worst-case combined message well under 1000.
+                    matcher_error_first = f"matcher: {type(e).__name__}: {e}"[:200]
                 log.warning("matcher exception on %s: %s", d.item.get("product_url"), e)
 
         if matcher_error_count > 0:
