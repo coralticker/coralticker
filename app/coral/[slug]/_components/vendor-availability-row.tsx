@@ -46,8 +46,12 @@ export function VendorAvailabilityRow({ listing }: VendorAvailabilityRowProps) {
   } else if (
     listing.compareAtPrice !== null &&
     listing.currentPrice !== null &&
-    listing.compareAtPrice >= listing.currentPrice * 1.05
+    (listing.compareAtPrice - listing.currentPrice) >=
+      listing.currentPrice * 0.05 - 1e-9
   ) {
+    // Float-imprecision rewrite per /code-review 2026-06-03 — same predicate
+    // verbatim as <ListingCard> + <VendorInventoryRow> per CTK-100 Wave-3
+    // cross-consumer doctrine.
     priceValue = {
       kind: 'vendor-markdown',
       oldValue: formatPrice(listing.compareAtPrice),
@@ -62,7 +66,13 @@ export function VendorAvailabilityRow({ listing }: VendorAvailabilityRowProps) {
     { label: 'Price', value: priceValue },
     {
       label: 'Listed',
-      value: { kind: 'relative-time', timestamp: listing.firstSeenAt },
+      // CTK-047 close-window: eventAt populated by getCoralAvailability's
+      // merge for rows with a recent CT-observed drop; falls back to
+      // firstSeenAt elsewhere. Matches <ListingCard> fallback chain.
+      value: {
+        kind: 'relative-time',
+        timestamp: listing.eventAt ?? listing.firstSeenAt,
+      },
     },
   ];
 

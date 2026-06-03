@@ -126,18 +126,22 @@ function rowToListing(row: VendorListingRow): Listing {
 export async function getListingDropContext(
   listingIds: number[],
   windowHours: number = 24,
-): Promise<Map<number, { priorPrice: number; observedAt: string }>> {
+): Promise<Map<number, { priorPrice: number; observedAt: string; eventAt: string }>> {
   if (listingIds.length === 0) return new Map();
   const sql = getNeonSql();
   const rows = (await sql`
     SELECT id, prior_price, event_at
     FROM get_listing_lead_event(${listingIds}::bigint[], ${windowHours}, ARRAY['price-dropped']::text[])
   `) as unknown as { id: number | string; prior_price: number | string; event_at: string }[];
-  const out = new Map<number, { priorPrice: number; observedAt: string }>();
+  // CTK-047 close-window: eventAt mirrors observedAt by definition (the CT-
+  // observed price-drop event IS the observation). Surfaced explicitly so the
+  // merge call-sites populate Listing.eventAt without re-reading the RPC row.
+  const out = new Map<number, { priorPrice: number; observedAt: string; eventAt: string }>();
   for (const row of rows) {
     out.set(Number(row.id), {
       priorPrice: Number(row.prior_price),
       observedAt: row.event_at,
+      eventAt: row.event_at,
     });
   }
   return out;
@@ -192,11 +196,19 @@ export async function getRecentDrops(limit = 10): Promise<Listing[]> {
   }
   // CTK-047 B-5 — LEFT JOIN drop context onto the rendered set so the strip's
   // B-4 deriveEvent() can surface price-drop variants alongside just-listed.
+  // Close-window addendum: eventAt populated so the homepage strip's price-
+  // dropped rows show "X hours ago" on Listed. (the drop time) rather than
+  // falling back to firstSeenAt.
   const context = await getListingDropContext(out.map((l) => l.id));
   return out.map((l) => {
     const ctx = context.get(Number(l.id));
     return ctx
-      ? { ...l, priorPrice: ctx.priorPrice, priceDropObservedAt: ctx.observedAt }
+      ? {
+          ...l,
+          priorPrice: ctx.priorPrice,
+          priceDropObservedAt: ctx.observedAt,
+          eventAt: ctx.eventAt,
+        }
       : l;
   });
 }
@@ -235,12 +247,19 @@ export async function getCoralAvailability(namedCoralId: number): Promise<Listin
   const listings = rows.map(rowToListing);
   // CTK-047 B-5 — LEFT JOIN drop context for cross-surface medal on
   // <VendorAvailabilityRow>. In-stock rows with priorPrice non-null render
-  // price-drop-new at position 2 in the precedence chain.
+  // price-drop-new at position 2 in the precedence chain. Close-window
+  // addendum: eventAt populated so Listed. reads "X hours ago" not "X days
+  // ago" on rows with a recent CT-observed drop.
   const context = await getListingDropContext(listings.map((l) => l.id));
   return listings.map((l) => {
     const ctx = context.get(Number(l.id));
     return ctx
-      ? { ...l, priorPrice: ctx.priorPrice, priceDropObservedAt: ctx.observedAt }
+      ? {
+          ...l,
+          priorPrice: ctx.priorPrice,
+          priceDropObservedAt: ctx.observedAt,
+          eventAt: ctx.eventAt,
+        }
       : l;
   });
 }
@@ -375,11 +394,18 @@ export async function getVendorInventory(
       // <VendorInventoryRow>. Same merge pattern as getRecentDrops /
       // getCoralAvailability; per-function call to getListingDropContext()
       // stays inline (below abstraction threshold per directive 2026-06-02).
+      // Close-window addendum: eventAt populated for cross-surface Listed.
+      // parity with /deals (medal-bearing row's Listed. reads "X hours ago").
       const context = await getListingDropContext(listings.map((l) => l.id));
       return listings.map((l) => {
         const ctx = context.get(Number(l.id));
         return ctx
-          ? { ...l, priorPrice: ctx.priorPrice, priceDropObservedAt: ctx.observedAt }
+          ? {
+              ...l,
+              priorPrice: ctx.priorPrice,
+              priceDropObservedAt: ctx.observedAt,
+              eventAt: ctx.eventAt,
+            }
           : l;
       });
     },
@@ -392,7 +418,13 @@ export async function getVendorInventory(
       // with priorPrice + priceDropObservedAt; same persistence concern. The
       // V3 entries would deserialize the new fields as undefined for up to
       // the revalidate window, breaking medal render on cached pages.
-      'getVendorInventoryV4',
+      // V5 prefix bump 2026-06-03 (CTK-047 close-window) — getVendorInventory's
+      // post-merge cached shape now carries eventAt populated for rows with a
+      // recent CT-observed drop (alongside priorPrice + priceDropObservedAt).
+      // V4 entries would deserialize eventAt as undefined → Listed. ?? chain
+      // falls back to firstSeenAt incorrectly on price-dropped rows for up to
+      // 300s, showing "X days ago" instead of "X hours ago."
+      'getVendorInventoryV5',
       String(vendorId),
       String(page),
       sort,
@@ -443,13 +475,19 @@ export async function getVendorInventoryTotal(
       return first ? Number(first.total) : 0;
     },
     [
+      // Cache-key stays V2 — return shape is `number`, unaffected by Listing
+      // widens.
       'getVendorInventoryTotalV2',
       String(vendorId),
       category ?? '_',
       includeOOS ? '1' : '0',
     ],
     {
-      revalidate: 600,
+      // CTK-047 close-window — completes B-2 cadence cascade. aa24d96 dropped
+      // getVendorInventory revalidate 600 → 300 but missed the sibling total
+      // helper; pagination chrome was lagging up to 10 min behind the row
+      // feed.
+      revalidate: 300,
       tags: [`vendor-${vendorId}-total-${category ?? '_'}-${includeOOS ? '1' : '0'}`],
     },
   )();

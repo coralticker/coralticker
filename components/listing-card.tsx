@@ -59,10 +59,17 @@ function deriveLeadEvent(
     return { verb: 'price dropped at', isPriceDropped: true };
   }
   // Q3 promotion — vendor-markdown strikethrough promotes the lead.
+  // Float-imprecision rewrite per /code-review Finding (2026-06-03): the
+  // straightforward `compareAtPrice >= currentPrice * 1.05` form silently
+  // misses ~29% of integer-dollar clean 5% markdowns because IEEE754
+  // representation of 1.05 + the multiply nudges the threshold above the
+  // true mark (e.g., 3 * 1.05 = 3.1500000000000004; 3.15 < 3.1500000000000004).
+  // Subtract-then-compare with a 1e-9 epsilon preserves the semantic.
   if (
     listing.compareAtPrice !== null &&
     listing.currentPrice !== null &&
-    listing.compareAtPrice >= listing.currentPrice * 1.05
+    (listing.compareAtPrice - listing.currentPrice) >=
+      listing.currentPrice * 0.05 - 1e-9
   ) {
     return { verb: 'price dropped at', isPriceDropped: true };
   }
@@ -96,7 +103,8 @@ function buildFields(listing: Listing, isOutOfStock: boolean): DataRowField[] {
   } else if (
     listing.compareAtPrice !== null &&
     listing.currentPrice !== null &&
-    listing.compareAtPrice >= listing.currentPrice * 1.05
+    (listing.compareAtPrice - listing.currentPrice) >=
+      listing.currentPrice * 0.05 - 1e-9
   ) {
     fields.push({
       label: 'Price',
