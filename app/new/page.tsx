@@ -31,9 +31,26 @@ const arrivalsCached = cache(() => getRecentArrivals());
 function rowToProps(arrival: ArrivalListing) {
   const { event, eventAt, ...listingFields } = arrival;
   const listing: Listing = listingFields;
-  return event === 'just-listed'
-    ? ({ listing, event: 'just-listed' } as const)
-    : ({ listing, event: 'back-in-stock', observedAt: eventAt } as const);
+  if (event === 'just-listed') {
+    return { listing, event: 'just-listed' } as const;
+  }
+  if (event === 'price-dropped') {
+    // priorPrice non-null by RPC contract: get_listing_lead_event()'s
+    // price-dropped arm projects prior_price from the LAG-window CTE and
+    // only emits rows where new_price < prior_price. Defensive fallback
+    // mirrors the strip's deriveEvent shape — if the contract drifts, the
+    // card degrades to just-listed rather than crashing on null priorPrice.
+    if (arrival.priorPrice !== null) {
+      return {
+        listing,
+        event: 'price-dropped' as const,
+        priorPrice: arrival.priorPrice,
+        observedAt: eventAt,
+      } as const;
+    }
+    return { listing, event: 'just-listed' } as const;
+  }
+  return { listing, event: 'back-in-stock', observedAt: eventAt } as const;
 }
 
 async function Eyebrow() {

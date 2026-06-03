@@ -29,7 +29,9 @@
 -- Idempotent per the CTK-028/032/033/034/038/061 convention:
 -- CREATE OR REPLACE FUNCTION with unchanged signature.
 --
--- ─── Disposition note (added 2026-06-02 at CTK-047 + CTK-109 plan-draft) ───
+-- ─── Disposition note (added 2026-06-02 at CTK-047 + CTK-109 plan-draft;
+--     superseded 2026-06-02 by Q2 amendment — see addendum below) ───
+-- (Original prior-draft framing — preserved for ADR traceability:)
 -- The auction_end_time IS NULL predicate this header punts to CTK-047
 -- territory lands at migration 0027 inside the generalized
 -- get_listing_drop_context(listing_ids, window_hours) function. CTK-109
@@ -39,6 +41,22 @@
 -- No rework of 0026's body needed — get_recent_price_drops() stays in
 -- place but unused after CTK-109 frontend swap; future cleanup CTK drops
 -- it once caller-audit confirms zero remaining callers.
+--
+-- ─── Addendum (2026-06-02, Q2 brand-canon lead-event precedence amendment) ───
+-- The above disposition is superseded. Migration 0028 supersedes 0027's
+-- function design per Q2 reshape — /brand-manager lead-event precedence
+-- rule (price-dropped > back-in-stock > just-listed) requires a three-arm
+-- precedence-aware function (get_listing_lead_event), and /deals stays on
+-- get_recent_price_drops() (event-monotype, multi-event-per-listing
+-- semantic preserved). 0028 ships:
+--   - DROP FUNCTION get_recent_price_drops() (this function's signature)
+--   - CREATE FUNCTION get_recent_price_drops() — body verbatim from 0026
+--     PLUS compare_at_price added to RETURNS TABLE + projection (CTK-109
+--     /deals half) PLUS AND vl.auction_end_time IS NULL added to outer
+--     WHERE (INV-05 #4 — the predicate this header punts).
+-- 0026's body is therefore superseded by 0028's CREATE (return-type
+-- widen forces DROP + CREATE; CREATE OR REPLACE rejects). CTK-099's
+-- in_stock=true predicate preserved verbatim in 0028.
 
 CREATE OR REPLACE FUNCTION get_recent_price_drops()
 RETURNS TABLE (

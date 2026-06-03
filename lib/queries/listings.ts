@@ -45,10 +45,11 @@ export interface Listing {
   // year_introduced removed per CTK-092 / Q-040-11 hold-position path-a.
   namedCoralOriginVendor: string | null;
   // CTK-047 B-3 cross-surface medal — populated by getListingDropContext()
-  // LEFT JOIN against get_listing_drop_context() RPC (migration 0027) at
-  // getRecentDrops / getCoralAvailability / getVendorInventory. Null when no
-  // CT-observed price-drop event exists within the 24h window for the listing,
-  // or on helpers that don't merge (getRecentArrivals, getRecentPriceDrops).
+  // LEFT JOIN against get_listing_lead_event(..., ARRAY['price-dropped']) RPC
+  // (migration 0028) at getRecentDrops / getCoralAvailability / getVendorInventory.
+  // Null when no CT-observed price-drop lead event exists within the 24h window
+  // for the listing, or on helpers that don't merge (getRecentPriceDrops; /new
+  // /arrivals populate from the RPC's price-dropped arm directly).
   priorPrice: number | null;
   priceDropObservedAt: string | null;
 }
@@ -81,7 +82,7 @@ function rowToListing(row: VendorListingRow): Listing {
     vendorDisplayName: row.vendor_display_name,
     rawTitle: row.raw_title,
     currentPrice: row.current_price !== null ? Number(row.current_price) : null,
-    compareAtPrice: row.compare_at_price !== null ? Number(row.compare_at_price) : null,
+    compareAtPrice: row.compare_at_price != null ? Number(row.compare_at_price) : null,
     inStock: row.in_stock,
     imageUrl: row.image_url,
     productUrl: row.product_url,
@@ -92,18 +93,21 @@ function rowToListing(row: VendorListingRow): Listing {
     namedCoralOriginVendor: row.named_coral_origin_vendor,
     // CTK-047 B-3 — defaulted null; the LEFT JOIN merge in getRecentDrops /
     // getCoralAvailability / getVendorInventory populates these post-
-    // rowToListing for listings present in get_listing_drop_context().
+    // rowToListing for listings present in get_listing_lead_event()'s
+    // price-dropped arm.
     priorPrice: null,
     priceDropObservedAt: null,
   };
 }
 
 // CTK-047 B-1 — per-listing price-drop context.
-// Wraps the get_listing_drop_context() RPC (migration 0027) for the four non-
-// /deals consumers (homepage strip, /coral/[slug], /vendor/[slug]). RPC returns
-// rows only for listings with a CT-observed drop in the window; helpers LEFT
-// JOIN the returned Map back into their primary Listing rows post-fetch, so a
-// listing with no drop event simply doesn't appear in the map.
+// Wraps the get_listing_lead_event() RPC (migration 0028) with the
+// event_filter=['price-dropped'] arm-scoped predicate for the three non-feed
+// consumers (homepage strip, /coral/[slug], /vendor/[slug]). RPC returns rows
+// only for listings whose LEAD event within the window is a price-drop;
+// helpers LEFT JOIN the returned Map back into their primary Listing rows
+// post-fetch, so a listing without a price-dropped lead event simply doesn't
+// appear in the map.
 //
 // Map keys coerced to Number() because @neondatabase/serverless returns bigint
 // columns as strings; existing rowToListing-shape code treats id as number per
@@ -116,14 +120,14 @@ export async function getListingDropContext(
   if (listingIds.length === 0) return new Map();
   const sql = getNeonSql();
   const rows = (await sql`
-    SELECT id, prior_price, observed_at
-    FROM get_listing_drop_context(${listingIds}::bigint[], ${windowHours})
-  `) as unknown as { id: number | string; prior_price: number | string; observed_at: string }[];
+    SELECT id, prior_price, event_at
+    FROM get_listing_lead_event(${listingIds}::bigint[], ${windowHours}, ARRAY['price-dropped']::text[])
+  `) as unknown as { id: number | string; prior_price: number | string; event_at: string }[];
   const out = new Map<number, { priorPrice: number; observedAt: string }>();
   for (const row of rows) {
     out.set(Number(row.id), {
       priorPrice: Number(row.prior_price),
-      observedAt: row.observed_at,
+      observedAt: row.event_at,
     });
   }
   return out;
@@ -479,12 +483,14 @@ function rpcRowToPriceDrop(row: RpcPriceDropRow): PriceDropListing {
     vendorSlug: row.vendor_slug,
     vendorDisplayName: row.vendor_display_name,
     rawTitle: row.raw_title,
-    currentPrice: row.current_price !== null ? Number(row.current_price) : null,
-    // CTK-109: get_listing_drop_context() (migration 0027) projects
-    // compare_at_price. Mirrors the plain-JOIN mapper at rowToListing().
-    // Supersedes the migration-0008 deferral noted in earlier comment —
-    // /deals now renders vendor-markdown alongside the price-drop medal.
-    compareAtPrice: row.compare_at_price !== null ? Number(row.compare_at_price) : null,
+    currentPrice: row.current_price != null ? Number(row.current_price) : null,
+    // CTK-109: get_recent_price_drops() (migration 0028 DROP+CREATE) widened
+    // to project compare_at_price. /deals stays event-monotype on the
+    // dedicated price-drop RPC; vendor-markdown renders alongside the
+    // price-drop medal. Loose != null guards the T0→T1 deploy-window where
+    // the pre-0028 function shape is still serving (column undefined, not
+    // null) — strict !== would NaN-poison the field.
+    compareAtPrice: row.compare_at_price != null ? Number(row.compare_at_price) : null,
     inStock: row.in_stock,
     imageUrl: row.image_url,
     productUrl: row.product_url,
@@ -501,23 +507,26 @@ function rpcRowToPriceDrop(row: RpcPriceDropRow): PriceDropListing {
   };
 }
 
-// CTK-109: /deals consumes the generalized RPC (migration 0027) called fleet-
-// wide with listing_ids = NULL — behaviorally identical to the retired
-// get_recent_price_drops() byte-for-byte (verified C2 equivalence at cf7e2ff)
-// but now projects compare_at_price for vendor-markdown render parity. The old
-// function is orphan post-deploy; migration 0028 DROPs it once the deploy
-// smoke confirms the swap is live.
+// CTK-109: /deals stays on get_recent_price_drops() (event-monotype; preserves
+// multi-event-per-listing semantic). Migration 0028 DROP+CREATEs the function
+// to add compare_at_price to the projection + AND vl.auction_end_time IS NULL
+// to the WHERE clause (INV-05 #4 first-enforce). Body otherwise verbatim from
+// migration 0026's CTK-099 in_stock=true filter.
 export async function getRecentPriceDrops(): Promise<PriceDropListing[]> {
   const sql = getNeonSql();
-  const rows = (await sql`SELECT * FROM get_listing_drop_context(NULL, 24)`) as unknown as RpcPriceDropRow[];
+  const rows = (await sql`SELECT * FROM get_recent_price_drops()`) as unknown as RpcPriceDropRow[];
   return rows.map(rpcRowToPriceDrop);
 }
 
 // /new arrivals feed per site.md §4.4.
-// Backed by the get_recent_arrivals() SQL function (migration 0007) wrapping
-// the UNION two-arm CTE. Invoked as `SELECT * FROM get_recent_arrivals()` post-cut-4.
+// Backed by the get_listing_lead_event() SQL function (migration 0028)
+// wrapping the three-arm UNION + ROW_NUMBER precedence ranking (price-dropped >
+// back-in-stock > just-listed; Q2 brand-manager lock 2026-06-02). Invoked as
+// `SELECT * FROM get_listing_lead_event(NULL, 24, NULL)` — NULL event_filter
+// surfaces all three lead-event types on one row per listing. Migration 0029
+// drops the predecessor get_recent_arrivals() post-deploy verify.
 export interface ArrivalListing extends Listing {
-  event: 'just-listed' | 'back-in-stock';
+  event: 'just-listed' | 'back-in-stock' | 'price-dropped';
   eventAt: string;
 }
 
@@ -533,8 +542,11 @@ interface RpcArrivalRow {
   first_seen_at: string;
   named_coral_id: number | null;
   match_confidence: 'exact' | 'alias' | 'fuzzy' | 'manual' | null;
-  event: 'just-listed' | 'back-in-stock';
+  event: 'just-listed' | 'back-in-stock' | 'price-dropped';
   event_at: string;
+  // Populated only on the price-dropped arm of get_listing_lead_event();
+  // null on back-in-stock + just-listed arms.
+  prior_price: number | string | null;
   vendor_slug: string;
   vendor_display_name: string;
   named_coral_canonical_name: string | null;
@@ -548,11 +560,13 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
     vendorSlug: row.vendor_slug,
     vendorDisplayName: row.vendor_display_name,
     rawTitle: row.raw_title,
-    currentPrice: row.current_price !== null ? Number(row.current_price) : null,
-    // CTK-109: get_recent_arrivals() RPC widened with compare_at_price in
-    // migration 0027. /new now renders vendor-markdown on arrival rows
-    // alongside the just-listed / back-in-stock event-type lead.
-    compareAtPrice: row.compare_at_price !== null ? Number(row.compare_at_price) : null,
+    currentPrice: row.current_price != null ? Number(row.current_price) : null,
+    // CTK-109: get_listing_lead_event() projects compare_at_price across all
+    // three arms. /new renders vendor-markdown on every arrival row regardless
+    // of which lead event won. Loose != null guards the T0→T1 deploy-window
+    // where get_recent_arrivals() may still be serving pre-swap (column
+    // undefined, not null) — strict !== would NaN-poison the field.
+    compareAtPrice: row.compare_at_price != null ? Number(row.compare_at_price) : null,
     inStock: row.in_stock,
     imageUrl: row.image_url,
     productUrl: row.product_url,
@@ -561,10 +575,12 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
     namedCoralCanonicalName: row.named_coral_canonical_name,
     namedCoralSlug: row.named_coral_slug,
     namedCoralOriginVendor: row.named_coral_origin_vendor,
-    // CTK-047 B-3 — /new is no-price-drop-arm per brand-canon (branding-guide
-    // L252-253); arrival rows never carry drop context.
-    priorPrice: null,
-    priceDropObservedAt: null,
+    // CTK-047 B-3 / Q2 amendment — /new now carries the price-dropped lead-
+    // event arm. priorPrice + priceDropObservedAt populate only when this
+    // row's lead event is a drop; null on back-in-stock + just-listed arms
+    // (the RPC projects prior_price=NULL on those arms by construction).
+    priorPrice: row.prior_price != null ? Number(row.prior_price) : null,
+    priceDropObservedAt: row.event === 'price-dropped' ? row.event_at : null,
     event: row.event,
     eventAt: row.event_at,
   };
@@ -572,6 +588,6 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
 
 export async function getRecentArrivals(): Promise<ArrivalListing[]> {
   const sql = getNeonSql();
-  const rows = (await sql`SELECT * FROM get_recent_arrivals()`) as unknown as RpcArrivalRow[];
+  const rows = (await sql`SELECT * FROM get_listing_lead_event(NULL, 24, NULL)`) as unknown as RpcArrivalRow[];
   return rows.map(rpcRowToArrival);
 }

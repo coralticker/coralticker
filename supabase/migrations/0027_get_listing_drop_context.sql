@@ -76,6 +76,25 @@
 -- functions + one column only; no table writes, no backfill. Effect on
 -- first call post-apply.
 --
+-- ─── Supersede note (added 2026-06-02 at Q2 brand-canon amendment) ───
+-- get_listing_drop_context() is superseded by migration 0028's
+-- get_listing_lead_event() — Q2 lead-event precedence rule (price-dropped
+-- > back-in-stock > just-listed; /brand-manager session 2026-06-02 §Q2)
+-- required reshaping the function from price-drops-only to three-arm
+-- precedence-aware. 0028 DROPs get_listing_drop_context as an orphan
+-- (zero production callers — /backend-engineer Session 2 verified the
+-- function shape on apply but no consumer migrated before the Q2
+-- amendment landed); 0028 also DROP+CREATEs get_recent_price_drops to
+-- adopt the compare_at_price + INV-05 predicate inline (so /deals stays
+-- on get_recent_price_drops, event-monotype). 0027's ALTER TABLE
+-- auction_end_time column-add + get_recent_arrivals widen + GRANTs
+-- remain applied state — apply-immutability discipline preserves this
+-- file as historical record; 0028 supersedes per CTK-099 → CTK-100
+-- supersede pattern. get_recent_arrivals widen stays live in this
+-- migration's applied state and continues serving /new until the PR
+-- that lands 0028 + /new code switch ships together; 0029 follow-up
+-- migration drops get_recent_arrivals after a verify cycle.
+--
 -- ─── Path-1 carve-out (added 2026-06-02 at /backend-engineer apply ratify) ───
 -- ALTER TABLE vendor_listings ADD COLUMN auction_end_time prepended. First
 -- apply attempt 2026-06-02 errored UndefinedColumn — the predicate at L154
