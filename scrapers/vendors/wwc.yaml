@@ -49,6 +49,19 @@ hash_anchor: first_product_keys
 # Calibration of the cascade against real WWC titles is CTK-002.
 originator_prefix: wwc
 
+# cohort_oos_at_persist: true — CTK-105 D-4 (Phase 2 close-window; aggregator
+# trust-floor remediation; HARD R2R-launch gate per Jon 2026-06-01). WWC is
+# the last vendor in the per-vendor opt-in sequence (largest blast-radius;
+# standalone session after the PE/JF/Vivid/RC batch 24h soak cleared D-5 on
+# all four). D-2 under-intake hypothesis closed durably across two diagnostic
+# runs: 2026-06-01 20/20 delisted + 2026-06-02 19/20 delisted + 1/20
+# OOS-at-vendor Merch sticker (parser_filter_edge), 0/40 under_intake.
+# Expected first post-flip listings_oos ~1,228 (fresh pre-flip stale baseline
+# 2026-06-03; was ~1,191 at the 2026-06-02 re-baseline — smooth delisting
+# churn, listings_seen declined in step). Full-PARTITION-A flip per the D-2
+# 39/40 aggregate; small parser-filtered residual excluded per CTK-094 fold #4.
+cohort_oos_at_persist: true
+
 # CTK-037 category-filter: coral product_types only (per D1 lean (a) — WWC
 # carries no anemone/clam product_types). Empirical 2026-05-10 full-catalog
 # /products.json | jq walk; Fish (444 items, ~23% of catalog) cleanly denied
