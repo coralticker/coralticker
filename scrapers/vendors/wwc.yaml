@@ -62,6 +62,19 @@ originator_prefix: wwc
 # 39/40 aggregate; small parser-filtered residual excluded per CTK-094 fold #4.
 cohort_oos_at_persist: true
 
+# cohort_flip_cap: CTK-120 D-2 (2026-06-04) — per-run cohort-OOS flip-cap
+# override. WWC is the one vendor whose legit cohort churn exceeds the
+# default max(50, 0.25 x prev_in_stock): live-sale teardown 2026-06-03
+# 19:51 UTC flipped 1,207 absent-set rows in one cycle at ~2,300
+# prev_in_stock (run-time default cap would have been ~576 — suppression-
+# loop trigger). 2000 = 1.66x observed teardown headroom; still catches a
+# full-catalog mass-flip at WWC's ~2,300 live-sale peak. The D-1 pages gate
+# independently covers partial-fetch causes (>=5 of ~9 pages lost trips
+# the 50%-of-median predicate). Residual: a 1-3-page loss slips both rails
+# (~120-360 false flips, one-cycle, self-heals on next clean run) —
+# accepted per CTK-120 results.md Session 1 calibration.
+cohort_flip_cap: 2000
+
 # CTK-037 category-filter: coral product_types only (per D1 lean (a) — WWC
 # carries no anemone/clam product_types). Empirical 2026-05-10 full-catalog
 # /products.json | jq walk; Fish (444 items, ~23% of catalog) cleanly denied

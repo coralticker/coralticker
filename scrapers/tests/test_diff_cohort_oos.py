@@ -404,6 +404,8 @@ def test_apply_cohort_gate_canary_tripped_drops_cohort():
         canary_tripped=True,
         matcher_error_count=0,
         cohort_unsafe_partial=False,
+        completeness_degraded=False,
+        flip_cap_tripped=False,
     )
     assert cohort_safe is False
     assert decisions == per_item  # cohort dropped
@@ -422,6 +424,8 @@ def test_apply_cohort_gate_matcher_errors_drops_cohort():
         canary_tripped=False,
         matcher_error_count=2,
         cohort_unsafe_partial=False,
+        completeness_degraded=False,
+        flip_cap_tripped=False,
     )
     assert cohort_safe is False
     assert decisions == per_item
@@ -439,6 +443,8 @@ def test_apply_cohort_gate_partial_category_drops_cohort():
         canary_tripped=False,
         matcher_error_count=0,
         cohort_unsafe_partial=True,
+        completeness_degraded=False,
+        flip_cap_tripped=False,
     )
     assert cohort_safe is False
     assert decisions == per_item
@@ -456,6 +462,8 @@ def test_apply_cohort_gate_all_clear_fires_cohort():
         canary_tripped=False,
         matcher_error_count=0,
         cohort_unsafe_partial=False,
+        completeness_degraded=False,
+        flip_cap_tripped=False,
     )
     assert cohort_safe is True
     assert len(decisions) == 8  # 5 per-item + 3 cohort
@@ -475,9 +483,53 @@ def test_apply_cohort_gate_empty_cohort_is_noop_on_success():
         canary_tripped=False,
         matcher_error_count=0,
         cohort_unsafe_partial=False,
+        completeness_degraded=False,
+        flip_cap_tripped=False,
     )
     assert cohort_safe is True
     assert decisions == per_item
+    assert counters.seen == 5
+    assert counters.oos == 0
+
+
+def test_apply_cohort_gate_completeness_degraded_drops_cohort():
+    """CTK-120 D-1 — completeness_degraded=True (pages_fetched below 50% of
+    the 7d pages median; the 20-99% partial-fetch band the canary misses)
+    independently drops cohort decisions. Per-item list passes through
+    unchanged (real observations of really-fetched items stay trusted);
+    counters.oos NOT incremented."""
+    per_item, cohort, counters = _gate_inputs(per_item_n=5, cohort_n=3)
+    decisions, cohort_safe = _apply_cohort_gate(
+        per_item, cohort, counters,
+        canary_tripped=False,
+        matcher_error_count=0,
+        cohort_unsafe_partial=False,
+        completeness_degraded=True,
+        flip_cap_tripped=False,
+    )
+    assert cohort_safe is False
+    assert decisions == per_item
+    assert len(decisions) == 5
+    assert counters.seen == 5
+    assert counters.oos == 0
+
+
+def test_apply_cohort_gate_flip_cap_tripped_drops_cohort():
+    """CTK-120 D-2 — flip_cap_tripped=True (cohort absent-set exceeds the
+    per-run flip cap, whatever the cause) independently drops cohort
+    decisions. Per-item list untouched; counters.oos NOT incremented."""
+    per_item, cohort, counters = _gate_inputs(per_item_n=5, cohort_n=3)
+    decisions, cohort_safe = _apply_cohort_gate(
+        per_item, cohort, counters,
+        canary_tripped=False,
+        matcher_error_count=0,
+        cohort_unsafe_partial=False,
+        completeness_degraded=False,
+        flip_cap_tripped=True,
+    )
+    assert cohort_safe is False
+    assert decisions == per_item
+    assert len(decisions) == 5
     assert counters.seen == 5
     assert counters.oos == 0
 
@@ -528,6 +580,8 @@ if __name__ == "__main__":
         test_apply_cohort_gate_partial_category_drops_cohort,
         test_apply_cohort_gate_all_clear_fires_cohort,
         test_apply_cohort_gate_empty_cohort_is_noop_on_success,
+        test_apply_cohort_gate_completeness_degraded_drops_cohort,
+        test_apply_cohort_gate_flip_cap_tripped_drops_cohort,
         test_classify_single_pass_over_items_no_double_consume,
     ]
     failures = []

@@ -58,6 +58,60 @@ def _load_yaml(slug: str) -> dict:
     return yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
 
 
+def _completeness_degraded(pages_fetched: int | None, median_pages_7d: float) -> bool:
+    """CTK-120 D-1 — the Stage 5.8 completeness predicate, promoted from
+    observability-only WARN to a cohort-gate input. True when this run's
+    pages_fetched fell below 50% of the per-vendor 7d pages median — the
+    20-99%-of-median partial-fetch band the silent canary (threshold
+    max(5, 0.2 * median_seen)) is calibrated to miss. A truncated pagination
+    inflates the cohort absent-set symmetrically (every live listing on a
+    never-fetched page is absent from seen ∪ filtered), so the absence
+    inference is untrustworthy even though per-item observations are real.
+
+    No-op guards mirror the original Stage 5.8 conditions: pages_fetched=None
+    (pre-CTK-094 parser / pre-parse failure) and median_pages_7d<=0 (pre-median
+    bootstrap, NULL legacy rows) both return False — rail silent, never a
+    false-fire on missing baseline. Threshold (0.5) deliberately unchanged
+    from Stage 5.8.
+    """
+    if pages_fetched is None or median_pages_7d <= 0:
+        return False
+    return pages_fetched < 0.5 * median_pages_7d
+
+
+def _resolve_flip_cap(config: dict, prev_in_stock: int) -> int:
+    """CTK-120 D-2 — resolve the per-run cohort-OOS flip cap. Default
+    max(50, 0.25 * prev_in_stock); per-vendor absolute override via YAML
+    `cohort_flip_cap` (validated like canary_floor — coalesce-then-range-check,
+    blank/null/0 YAML collapses to "absent" so per-key defaults apply).
+
+    Constants calibrated against the 14d per-vendor listings_oos distribution
+    2026-06-04 (CTK-120 results.md Session 1): floor 50 + ratio 0.25 clear
+    every observed legit cohort-mass event on 10/11 vendors; WWC's live-sale
+    teardown (1,207 cohort flips at ~2,300 prev_in_stock, 2026-06-03) exceeds
+    the default and carries the override in wwc.yaml.
+
+    ConfigError routes to error_class='config' via the run() handler — same
+    pattern as canary_floor (run.py Stage 5.6).
+    """
+    override = config.get("cohort_flip_cap") or None
+    if override is not None:
+        cap = int(override)
+        if not 0 < cap < 10000:
+            raise ConfigError(
+                f"cohort_flip_cap must be in (0, 10000); got {cap}"
+            )
+        return cap
+    return max(50, int(0.25 * prev_in_stock))
+
+
+def _flip_cap_tripped(cohort_flip_count: int, flip_cap: int) -> bool:
+    """CTK-120 D-2 — strict-greater contract: a cohort absent-set exactly AT
+    the cap persists; cap+1 trips. Named (not inline `>`) so the boundary
+    semantic is unit-pinned in test_cohort_guard.py."""
+    return cohort_flip_count > flip_cap
+
+
 def _apply_cohort_gate(
     per_item_decisions: list,
     cohort_oos_decisions: list,
@@ -66,6 +120,8 @@ def _apply_cohort_gate(
     canary_tripped: bool,
     matcher_error_count: int,
     cohort_unsafe_partial: bool,
+    completeness_degraded: bool,
+    flip_cap_tripped: bool,
 ) -> tuple[list, bool]:
     """CTK-094 fold #12 (/code-review F12 test-coverage extraction) — pure
     function that applies the Stage 5.7 cohort-OOS gate. Returns (decisions,
@@ -82,9 +138,18 @@ def _apply_cohort_gate(
     failed run — this gate's job stays the same (cohort drop), the persist
     gate lives at the run.py Stage 6 call site.
 
+    CTK-120: two more signals — `completeness_degraded` (D-1 pages gate: the
+    fetch landed in the 20-99%-of-median partial band the canary misses, so
+    the absent-set is inflated by never-fetched pages) and `flip_cap_tripped`
+    (D-2: the cohort absent-set exceeds the per-run flip cap regardless of
+    cause — covers pages_fetched=None, zero-median bootstrap, and any future
+    fetcher that forgets the counter). Either one drops cohort decisions;
+    per-item decisions still flow (real observations of really-fetched items
+    stay trusted — the row-#78 scope boundary).
+
     Extracted from inline run.py code so the gate logic can be unit-tested
-    independently of the orchestrator's db + parser dependencies. The three
-    boolean inputs are exactly the partial-success signals run.py computes
+    independently of the orchestrator's db + parser dependencies. The five
+    boolean-ish inputs are exactly the partial-success signals run.py computes
     before this call; counters is the per-item Counters that flows to
     finish_scraper_run.
 
@@ -98,6 +163,8 @@ def _apply_cohort_gate(
         not canary_tripped
         and matcher_error_count == 0
         and not cohort_unsafe_partial
+        and not completeness_degraded
+        and not flip_cap_tripped
     )
     if cohort_safe and cohort_oos_decisions:
         decisions = per_item_decisions + cohort_oos_decisions
@@ -412,14 +479,73 @@ def run(slug: str) -> int:
             )
             log.error(canary_msg)
 
+        # Stage 5.65 (CTK-120) — cohort-guard rails, computed BEFORE the
+        # Stage 5.7 gate (CTK-094's Stage 5.8 ordering fired the pages WARN
+        # after the gate — too late to inform the cohort decision; this is
+        # the reorder the CTK-120 plan names). Two independent rails:
+        #
+        # D-1 pages gate — the Stage 5.8 predicate (pages_fetched < 0.5 ×
+        # 7d-median, threshold unchanged), promoted from observability-only
+        # WARN to a gate input. Catches the partial-fetch CAUSE. The old
+        # Stage 5.8 block is subsumed here (one completeness clause in
+        # error_message, not two); same not-canary guard — on a canary trip
+        # the run is failed + zero-footprint, the louder signal wins and the
+        # median lookup is skipped.
+        #
+        # D-2 flip cap — catches the mass-flip EFFECT regardless of cause
+        # (covers pages_fetched=None, zero-median bootstrap, future fetchers
+        # that forget the counter). prev_in_stock counts in_stock=true rows
+        # in existing_by_url — the same population the diff.classify absent-
+        # pass subtracts from.
+        median_pages_7d = 0.0
+        if pages_fetched is not None and not canary_tripped:
+            median_pages_7d = db.get_7d_median_pages_fetched(conn, vendor_row["id"])
+        completeness_degraded = _completeness_degraded(pages_fetched, median_pages_7d)
+        prev_in_stock = sum(1 for row in existing_by_url.values() if row.get("in_stock"))
+        flip_cap = _resolve_flip_cap(config, prev_in_stock)
+        flip_cap_tripped = _flip_cap_tripped(len(cohort_oos_decisions), flip_cap)
+        # D-3 — guard-trip observability. Stable greppable substrings (the
+        # 'cohort guard:' family; the ratchet-critical 'silent canary
+        # tripped:' contract is untouched — these clauses ride the same
+        # accumulator and stay clear of db.py's contains-LIKE). error_class
+        # lean 'other' confirmed against CTK-097 read-paths at impl: the
+        # poller/digest filter on status only, no error_class-keyed query
+        # breaks. Skipped on canary trip — guard messaging would be noise on
+        # a failed zero-footprint run.
+        cohort_guard_tripped = False
+        if not canary_tripped:
+            if completeness_degraded:
+                cohort_guard_tripped = True
+                guard_msg = (
+                    f"cohort guard: pages incomplete: pages_fetched={pages_fetched} < "
+                    f"0.5 * 7d_median_pages={median_pages_7d:.1f}"
+                )
+                log.error(guard_msg)
+                error_message = (
+                    f"{error_message}; {guard_msg}" if error_message else guard_msg
+                )
+                error_class = error_class or "other"
+            if flip_cap_tripped:
+                cohort_guard_tripped = True
+                guard_msg = (
+                    f"cohort guard: flip cap tripped: cohort_flips={len(cohort_oos_decisions)} > "
+                    f"cap={flip_cap} (prev_in_stock={prev_in_stock})"
+                )
+                log.error(guard_msg)
+                error_message = (
+                    f"{error_message}; {guard_msg}" if error_message else guard_msg
+                )
+                error_class = error_class or "other"
+
         # Stage 5.7 (CTK-094) — Cohort-OOS gate. Per §3: cohort decisions
         # only land when status will be 'success' (no canary trip AND no
         # matcher exceptions yet). matcher_error_count above is the partial-
-        # status signal; canary_tripped is the failed-status signal. Either
-        # one drops the cohort decisions. SchemaChangeError / BlockedError /
-        # FetchError / ConfigError all raise before reaching this point —
-        # the except-block handlers below take over and persist_phase_a
-        # never runs, so cohort-OOS decisions can't slip through there.
+        # status signal; canary_tripped is the failed-status signal. CTK-120
+        # adds the two Stage 5.65 rails. Any one drops the cohort decisions.
+        # SchemaChangeError / BlockedError / FetchError / ConfigError all
+        # raise before reaching this point — the except-block handlers below
+        # take over and persist_phase_a never runs, so cohort-OOS decisions
+        # can't slip through there.
         decisions, cohort_safe = _apply_cohort_gate(
             per_item_decisions,
             cohort_oos_decisions,
@@ -427,6 +553,8 @@ def run(slug: str) -> int:
             canary_tripped=canary_tripped,
             matcher_error_count=matcher_error_count,
             cohort_unsafe_partial=cohort_unsafe_partial,
+            completeness_degraded=completeness_degraded,
+            flip_cap_tripped=flip_cap_tripped,
         )
         if cohort_safe and cohort_oos_decisions:
             log.info(
@@ -437,29 +565,12 @@ def run(slug: str) -> int:
         elif cohort_oos_decisions:
             log.info(
                 "cohort_oos: gate failed — dropping %d decisions "
-                "(canary_tripped=%s matcher_errors=%d cohort_unsafe_partial=%s)",
+                "(canary_tripped=%s matcher_errors=%d cohort_unsafe_partial=%s "
+                "completeness_degraded=%s flip_cap_tripped=%s)",
                 len(cohort_oos_decisions), canary_tripped,
                 matcher_error_count, cohort_unsafe_partial,
+                completeness_degraded, flip_cap_tripped,
             )
-
-        # Stage 5.8 (CTK-094 §4.2) — completeness signal. Soft WARN when
-        # pages_fetched falls below 50% of the per-vendor 7d median (NOT
-        # max_pages ratio; max_pages is a runaway ceiling, not an expected
-        # count). Observability-only — does NOT flip status. Fires only when
-        # the canary is silent (no double-signal) AND median exists (no
-        # first-7-days false-fire). Accumulates into error_message so the
-        # transient log lands on the persistent row.
-        if pages_fetched is not None and not canary_tripped:
-            median_pages_7d = db.get_7d_median_pages_fetched(conn, vendor_row["id"])
-            if median_pages_7d > 0 and pages_fetched < 0.5 * median_pages_7d:
-                completeness_msg = (
-                    f"completeness signal: pages_fetched={pages_fetched} < "
-                    f"0.5 * 7d_median_pages={median_pages_7d:.1f}"
-                )
-                log.warning(completeness_msg)
-                error_message = (
-                    f"{error_message}; {completeness_msg}" if error_message else completeness_msg
-                )
 
         # Stage 6 Phase A — synchronous, fast. Bulk UPSERT vendor_listings +
         # touch + price_history INSERT. Returns Phase B image-mirror queue.
@@ -523,6 +634,18 @@ def run(slug: str) -> int:
         elif matcher_error_count > 0:
             # Arch §3.2: matcher exceptions flip status to 'partial' (data
             # persisted with null match fields, error_message accumulated).
+            status = "partial"
+        elif cohort_guard_tripped:
+            # CTK-120 D-3: either Stage 5.65 rail fired — the run persisted
+            # real per-item data with a degraded absence inference dropped.
+            # Mirrors the matcher-exception / partial-category family. Side
+            # effects accepted per plan: 'partial' excludes this run from
+            # get_7d_median_pages_fetched (correct — a truncated fetch
+            # shouldn't drag the pages median down) and from
+            # get_7d_median_seen (slight upward bias only while a genuine
+            # mass-delist stands unresolved). Exit code 1 → GH Actions
+            # `if: failure()` Slack alert — the loud surface the
+            # suppression-loop hazard mitigation depends on.
             status = "partial"
         else:
             status = "success"
