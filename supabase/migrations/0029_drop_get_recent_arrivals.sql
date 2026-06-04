@@ -1,0 +1,23 @@
+-- CTK-011 session 1 pre-step — retire get_recent_arrivals().
+--
+-- Step 3 of the sequencing locked in migration 0028's header:
+--
+--     0028 — ships get_listing_lead_event() function design.
+--     PR with 0028 + /new code switch — apply migration, switch /new,
+--       deploy frontend.
+--     0029 (this migration) — DROP FUNCTION get_recent_arrivals()
+--       after a verify cycle (1 deploy + Jon eyeballs /new).
+--
+-- Verify cycle complete per CTK-109 close 2026-06-03: deploy landed +
+-- Jon eyeball PASS on /new. Residual-caller grep at write time
+-- (2026-06-04): lib/ + app/ carry comment-only references
+-- (lib/queries/listings.ts:578,618 — deploy-window narration); the only
+-- live invocation is scripts/diag_neon_data_plane.py section (4), which
+-- is try/except-wrapped and degrades to a printed EXCEPTION line —
+-- acceptable for a diagnostic; re-point at get_listing_lead_event() on
+-- its next touch.
+--
+-- DROP IF EXISTS keeps the migration no-op-safe under re-run, same
+-- idempotency posture as 0027/0028.
+
+DROP FUNCTION IF EXISTS get_recent_arrivals();
