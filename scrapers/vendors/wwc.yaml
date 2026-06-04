@@ -91,6 +91,28 @@ category_filter:
     - Cheato              # misspelling forward-binding
     - Macroalgae          # generic
     - Macro Algae         # space-separated variant
+    # CTK-119 D-1 (2026-06-04): promo/POS/BOGO tail of the available-with-
+    # dead-link class — 7 rows feed-published with HEAD-404 retail routes
+    # (full evidence: CTK-119 head-sweep-2026-06-04.txt). Exact-compound
+    # entries, zero false-kill by construction; family patterns (BOGO / POS /
+    # Special / Build A) stay unlocked pending the D-2 multi-day rotation
+    # sample per the rotating-bucket rule.
+    - Acro Frag POS                   # id=15744
+    - Special Sale - Frag             # id=15770
+    - BOGO Beginner SPS Frag          # id=15771
+    - $10 GSP Frag                    # id=15772
+    - Favia/Favites BOGO              # id=15781
+    - May $25 Build A Monti Pack      # id=15782
+    - Rainbow Hammer January Special  # id=15800
+  # CTK-119 D-1 (2026-06-04): WWC wholesale/live-sale channel prefix — 56 of
+  # 523 user-facing rows carried title-initial 'WS - ' with dead retail routes
+  # (in-feed + in_stock=true + storefront HEAD-404; published via a non-retail
+  # channel). ANCHORED axis, not a substring entry: substring 'ws - ' would
+  # silently false-kill any future title with word-final "ws" before " - "
+  # ("Rainbows - ...", "Jaws - ..."). Mechanism decision at CTK-119 plan.md
+  # review-fold #1.
+  title_denylist_prefix:
+    - "WS - "             # trailing space intentional; quoted to preserve it
 
 # CTK-041 auction_detection: null-out current_price on auction listings per
 # Jon 2026-05-14 directive. Auctions stay visible in /new (rendered as

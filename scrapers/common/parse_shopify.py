@@ -100,7 +100,8 @@ class ParseResult:
     # CTK-094 fold #4 (/code-review F4) + CTK-096 close-fold F9 2026-06-01:
     # URLs the parser actively rejected via YAML filter (in_stock_only sold-
     # out drop, product_type_allowlist mismatch, tag_allowlist miss,
-    # tag_denylist match, title_denylist match). diff.classify excludes these
+    # tag_denylist match, title_denylist / title_denylist_prefix match
+    # (CTK-119)). diff.classify excludes these
     # from the cohort-OOS absent-set so a parser-filter rejection (vendor
     # re-categorized item to a non-allowlisted bucket, vendor renamed item
     # to hit a title-denylist substring) doesn't conflate with vendor-sold-
@@ -127,7 +128,7 @@ def fetch_and_parse(config: dict) -> ParseResult:
     items: list[dict] = []
     skipped_unavailable = 0  # CTK-088 fold #4: dropped by the in_stock_only availability gate
     skipped_category = 0     # CTK-088 fold #4: dropped by product_type_allowlist / tag_allowlist / tag_denylist
-    skipped_title_denylist = 0  # CTK-096 D-1: dropped by title_denylist axis (split out from skipped_category so an operator can tell which YAML axis catches the row)
+    skipped_title_denylist = 0  # CTK-096 D-1: dropped by title_denylist axis (split out from skipped_category so an operator can tell which YAML axis catches the row); CTK-119 prefix-axis drops share this counter (same title-axis bucket)
     filtered_urls: set[str] = set()  # CTK-094 fold #4: URLs rejected by _should_keep, excluded from cohort absent-set
     html_hash: str | None = None
     http_status_last: int | None = None
@@ -139,6 +140,11 @@ def fetch_and_parse(config: dict) -> ParseResult:
     title_denylist_lower = [
         e.lower() for e in ((category_filter or {}).get("title_denylist") or [])
     ]
+    # CTK-119 D-1: hoist the anchored-prefix entries alongside, as a tuple so
+    # the attribution branch below can hand it straight to str.startswith.
+    title_denylist_prefix_lower = tuple(
+        e.lower() for e in ((category_filter or {}).get("title_denylist_prefix") or [])
+    )
     # CTK-096 close-fold F5 2026-06-01: hoist tag_denylist as a lowercased set
     # at fetch_and_parse scope too — needed at the call-site attribution to
     # detect the dual-hit case (tag_denylist + title_denylist both match the
@@ -240,6 +246,14 @@ def fetch_and_parse(config: dict) -> ParseResult:
                         e in (p.get("title") or "").lower() for e in title_denylist_lower
                     ):
                         skipped_title_denylist += 1
+                    elif title_denylist_prefix_lower and (
+                        (p.get("title") or "").lower().startswith(title_denylist_prefix_lower)
+                    ):
+                        # CTK-119 D-1: anchored-prefix axis shares the title-
+                        # axis counter. Mirrors _should_keep's axis order
+                        # (substring before prefix) so a dual-hit attributes
+                        # to the substring branch above, same as the gate.
+                        skipped_title_denylist += 1
                     else:
                         skipped_category += 1
                     # CTK-094 fold #4 + Session 4 fold #1: scope-gated to
@@ -286,7 +300,7 @@ def _should_keep(product: dict, category_filter: dict | None, in_stock_only: boo
     title-denylist. None or empty dict category_filter = no category gate
     (permissive default for Phase 2 vendor onboarding inheritance).
 
-    Five filter axes, AND-semantics when more than one is configured:
+    Six filter axes, AND-semantics when more than one is configured:
       - in_stock_only (CTK-088) — when True, drop any product with no buyable
         variant (`not any(v.available ...)`). Opt-in per-vendor (default False
         = fleet behavior). For vendors whose catalog is a permanent archive of
@@ -318,6 +332,14 @@ def _should_keep(product: dict, category_filter: dict | None, in_stock_only: boo
         over single-word when coral-noun collision is possible (e.g., JF
         uses `Hybrid Tang` not `Tang` — `Tang` would false-fire on the
         Tangerine/Tango/Tangelo coral lineages).
+      - title_denylist_prefix (CTK-119) — no entry may match raw_title as a
+        case-insensitive PREFIX (`title.lower().startswith(entry.lower())`).
+        Anchored variant of title_denylist for vendor channel-prefix
+        conventions (WWC `WS - ` wholesale/live-sale SKUs: feed-published
+        with dead retail routes). Use over a substring entry when the
+        pattern could collide word-final inside coral names — substring
+        `ws - ` would false-kill "Rainbows - ..." / "Jaws - ..."; the
+        anchor kills exactly the title-initial class.
 
     Each axis short-circuits to False on miss; permissive when unset (so a
     config carrying only one axis behaves identically to the prior single-axis
@@ -334,6 +356,7 @@ def _should_keep(product: dict, category_filter: dict | None, in_stock_only: boo
     tag_allowlist = category_filter.get("tag_allowlist") or []
     tag_denylist = category_filter.get("tag_denylist") or []
     title_denylist = category_filter.get("title_denylist") or []
+    title_denylist_prefix = category_filter.get("title_denylist_prefix") or []  # CTK-119: anchored variant
     product_type = product.get("product_type") or ""  # CTK-037 Session 5.5: normalize None/absent to "" so allowlist entry "" matches both shapes
     tags = product.get("tags") or []
     if allowlist and product_type not in allowlist:
@@ -378,6 +401,12 @@ def _should_keep(product: dict, category_filter: dict | None, in_stock_only: boo
     if title_denylist:
         title_lower = (product.get("title") or "").lower()
         if any(e.lower() in title_lower for e in title_denylist):
+            return False
+    # CTK-119 D-1: 6th axis. Case-insensitive ANCHORED prefix against raw_title
+    # (lowercase-runtime both sides per the CTK-096 axis convention).
+    if title_denylist_prefix:
+        title_lower = (product.get("title") or "").lower()
+        if title_lower.startswith(tuple(e.lower() for e in title_denylist_prefix)):
             return False
     return True
 

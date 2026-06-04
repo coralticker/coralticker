@@ -34,7 +34,11 @@ BASE_URL = "https://worldwidecorals.com"
 ORIGINATOR_PREFIX = "wwc"  # CTK-025 D3 lock — matcher §3.4 stage 3 synthesizes wwc-prefix
 IMAGE_STRATEGY = "mirror"
 
-# Mirrors scrapers/vendors/wwc.yaml category_filter block (CTK-037 2026-05-10).
+# Mirrors scrapers/vendors/wwc.yaml category_filter block (CTK-037 2026-05-10;
+# CTK-119 2026-06-04). Hand-mirror — keep byte-exact with the YAML (CTK-115
+# parity assertion pending). CTK-119 note: the CTK-107 chaeto/macroalgae
+# title_denylist entries (YAML 2026-06-02) were missing from this mirror
+# until 2026-06-04 — exactly the drift class CTK-115 will pin; repaired here.
 WWC_CATEGORY_FILTER = {
     "product_type_allowlist": [
         "CTO Corals", "Featured Livestock", "Frag", "Frag-PoS", "Live Sale Coral",
@@ -42,6 +46,16 @@ WWC_CATEGORY_FILTER = {
         "WYSIWYG Frag",
     ],
     "tag_denylist": [],
+    # CTK-107 D-2-quater fleet chaeto/macroalgae (4) + CTK-119 D-1 promo/POS/
+    # BOGO dead-route tail (7, exact-compound, ids 15744-15800).
+    "title_denylist": [
+        "Chaeto", "Cheato", "Macroalgae", "Macro Algae",
+        "Acro Frag POS", "Special Sale - Frag", "BOGO Beginner SPS Frag",
+        "$10 GSP Frag", "Favia/Favites BOGO", "May $25 Build A Monti Pack",
+        "Rainbow Hammer January Special",
+    ],
+    # CTK-119 D-1 anchored wholesale/live-sale channel-prefix axis.
+    "title_denylist_prefix": ["WS - "],
 }
 
 # Mirrors scrapers/vendors/wwc.yaml auction_detection block (CTK-041 D-1 lean
@@ -247,6 +261,89 @@ def test_non_auction_preserves_price(products):
     assert out["current_price"] == Decimal("79.99"), f"expected 79.99, got {out['current_price']!r}"
 
 
+# CTK-119 Test 18: anchored prefix axis rejects title-initial WS - class
+def test_filter_rejects_ws_prefix(products):
+    """CTK-119 D-1 — the WS - wholesale/live-sale channel class (56 of 523
+    user-facing rows, all title-initial, dead retail routes per
+    head-sweep-2026-06-04.txt) rejects on the title_denylist_prefix axis.
+    Case shape pinned both directions per the CTK-096 lowercase-runtime
+    convention."""
+    for title in ("WS - Acro Frag Pack", "WS - $2 Zoa Frag", "ws - lowercase drift"):
+        product = {
+            "title": title,
+            "product_type": "Wholesale Frag",
+            "tags": [],
+            "variants": [{"available": True}],
+        }
+        assert _should_keep(product, WWC_CATEGORY_FILTER) is False, (
+            f"title-initial {title!r} should reject on the prefix axis; product passed"
+        )
+
+
+# CTK-119 Test 19: anchored semantics — the substring collision class survives
+def test_filter_keeps_word_final_ws_collision_class(products):
+    """CTK-119 review-fold #1 false-kill guard — executable rationale for the
+    prefix axis over a substring entry. Titles carrying word-final "ws"
+    before " - " must SURVIVE: a substring 'WS - ' entry would kill all three
+    synthetics below, silently, at intake. A regression that reimplements the
+    axis as substring matching (or moves the entry to title_denylist) breaks
+    this test."""
+    title_denylist_lc = [e.lower() for e in WWC_CATEGORY_FILTER["title_denylist"]]
+    for title in ("Rainbows - WYSIWYG Frag", "Jaws - 2 inch Colony", "Outlaws - Zoa Pack"):
+        assert not any(e in title.lower() for e in title_denylist_lc), (
+            "self-check: synthetic title must carry no title_denylist substring, "
+            "or this test stops isolating the prefix axis"
+        )
+        product = {
+            "title": title,
+            "product_type": "Frag",
+            "tags": [],
+            "variants": [{"available": True}],
+        }
+        assert _should_keep(product, WWC_CATEGORY_FILTER) is True, (
+            f"word-final-ws title {title!r} false-killed — anchored semantics regressed"
+        )
+
+
+# CTK-119 Test 20: promo tail exact-compound entries reject, one per entry
+def test_filter_rejects_promo_tail_exact_titles(products):
+    """CTK-119 D-1 — each of the 7 promo/POS/BOGO dead-route titles rejects
+    via its own exact-compound title_denylist entry. One synthetic per entry
+    (CTK-104 reef-safety family shape) so a YAML/mirror drop of any single
+    entry breaks this test. PT held at allowlisted 'Frag' to isolate the
+    title axis."""
+    for title in (
+        "Acro Frag POS", "Special Sale - Frag", "BOGO Beginner SPS Frag",
+        "$10 GSP Frag", "Favia/Favites BOGO", "May $25 Build A Monti Pack",
+        "Rainbow Hammer January Special",
+    ):
+        product = {
+            "title": title,
+            "product_type": "Frag",
+            "tags": [],
+            "variants": [{"available": True}],
+        }
+        assert _should_keep(product, WWC_CATEGORY_FILTER) is False, (
+            f"promo title {title!r} should reject via its exact-compound entry; product passed"
+        )
+
+
+# CTK-119 Test 21: coral false-kill guard across the real-shape fixture surface
+def test_filter_keeps_corals_post_ctk119(products):
+    """CTK-119 D-1 false-kill guard — the 3 real-shape coral fixtures pass the
+    full post-CTK-119 mirror (11 title entries + prefix axis). Pins the new
+    entries against the coral surface the same way CTK-104's guard pinned the
+    reef-safety family on TSA."""
+    for title in (
+        "WWC Avocado Smasher Zoanthids",
+        "JF Acid Reflux Zoanthids",
+        "WYSIWYG Acropora Frag Pack",
+    ):
+        assert _should_keep(_by_title(products, title), WWC_CATEGORY_FILTER) is True, (
+            f"coral fixture {title!r} false-killed by the CTK-119 entries"
+        )
+
+
 # CTK-041 Test 17: auction_detection=None is no-op (permissive default)
 def test_auction_detection_none_is_noop(products):
     """Per-vendor opt-in shape — vendors without auction_detection block in
@@ -278,6 +375,10 @@ def main() -> int:
         test_auction_active_bidding_tag_nulls_price,
         test_auction_suffix_only_logs_warning_preserves_price,
         test_non_auction_preserves_price,
+        test_filter_rejects_ws_prefix,
+        test_filter_keeps_word_final_ws_collision_class,
+        test_filter_rejects_promo_tail_exact_titles,
+        test_filter_keeps_corals_post_ctk119,
         test_auction_detection_none_is_noop,
     ]
 

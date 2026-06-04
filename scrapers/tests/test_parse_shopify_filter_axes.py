@@ -17,6 +17,9 @@ Asserts:
      YAML mixed-case + API lowercase = drop; YAML lowercase + API
      mixed-case = drop. Pins CTK-096 D-2 against future tag-shape
      regressions on any of the 11 vendors.
+  3. title_denylist_prefix (CTK-119) is ANCHORED + case-insensitive +
+     permissive-when-unset — pins the anchor semantics (word-final "ws"
+     collision class survives) and the 10 non-WWC vendors byte-identical.
 
 Runnable as:
   python -m scrapers.tests.test_parse_shopify_filter_axes
@@ -199,6 +202,67 @@ def test_title_denylist_unset_preserves_pre_ctk096_behavior():
     assert _should_keep(p_drop, flt) is False
 
 
+# --- title_denylist_prefix (CTK-119) — anchored axis, fleet semantics ---
+#
+# Anchored variant of title_denylist: case-insensitive startswith, lowercase-
+# runtime both sides per the CTK-096 convention. Shipped for WWC's `WS - `
+# wholesale/live-sale channel prefix; permissive when unset so the 10 other
+# vendors stay byte-identical.
+
+def _mk_prefix_filter(title_denylist_prefix: list[str]) -> dict:
+    """Like _mk_filter but exercises title_denylist_prefix. Empty
+    product_type_allowlist = permissive (no PT gate)."""
+    return {"product_type_allowlist": [], "title_denylist_prefix": title_denylist_prefix}
+
+
+def _p_titled(title: str) -> dict:
+    """Synthetic product where the TITLE is the test surface (inverse of _p,
+    where tags are)."""
+    return {"title": title, "product_type": "", "tags": []}
+
+
+def test_title_denylist_prefix_unset_preserves_behavior():
+    """A filter without the title_denylist_prefix key is permissive — even for
+    a title-initial 'WS - ' row. Pins the 10 non-WWC vendors byte-identical
+    post-CTK-119 (the sharpest possible pin: the exact pattern that WOULD
+    drop on WWC passes when the axis is unset)."""
+    flt = {"product_type_allowlist": [], "tag_denylist": ["goods"]}
+    p = _p_titled("WS - would drop on WWC, passes here")
+    assert _should_keep(p, flt) is True
+
+
+def test_title_denylist_prefix_empty_permissive():
+    """Empty list = no gate, same shape as the other axes' empty semantics."""
+    flt = _mk_prefix_filter([])
+    p = _p_titled("WS - anything")
+    assert _should_keep(p, flt) is True
+
+
+def test_title_denylist_prefix_drops_title_initial():
+    """Title-initial match drops."""
+    flt = _mk_prefix_filter(["WS - "])
+    assert _should_keep(_p_titled("WS - Acro Pack"), flt) is False
+
+
+def test_title_denylist_prefix_case_insensitive_both_directions():
+    """YAML mixed-case + API lowercase = drop, and the inverse — same
+    lowercase-runtime contract as tag_denylist (CTK-096 D-2)."""
+    assert _should_keep(_p_titled("ws - lowercase api"), _mk_prefix_filter(["WS - "])) is False
+    assert _should_keep(_p_titled("WS - Mixed Case Api"), _mk_prefix_filter(["ws - "])) is False
+
+
+def test_title_denylist_prefix_anchored_not_substring():
+    """The load-bearing semantic pin (CTK-119 review-fold #1): the axis is
+    ANCHORED. Word-final "ws" before " - " ('Rainbows - ...', 'Jaws - ...')
+    and mid-title occurrences survive. A regression that reimplements the
+    axis as substring matching breaks this test."""
+    flt = _mk_prefix_filter(["WS - "])
+    for title in ("Rainbows - WYSIWYG Frag", "Jaws - 2 inch", "Mid Title WS - embedded"):
+        assert _should_keep(_p_titled(title), flt) is True, (
+            f"{title!r} dropped — prefix axis lost its anchor"
+        )
+
+
 def main() -> int:
     tests = [
         test_load_all_11_vendor_yamls,
@@ -215,6 +279,11 @@ def main() -> int:
         test_tag_allowlist_no_overlap_drops,
         test_tag_allowlist_empty_permissive,
         test_title_denylist_unset_preserves_pre_ctk096_behavior,
+        test_title_denylist_prefix_unset_preserves_behavior,
+        test_title_denylist_prefix_empty_permissive,
+        test_title_denylist_prefix_drops_title_initial,
+        test_title_denylist_prefix_case_insensitive_both_directions,
+        test_title_denylist_prefix_anchored_not_substring,
     ]
     failed = 0
     for t in tests:
