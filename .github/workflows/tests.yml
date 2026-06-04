@@ -55,3 +55,28 @@ jobs:
 
       - name: Pytest run (no-DB suite)
         run: pytest --strict-markers -m "not requires_db" scrapers/tests/
+
+  # CTK-011 close-window fold (/code-review #3): the TS suite (lib/format
+  # pure-function tests + scripts/discord-digest.test.ts) previously ran
+  # only on local `pnpm test` — a digest-builder regression had no CI
+  # tripwire between sessions. Home for future INV-01 parity tests.
+  node-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Node test suite
+        run: pnpm test

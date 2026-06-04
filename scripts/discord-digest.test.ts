@@ -135,6 +135,10 @@ test('vendor at or under cap renders all lines, no tail', () => {
   assert.ok(!description.includes('more at'));
 });
 
+// 4096 stays a literal here on purpose (/code-review #10 disposition):
+// it pins Discord's embed-description API contract independently of the
+// script's EMBED_DESCRIPTION_CAP constant — if the constant ever drifts,
+// this test fails instead of drifting with it.
 test('defensive trim collapses quietest vendors and stays under 4096', () => {
   // 40 vendors x 3 long-titled rows ≈ well over 4096 — forces collapse.
   const rows: DigestRow[] = [];
@@ -162,6 +166,12 @@ test('empty rows produce empty description (caller skips the post)', () => {
   assert.equal(buildDescription([], NOW), '');
 });
 
-test('title carries the UTC date', () => {
+test('title carries the US Eastern date', () => {
   assert.equal(buildTitle(NOW), 'CoralTicker — daily drops 2026-06-04');
+  // Divergence case: 02:00 UTC is already June 5 in UTC but still
+  // June 4 evening in ET — a late manual dispatch must not date-skip.
+  assert.equal(
+    buildTitle(new Date('2026-06-05T02:00:00Z')),
+    'CoralTicker — daily drops 2026-06-04',
+  );
 });

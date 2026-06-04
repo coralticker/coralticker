@@ -216,9 +216,14 @@ export function buildDescription(rows: DigestRow[], now: Date): string {
 }
 
 export function buildTitle(now: Date): string {
-  // At the 13:21 UTC post tick the UTC calendar date matches the US
-  // Eastern date, so the UTC date is the date reefers read.
-  return `CoralTicker — daily drops ${now.toISOString().slice(0, 10)}`;
+  // ET-anchored date, not UTC (/code-review #9 fold): at the 13:21 UTC
+  // cron tick the two match, but a manual workflow_dispatch after 8pm ET
+  // would stamp tomorrow's UTC date on today's drops. en-CA renders
+  // ISO-shaped YYYY-MM-DD.
+  const date = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+  }).format(now);
+  return `CoralTicker — daily drops ${date}`;
 }
 
 async function fetchRows(): Promise<DigestRow[]> {
@@ -263,9 +268,13 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  // ?wait=true makes Discord return the created message (201-shaped 200)
+  // ?wait=true makes Discord return the created message (200 + body)
   // instead of fire-and-forget 204 — POST failures surface as non-ok.
-  const response = await fetch(`${webhookUrl}?wait=true`, {
+  // URL() + searchParams survives a webhook URL that already carries
+  // query params (/code-review #1 fold).
+  const url = new URL(webhookUrl);
+  url.searchParams.set('wait', 'true');
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ embeds: [{ title, description }] }),
@@ -274,8 +283,14 @@ async function main(): Promise<number> {
     console.error(`digest: webhook POST failed: HTTP ${response.status} ${await response.text()}`);
     return 1;
   }
-  const message = (await response.json()) as { id?: string };
-  console.log(`digest: posted (message id ${message.id ?? 'unknown'})`);
+  // 204-safe (/code-review #1 fold): only the 200-with-body shape carries
+  // a message id; a 204 (e.g., wait param stripped upstream) has no JSON.
+  if (response.status === 200) {
+    const message = (await response.json()) as { id?: string };
+    console.log(`digest: posted (message id ${message.id ?? 'unknown'})`);
+  } else {
+    console.log(`digest: posted (HTTP ${response.status}, no message body)`);
+  }
   return 0;
 }
 

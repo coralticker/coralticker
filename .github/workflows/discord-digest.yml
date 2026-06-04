@@ -13,6 +13,11 @@ on:
     # daily occupants).
     - cron: '21 13 * * *'
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Render the digest in the step log without posting'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -37,14 +42,17 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      # --prod (/code-review #8 fold): the script's runtime closure is
+      # @neondatabase/serverless + two lib/ files — Next/React/eslint dev
+      # tooling is dead weight on a daily POST job.
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --prod --frozen-lockfile
 
       - name: Post daily digest
         env:
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: node --experimental-strip-types scripts/discord-digest.ts
+        run: node --experimental-strip-types scripts/discord-digest.ts ${{ inputs.dry_run && '--dry-run' || '' }}
 
       # Failure routes to the operator channel (Slack), not Discord —
       # decision #39 operator/user split. A silent digest gap on #drops is
