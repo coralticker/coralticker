@@ -6,7 +6,7 @@ Parse-only — no DB, no network. Covers:
   - parse_shopify._normalize_product output shape per CTK-025 lock
   - parse_shopify._should_keep CTK-037 category-filter gate (WWC allowlist —
     Frag / VP Frags / WYSIWYG Frag / WWC Colony / Pack / etc; tag_denylist
-    empty because Fish has its own product_type)
+    carries 'Dry Goods' since CTK-121 — Fish stays allowlist-denied)
   - html_hash sentinel computation per arch §2.6
 
 Inherits CTK-026 test_tsa_parse.py fixture-precedent shape. Closes
@@ -45,7 +45,9 @@ WWC_CATEGORY_FILTER = {
         "Pack", "VP Colonies", "VP Frags", "Wholesale Frag", "WWC Colony",
         "WYSIWYG Frag",
     ],
-    "tag_denylist": [],
+    # CTK-121 D-1: walk-grounded merch guard — 'Live Sale Coral' sales-bucket
+    # PT rotated in a Dry-Goods-tagged hot sauce (id=15725).
+    "tag_denylist": ["Dry Goods"],
     # CTK-107 D-2-quater fleet chaeto/macroalgae (4) + CTK-119 D-1 promo/POS/
     # BOGO dead-route tail (7, exact-compound, ids 15744-15800).
     "title_denylist": [
@@ -344,6 +346,41 @@ def test_filter_keeps_corals_post_ctk119(products):
         )
 
 
+# CTK-121 Test 22: Dry Goods tag rejects inside an allowlisted sales-bucket PT
+def test_filter_rejects_dry_goods_tag_in_allowlisted_pt(products):
+    """CTK-121 D-1 — the rotating-bucket failure mode: 'Live Sale Coral' is an
+    allowlisted sales-bucket PT that rotated in a merch item ('WWC Bounce Hot
+    Sauce', id=15725, tags ['Dry Goods']). The tag_denylist entry must catch
+    it INSIDE the allowlist hit — the allowlist alone cannot. Real-shape
+    synthetic mirrors the live feed object."""
+    product = {
+        "title": "WWC Bounce Hot Sauce",
+        "product_type": "Live Sale Coral",
+        "tags": ["Dry Goods"],
+        "variants": [{"available": True}],
+    }
+    assert _should_keep(product, WWC_CATEGORY_FILTER) is False, (
+        "Dry-Goods-tagged merch inside allowlisted PT should reject on the tag axis"
+    )
+
+
+# CTK-121 Test 23: coral false-kill guard — allowlisted-PT coral w/o the tag passes
+def test_filter_keeps_live_sale_coral_without_dry_goods_tag(products):
+    """CTK-121 D-1 false-kill guard — a coral in the same sales-bucket PT
+    ('Live Sale Coral' censused 1 coral item 2026-05-10) without the Dry
+    Goods tag must pass. Full-feed audit 2026-06-04: 0 of 1,082 allowlisted-
+    PT corals carry the tag."""
+    product = {
+        "title": "WWC Hypnotic Aussie Lord",
+        "product_type": "Live Sale Coral",
+        "tags": ["LPS", "WWC Signature"],
+        "variants": [{"available": True}],
+    }
+    assert _should_keep(product, WWC_CATEGORY_FILTER) is True, (
+        "tag-free Live Sale Coral coral false-killed by the Dry Goods entry"
+    )
+
+
 # CTK-041 Test 17: auction_detection=None is no-op (permissive default)
 def test_auction_detection_none_is_noop(products):
     """Per-vendor opt-in shape — vendors without auction_detection block in
@@ -379,6 +416,8 @@ def main() -> int:
         test_filter_keeps_word_final_ws_collision_class,
         test_filter_rejects_promo_tail_exact_titles,
         test_filter_keeps_corals_post_ctk119,
+        test_filter_rejects_dry_goods_tag_in_allowlisted_pt,
+        test_filter_keeps_live_sale_coral_without_dry_goods_tag,
         test_auction_detection_none_is_noop,
     ]
 

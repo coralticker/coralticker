@@ -80,7 +80,16 @@ category_filter:
     - Wholesale Frag      # wholesale coral frags, 66 items (CTK-037 2026-05-10)
     - WWC Colony          # WWC-house colonies, 65 items (CTK-037 2026-05-10)
     - WYSIWYG Frag        # WYSIWYG-photographed frags, 159 items (CTK-037 2026-05-10)
-  tag_denylist: []  # WWC not needed: Fish has its own product_type (CTK-037 2026-05-10)
+  # CTK-121 D-1 (2026-06-04): walk-grounded merch guard for sales-bucket PTs.
+  # 'Live Sale Coral' (allowlisted; censused 1 coral item 2026-05-10) rotated
+  # in 'WWC Bounce Hot Sauce' (id=15725, tags ['Dry Goods']) — the PE
+  # Weekly-Special rotating-bucket failure mode. Full-feed audit 2026-06-04:
+  # 1 of 1,082 allowlisted-PT products carries a merch-shaped tag; 0 corals
+  # carry 'Dry Goods'. Pre-CTK-121 this was [] ("Fish has its own
+  # product_type", CTK-037 2026-05-10) — Fish stays allowlist-denied; this
+  # entry only guards tag-bearing merch inside allowlisted PTs.
+  tag_denylist:
+    - Dry Goods
   # CTK-107 D-2-quater (2026-06-02) fleet-wide defensive chaeto/macroalgae
   # add per Jon's "filter chaeto from all vendors just to be safe" 2026-06-01.
   # No active leak on WWC today (in_stock=true scan returned 0 chaeto rows)
