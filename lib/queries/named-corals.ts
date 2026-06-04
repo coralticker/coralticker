@@ -62,6 +62,48 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
   return rows;
 }
 
+// CTK-057: powers /corals index page. Flat alphabetical by canonical_name
+// (vendor-neutrality precedent, mirrors getAllActiveVendors). Dormancy gate:
+// only corals with at-least-one in-window listing render — a row must never
+// route to an empty /coral/[slug], so the EXISTS window is `interval '7 days'`
+// in PARITY with CORAL_RECENCY_DAYS = 7 (lib/queries/listings.ts:25), the
+// getCoralAvailability populated-branch window. If that constant moves, this
+// interval moves with it. Deliberately NO in_stock filter — getCoralAvailability
+// renders OOS rows (inventory-recon surface); the index predicate matches the
+// destination's populated branch, not a stricter one. Vendor side carries the
+// active + sentinel-slug belt-and-suspenders per CTK-095 Axis 3 (ESCAPE '!' —
+// backslash collapses in JS template cooking and would invert the filter).
+// Window evaluates at query time inside the cached fn; drift ≤ 10 min on a
+// 7-day window per getVendorInventory precedent.
+export async function getAllNamedCoralsWithListings(): Promise<
+  { slug: string; canonical_name: string }[]
+> {
+  return unstable_cache(
+    async () => {
+      const sql = getNeonSql();
+      const rows = (await sql`
+        SELECT nc.slug, nc.canonical_name
+        FROM named_corals nc
+        WHERE nc.active = true
+          AND nc.slug NOT LIKE '!_%' ESCAPE '!'
+          AND EXISTS (
+            SELECT 1
+            FROM vendor_listings vl
+            JOIN vendors v ON v.id = vl.vendor_id
+            WHERE vl.named_coral_id = nc.id
+              AND vl.last_seen_at > now() - interval '7 days'
+              AND v.active = true
+              AND v.slug NOT LIKE '!_%' ESCAPE '!'
+          )
+        ORDER BY nc.canonical_name ASC
+      `) as unknown as { slug: string; canonical_name: string }[];
+      return rows;
+    },
+    ['getAllNamedCoralsWithListings'],
+    { revalidate: 600, tags: ['corals-index'] },
+  )();
+}
+
 // NO recency cap — deliberately ignores the 7-day in-window predicate that
 // gates the populated branch, so the empty-branch eyebrow can name the
 // historical last-seen across all prior listings of this coral. The freshness

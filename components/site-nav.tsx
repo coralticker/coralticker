@@ -1,13 +1,18 @@
 // §3.5.9 <SiteNav> — sitewide layout chrome
 //
 // Top-bar nav composition: left-aligned <Wordmark variant="nav"> as the
-// home click target + middle-cluster IA links (NEW · DEALS · VENDORS ·
-// ABOUT) bound by forest mid-dot separators + right-aligned SIGNUP CTA.
-// Wired into app/layout.tsx above <main>; consumed by every Phase 2 view.
+// home click target + middle-cluster IA links (NEW · DEALS · CORALS ·
+// VENDORS · ABOUT) bound by forest mid-dot separators + right-aligned
+// SIGNUP CTA. Wired into app/layout.tsx above <main>; consumed by every
+// Phase 2 view.
 //
 // CTK-048 INV-02 locks per
 // .claude/plans/tickets/CTK-048/brand-manager-session-2026-05-20.md:
 //   Q-1: middle-cluster order NEW · DEALS · VENDORS · ABOUT (freshness-first)
+//        — amended CTK-057 (/brand-manager canon-amendment 2026-06-04):
+//        CORALS added at index 2 → NEW · DEALS · CORALS · VENDORS · ABOUT.
+//        Freshness pair leads per the Q-1 rationale; browse-index pair
+//        adjacent, content-noun before source-noun; ABOUT terminal.
 //   Q-2: SIGNUP bare-text mono-uppercase, underline-on-hover, no chip/fill
 //   Q-3: active-route `underline underline-offset-[3px] decoration-1`;
 //        wordmark exempt (brand-anchor, not IA peer — hover-underline only)
@@ -45,6 +50,7 @@ interface NavLink {
 const NAV_LINKS: NavLink[] = [
   { href: '/new', label: 'NEW' },
   { href: '/deals', label: 'DEALS' },
+  { href: '/corals', label: 'CORALS' },
   { href: '/vendors', label: 'VENDORS' },
   { href: '/about', label: 'ABOUT' },
 ];
