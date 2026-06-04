@@ -6,7 +6,12 @@
 // order, same labels, same em-dash separator, same value-kind text.
 
 import type { DataRowField } from '@/components/ui/data-row';
-import { formatRelativeTime } from '@/lib/format/relative-time';
+// Sibling-relative with explicit .ts extension (tsconfig has
+// allowImportingTsExtensions) so this module loads under plain
+// `node --experimental-strip-types` — the `@/` alias is a bundler-only
+// resolution and breaks the CTK-011 standalone digest script, which is
+// this primitive's first non-Next consumer.
+import { formatRelativeTime } from './relative-time.ts';
 
 export function formatDataRow(fields: DataRowField[], now: Date): string {
   return fields

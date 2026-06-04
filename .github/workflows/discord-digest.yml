@@ -1,0 +1,60 @@
+name: discord-digest
+
+on:
+  schedule:
+    # CTK-011 — daily drop digest to the public Discord #drops channel.
+    #
+    # 21 13 * * * UTC = 9:21am ET (EDT) per /reef-lead post-time call
+    # 2026-06-04: morning closes a complete vendor drop day (afternoon +
+    # evening drops land in one post) and opens the full order-cutoff
+    # window for same-day action. Off-minute :21 per .claude/open-items.md
+    # top-of-hour degradation discipline; minute pool verified free
+    # 2026-06-04 (hourly :07/:11/:19/:29/:37/:41/:43/:53/:57; no hour-13
+    # daily occupants).
+    - cron: '21 13 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: discord-digest
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Post daily digest
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: node --experimental-strip-types scripts/discord-digest.ts
+
+      # Failure routes to the operator channel (Slack), not Discord —
+      # decision #39 operator/user split. A silent digest gap on #drops is
+      # exactly the empty-room failure shape CTK-011's risks call out.
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"discord-digest failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"

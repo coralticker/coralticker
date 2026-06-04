@@ -1,0 +1,167 @@
+// scripts/discord-digest.test.ts
+//
+// Pure-builder coverage for the CTK-011 Discord daily digest — field
+// derivation (listing-card.tsx parity), Discord adapter styling, vendor
+// grouping/ordering, N=3 cap + honest tails, and the 4096 defensive trim.
+// No DB, no webhook — fetchRows/main are out of test scope (the RPC is
+// smoke-tested at migration apply; the POST at first-ship per INV-01).
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  buildDescription,
+  buildFields,
+  buildLine,
+  buildTitle,
+  escapeDiscordMd,
+  groupByVendor,
+  type DigestRow,
+} from './discord-digest.ts';
+
+const NOW = new Date('2026-06-04T13:21:00Z');
+
+function row(overrides: Partial<DigestRow>): DigestRow {
+  return {
+    id: 1,
+    raw_title: 'Test Coral',
+    current_price: '50.00',
+    compare_at_price: null,
+    prior_price: null,
+    event: 'just-listed',
+    event_at: '2026-06-04T10:21:00Z',
+    first_seen_at: '2026-06-04T10:21:00Z',
+    vendor_display_name: 'WWC',
+    ...overrides,
+  };
+}
+
+test('just-listed line: bold name + bare Price + Listed relative-time', () => {
+  assert.equal(
+    buildLine(row({}), NOW),
+    '**Test Coral** — Price. $50.00 — Listed. 3 hours ago',
+  );
+});
+
+test('price-dropped line: was-value struck, new value bare', () => {
+  const line = buildLine(
+    row({ event: 'price-dropped', prior_price: '400.00', current_price: '50.00' }),
+    NOW,
+  );
+  assert.equal(line, '**Test Coral** — Price. was ~~$400.00~~, now $50.00 — Listed. 3 hours ago');
+});
+
+test('vendor-markdown at >=5%: was-value struck', () => {
+  const fields = buildFields(row({ compare_at_price: '89.00', current_price: '49.00' }));
+  assert.deepEqual(fields[0], {
+    label: 'Price',
+    value: { kind: 'vendor-markdown', oldValue: '~~$89.00~~', newValue: '$49.00' },
+  });
+});
+
+test('vendor-markdown epsilon: clean integer-dollar 5% markdown qualifies', () => {
+  // 3.15 vs 3.00 is exactly 5% — the IEEE754 multiply form misses it.
+  const fields = buildFields(row({ compare_at_price: '3.15', current_price: '3.00' }));
+  assert.equal((fields[0]!.value as { kind: string }).kind, 'vendor-markdown');
+});
+
+test('compare_at under 5% renders bare Price (no markdown field)', () => {
+  const fields = buildFields(row({ compare_at_price: '51.00', current_price: '50.00' }));
+  assert.deepEqual(fields[0], { label: 'Price', value: '$50.00' });
+});
+
+test('price-drop-new wins over vendor-markdown when both apply', () => {
+  const fields = buildFields(
+    row({ prior_price: '100.00', compare_at_price: '120.00', current_price: '50.00' }),
+  );
+  assert.equal((fields[0]!.value as { kind: string }).kind, 'price-drop-new');
+});
+
+test('null price renders "price on request" (auction shape)', () => {
+  assert.equal(
+    buildLine(row({ current_price: null }), NOW),
+    '**Test Coral** — Price. price on request — Listed. 3 hours ago',
+  );
+});
+
+test('back-in-stock row gets Back label on event_at', () => {
+  const line = buildLine(row({ event: 'back-in-stock' }), NOW);
+  assert.equal(line, '**Test Coral** — Price. $50.00 — Back. 3 hours ago');
+});
+
+test('discord markdown metacharacters escaped in coral names', () => {
+  assert.equal(escapeDiscordMd('OG *Bounce* ~Shroom~ #4'), 'OG \\*Bounce\\* \\~Shroom\\~ #4');
+  assert.ok(buildLine(row({ raw_title: 'A*B' }), NOW).startsWith('**A\\*B**'));
+});
+
+test('vendors ordered busiest-first, name-asc tiebreak', () => {
+  const groups = groupByVendor([
+    row({ id: 1, vendor_display_name: 'TSA' }),
+    row({ id: 2, vendor_display_name: 'WWC' }),
+    row({ id: 3, vendor_display_name: 'WWC' }),
+    row({ id: 4, vendor_display_name: 'JF' }),
+  ]);
+  assert.deepEqual(
+    groups.map((g) => g.vendor),
+    ['WWC', 'JF', 'TSA'],
+  );
+});
+
+test('within-vendor order: precedence rank, then newest-first', () => {
+  const groups = groupByVendor([
+    row({ id: 1, event: 'just-listed', event_at: '2026-06-04T12:00:00Z' }),
+    row({ id: 2, event: 'price-dropped', event_at: '2026-06-04T08:00:00Z' }),
+    row({ id: 3, event: 'back-in-stock', event_at: '2026-06-04T09:00:00Z' }),
+    row({ id: 4, event: 'price-dropped', event_at: '2026-06-04T11:00:00Z' }),
+  ]);
+  assert.deepEqual(
+    groups[0]!.rows.map((r) => r.id),
+    [4, 2, 3, 1],
+  );
+});
+
+test('per-vendor cap at 3 with honest overflow tail', () => {
+  const rows = [1, 2, 3, 4, 5].map((id) =>
+    row({ id, raw_title: `Coral ${id}`, event_at: `2026-06-04T0${id}:00:00Z` }),
+  );
+  const description = buildDescription(rows, NOW);
+  assert.match(description, /^\*\*WWC\*\* — 5 drops\n/);
+  assert.equal(description.split('\n').length, 5); // header + 3 lines + tail
+  assert.match(description, /\n\+ 2 more at coralticker\.com$/);
+});
+
+test('vendor at or under cap renders all lines, no tail', () => {
+  const description = buildDescription([row({})], NOW);
+  assert.match(description, /^\*\*WWC\*\* — 1 drop\n/);
+  assert.ok(!description.includes('more at'));
+});
+
+test('defensive trim collapses quietest vendors and stays under 4096', () => {
+  // 40 vendors x 3 long-titled rows ≈ well over 4096 — forces collapse.
+  const rows: DigestRow[] = [];
+  let id = 0;
+  for (let v = 0; v < 40; v++) {
+    for (let i = 0; i < 3; i++) {
+      rows.push(
+        row({
+          id: ++id,
+          vendor_display_name: `Vendor ${String(v).padStart(2, '0')}`,
+          raw_title: `Extremely Long Hypothetical Coral Trade Name ${id} Edition`,
+        }),
+      );
+    }
+  }
+  const description = buildDescription(rows, NOW);
+  assert.ok(description.length <= 4096, `length ${description.length}`);
+  // Busiest-first ordering is count-equal here, so name-asc: Vendor 00
+  // stays fully rendered; collapsed groups carry the full-count tail.
+  assert.match(description, /\*\*Vendor 00\*\* — 3 drops\n\*\*Extremely/);
+  assert.match(description, /\*\*Vendor 39\*\* — 3 drops\n\+ 3 more at coralticker\.com/);
+});
+
+test('empty rows produce empty description (caller skips the post)', () => {
+  assert.equal(buildDescription([], NOW), '');
+});
+
+test('title carries the UTC date', () => {
+  assert.equal(buildTitle(NOW), 'CoralTicker — daily drops 2026-06-04');
+});
