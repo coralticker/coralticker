@@ -1,0 +1,60 @@
+name: health-digest
+
+on:
+  schedule:
+    # Arch §6.5 daily health-check digest, bootstrapped by CTK-097 (plan D-6
+    # — the §6.5 design predated any implementation; this workflow lands it
+    # with the per-category cohort block as its only v1 section; further
+    # blocks land additively via SECTION_BUILDERS in
+    # scrapers/common/health_digest.py).
+    #
+    # 11 17 * * * UTC = 12:11pm ET (EDT) — §6.5's nominal "noon ET / 17:00
+    # UTC" intent on an off-minute slot per .claude/open-items.md top-of-hour
+    # degradation discipline (the 2026-05-12 incident hit daily 0-minute
+    # slots too). CTK-097 plan D-8.
+    #
+    # Self-monitoring per §6.5: if this workflow fails, the failure step
+    # below posts to the same channel; if the webhook itself is the failure,
+    # the digest body still lands in the step log and the red run + next-day
+    # message gap surface it. A >2-day digest gap = go check GH cron status.
+    - cron: '11 17 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: health-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Post health digest
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python -m scrapers.common.health_digest
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"health-digest failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"

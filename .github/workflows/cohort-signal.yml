@@ -1,0 +1,63 @@
+name: cohort-signal
+
+on:
+  schedule:
+    # CTK-097 D-1 (standalone hourly cron, decoupled from scraper deployment
+    # lifecycle) + D-8 minute pick. 11 * * * * trails the :47/:53 tail of the
+    # hourly scraper band so each poll evaluates the freshest runs of its
+    # nominal slot; off-minute per .claude/open-items.md top-of-hour
+    # degradation discipline (2026-05-12 incident). The Jon-ratified
+    # 0 * * * * was substituted at plan-draft per the activation directive's
+    # own off-minute flag.
+    #
+    # Ping dedup is keyed to this schedule (plan D-5): the poller computes
+    # its nominal slot from SLOT_MINUTE=11 in scrapers/common/cohort_signal.py
+    # and fires only on runs inside (previous slot, current slot]. Changing
+    # this cron minute requires changing SLOT_MINUTE in lockstep.
+    - cron: '11 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Queue (don't cancel) per fleet convention (JF cascade-repair shape,
+# CTK-027 2026-05-08). Two delayed fires queuing into the same nominal slot
+# double-evaluate one window — accepted residual edge per plan §3 (double-
+# ping, not missed-ping; bounded by this block).
+concurrency:
+  group: cohort-signal
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    # Read-only poll: one YAML sweep + LIMIT-14 query per cohort vendor +
+    # at most one webhook POST per vendor. Seconds, not minutes.
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Poll cohort signal
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python -m scrapers.common.cohort_signal
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"cohort-signal poller failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"

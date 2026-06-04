@@ -157,6 +157,26 @@ cohort_oos_at_persist: true
 # failure modes, both kept.
 category_cohort_signal: true
 
+# CTK-097 D-2 (per-vendor YAML thresholds, Jon-ratified 2026-05-31 — "make
+# configurable because i feel like we will be finetuning it"). Read by
+# scrapers/common/cohort_signal.py; an absent block opts into these same
+# defaults, so the block exists here for tunability + self-documentation,
+# not behavior.
+#
+# three_days_running — a category at zero for this many consecutive
+#   status='success' scrapes trips the real-time persistence ping.
+#   Semantics: consecutive qualifying SCRAPES, not calendar days —
+#   coincident on AquaSD's daily cadence, diverges if a cohort vendor
+#   ever goes hourly. Transition-shaped: paths at zero across the whole
+#   trailing 14-run window (curator-empty — /clams/ etc., 5 at the
+#   2026-05-31 run-703 baseline) never ping; they get a digest label.
+# max_empty_per_scrape — more than this many zero-count categories in a
+#   single scrape trips the breadth ping (fleet-wide drift candidate).
+#   8 = the 5 baseline curator-empties + 3 buffer per Q-3b ratification.
+cohort_signal_thresholds:
+  three_days_running: 3
+  max_empty_per_scrape: 8
+
 # auction_detection — ABSENT from this config. AquaSD's /auctions/ surface
 # is out of v1 scope (eBay widget, JS-rendered). parse_bigcommerce's
 # auction_detection plumbing is permissive-default no-op when config
