@@ -86,10 +86,14 @@ def _resolve_flip_cap(config: dict, prev_in_stock: int) -> int:
     blank/null/0 YAML collapses to "absent" so per-key defaults apply).
 
     Constants calibrated against the 14d per-vendor listings_oos distribution
-    2026-06-04 (CTK-120 results.md Session 1): floor 50 + ratio 0.25 clear
-    every observed legit cohort-mass event on 10/11 vendors; WWC's live-sale
-    teardown (1,207 cohort flips at ~2,300 prev_in_stock, 2026-06-03) exceeds
-    the default and carries the override in wwc.yaml.
+    2026-06-04 (CTK-120 results.md Session 1 + 1a correction): floor 50 +
+    ratio 0.25 clear every observed steady-state cohort-mass event fleet-wide
+    (largest: wwc 16, jf-class per-item events are cap-irrelevant). One-time
+    bootstrap events are EXCLUDED from calibration: a cohort_oos_at_persist
+    opt-in backlog flush (CTK-105 run-889 class, 1,207 flips on WWC's first
+    post-flip run) is an operator-initiated one-shot, not recurring churn —
+    if a future vendor opt-in expects a large first-run flush, set a
+    temporary YAML override for the flush cycle and remove it after.
 
     ConfigError routes to error_class='config' via the run() handler — same
     pattern as canary_floor (run.py Stage 5.6).

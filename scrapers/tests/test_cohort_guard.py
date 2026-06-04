@@ -103,8 +103,10 @@ def test_flip_cap_zero_prev_in_stock_is_floor():
 
 
 def test_flip_cap_yaml_override_wins():
-    """WWC case: cohort_flip_cap: 2000 overrides the default absolutely —
-    live-sale teardown (1,207 cohort flips) must clear it."""
+    """cohort_flip_cap overrides the default absolutely. Operator use case:
+    a known one-shot mass-flip (e.g., a cohort_oos_at_persist opt-in backlog
+    flush, CTK-105 run-889 class) gets a temporary override for the flush
+    cycle; no vendor carries a standing override as of CTK-120 Session 1a."""
     assert _resolve_flip_cap({"cohort_flip_cap": 2000}, 2300) == 2000
 
 
