@@ -109,6 +109,16 @@ cohort_oos_at_persist: true
 # volatile buyable counts.
 canary: false
 
+# cohort_flip_cap: 2000 — ONE-SHOT OVERRIDE, REMOVE SAME-DAY (wwc a0c1e13
+# precedent: zero standing overrides). Live-sale sell-down 2026-06-04
+# (in_stock 804 -> live buyable 148) exceeded the default cap
+# max(50, 0.25*804)=201; scheduled runs 26973561922 (flips 287) and
+# 26980257253 (flips 656) stuck-tripped the guard, freezing prev_in_stock
+# at 804 while the storefront sold down. Live spot-check 2026-06-04
+# 21:30Z via production fetch_and_parse = 148 exactly (matches run
+# 26980257253 parse) — flush is legitimate OOS, not a partial scrape.
+cohort_flip_cap: 2000
+
 # canary_floor: 15 — CTK-094 Session 4 fold #4 (/code-review F4). The
 # default floor-of-5 on canary:false vendors leaves the 5-20 band uncovered
 # on POTO — a parser bug producing 6-20 items (e.g., regex over-filter,
