@@ -56,9 +56,9 @@ jobs:
     # scale). 60 absorbs first-run + future catalog growth.
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: pip

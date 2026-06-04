@@ -2,7 +2,7 @@ name: wwc
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '43 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -21,9 +21,9 @@ jobs:
     # 60 is the Phase 1 Shopify-large-catalog carve-out shared with PE.
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: pip

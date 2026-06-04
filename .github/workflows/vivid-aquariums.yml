@@ -68,13 +68,13 @@ jobs:
     # acceptable; second fire absorbs the residual.
     timeout-minutes: 60
     steps:
-      # actions/checkout@v4 + actions/setup-python@v5 per fleet alignment
+      # actions/checkout@v6 + actions/setup-python@v6 per fleet alignment
       # (all 8 existing workflows on @v4/@v5 at CTK-086 ship time;
       # open-items.md L34 sub-CTK ports all 9 workflows to Node-24-
       # compatible majors in one pass before 2026-06-02 forced upgrade).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: pip

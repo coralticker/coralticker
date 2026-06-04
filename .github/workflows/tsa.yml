@@ -23,7 +23,7 @@ on:
     # 'hourly off-window' — accepted per CTK-026 D3 deviation paragraph;
     # idempotent absorption (html_hash + UPSERT make duplicates a no-op
     # data-side) + ~10% extra runs inside cost envelope.
-    - cron: '0 * * * *'
+    - cron: '57 * * * *'
     - cron: '*/15 15-23 * * 6,0'
     - cron: '*/15 0-3 * * 0,1'
   workflow_dispatch:
@@ -45,9 +45,9 @@ jobs:
     # carve-out shared with PE + WWC.
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: pip
