@@ -2,9 +2,11 @@
 // in-window listing per CTK-057. Composition mirrors /vendors (CTK-055):
 // max-w-3xl frame, prose-register H1, Suspense + skeleton, py-3 rows.
 //
-// Dormancy gate: getAllNamedCoralsWithListings() restricts to corals whose
-// 7-day last_seen_at window is populated — every rendered row routes to a
-// populated /coral/[slug] (predicate parity with getCoralAvailability).
+// Dormancy gate: getAllNamedCoralsWithListings() restricts to corals with an
+// in-window listing (CORAL_RECENCY_DAYS last_seen_at) — every rendered row
+// routes to a populated /coral/[slug]: listing-window parity with
+// getCoralAvailability, vendor-side deliberately stricter (see the helper's
+// header comment).
 // v1-minimal: no enrichment, no eyebrow, no vendor counts (CTK-009 Phase 3
 // charter). Single internal link per row — /coral/[slug] hero owns the
 // vendor CTA, so no outbound pair (deviation from the /vendors two-link row
@@ -18,6 +20,7 @@ import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { getAllNamedCoralsWithListings } from '@/lib/queries/named-corals';
+import { CORAL_RECENCY_DAYS } from '@/lib/queries/listings';
 
 export const revalidate = 600;
 
@@ -34,11 +37,11 @@ const SKELETON_ROW_COUNT = 6;
 
 // Defensive zero-row branch — fires only if none of the seeded corals has an
 // in-window listing. Copy locked /brand-manager 2026-06-04 (gap-moment
-// "I"-voice carve-out). The "7 days" literal is in PARITY with
-// CORAL_RECENCY_DAYS = 7 (lib/queries/listings.ts:25) and the interval in
-// getAllNamedCoralsWithListings — if the window moves, this copy moves too.
-const EMPTY_FALLBACK =
-  "No named corals listed in the last 7 days. When one lists, I'll surface it here.";
+// "I"-voice carve-out; derive-from-constant sanctioned as the alternate path
+// at the same lock). The "7 days" string derives from CORAL_RECENCY_DAYS —
+// the same constant getAllNamedCoralsWithListings windows on — so the copy
+// moves with the window by construction.
+const EMPTY_FALLBACK = `No named corals listed in the last ${CORAL_RECENCY_DAYS} days. When one lists, I'll surface it here.`;
 
 async function CoralList() {
   const corals = await getAllNamedCoralsWithListings();

@@ -22,9 +22,12 @@ import { getNeonSql } from '@/lib/db/neon';
 // Spec-driven recency + pagination constants. Named per CTK-062 F-5 fold to
 // keep literal sites grep-able back to their site.md spec source.
 const PAGE_SIZE = 50; // site.md §4.5 — vendor-inventory pagination chunk.
-const CORAL_RECENCY_DAYS = 7; // site.md §4.1 — /coral/[slug] availability window.
+// Exported (CTK-057 code-review fold #2): getAllNamedCoralsWithListings +
+// the /corals empty-state copy derive from this constant directly, so the
+// index window and the user-facing "7 days" string move with it.
+export const CORAL_RECENCY_DAYS = 7; // site.md §4.1 — /coral/[slug] availability window.
 const VENDOR_RECENCY_DAYS = 14; // site.md §4.5 — /vendor/[slug] inventory window.
-const MS_PER_DAY = 86_400_000;
+export const MS_PER_DAY = 86_400_000;
 
 export interface Listing {
   id: number;

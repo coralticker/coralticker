@@ -1,5 +1,6 @@
 import { unstable_cache } from 'next/cache';
 import { getNeonSql } from '@/lib/db/neon';
+import { CORAL_RECENCY_DAYS, MS_PER_DAY } from '@/lib/queries/listings';
 
 // description stays on NamedCoral with a null-coerce at the cast site —
 // hosted named_corals lacks the column; the description-<p> branch on
@@ -65,22 +66,31 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // CTK-057: powers /corals index page. Flat alphabetical by canonical_name
 // (vendor-neutrality precedent, mirrors getAllActiveVendors). Dormancy gate:
 // only corals with at-least-one in-window listing render — a row must never
-// route to an empty /coral/[slug], so the EXISTS window is `interval '7 days'`
-// in PARITY with CORAL_RECENCY_DAYS = 7 (lib/queries/listings.ts:25), the
-// getCoralAvailability populated-branch window. If that constant moves, this
-// interval moves with it. Deliberately NO in_stock filter — getCoralAvailability
-// renders OOS rows (inventory-recon surface); the index predicate matches the
-// destination's populated branch, not a stricter one. Vendor side carries the
-// active + sentinel-slug belt-and-suspenders per CTK-095 Axis 3 (ESCAPE '!' —
-// backslash collapses in JS template cooking and would invert the filter).
-// Window evaluates at query time inside the cached fn; drift ≤ 10 min on a
-// 7-day window per getVendorInventory precedent.
+// route to an empty /coral/[slug]. The window derives from the imported
+// CORAL_RECENCY_DAYS (lib/queries/listings.ts) — the same constant that gates
+// the getCoralAvailability populated branch, so listing-side window drift is
+// impossible. Deliberately NO in_stock filter — getCoralAvailability renders
+// OOS rows (inventory-recon surface), so the listing-side window is parity.
+// The VENDOR-side EXISTS guards (active + sentinel-slug, CTK-095 Axis 3
+// belt-and-suspenders; ESCAPE '!' — backslash collapses in JS template cooking
+// and would invert the filter) are deliberately STRICTER than the destination:
+// getCoralAvailability carries no vendor filter, so a coral whose only
+// in-window listings belong to a deactivated or sentinel vendor stays off the
+// index by design rather than advertising retired inventory. That
+// destination-side asymmetry (the detail page would still render such rows)
+// is tracked at /reef-lead intake (CTK pending as of 2026-06-04; cite the
+// number here once assigned). Window evaluates at query time inside the
+// cached fn; drift ≤ 10 min on a 7-day window per getVendorInventory
+// precedent.
 export async function getAllNamedCoralsWithListings(): Promise<
   { slug: string; canonical_name: string }[]
 > {
   return unstable_cache(
     async () => {
       const sql = getNeonSql();
+      const windowStart = new Date(
+        Date.now() - CORAL_RECENCY_DAYS * MS_PER_DAY,
+      ).toISOString();
       const rows = (await sql`
         SELECT nc.slug, nc.canonical_name
         FROM named_corals nc
@@ -91,7 +101,7 @@ export async function getAllNamedCoralsWithListings(): Promise<
             FROM vendor_listings vl
             JOIN vendors v ON v.id = vl.vendor_id
             WHERE vl.named_coral_id = nc.id
-              AND vl.last_seen_at > now() - interval '7 days'
+              AND vl.last_seen_at > ${windowStart}
               AND v.active = true
               AND v.slug NOT LIKE '!_%' ESCAPE '!'
           )
