@@ -91,6 +91,14 @@ test('parseSearchQuery: empty / missing / whitespace-only fall back to null', ()
   assert.equal(parseSearchQuery('\t\n'), null);
 });
 
+test('parseSearchQuery: array input (duplicate ?q= keys) takes the first value', () => {
+  // Next.js delivers string[] on ?q=a&q=b — guard per /code-review fold #1;
+  // pre-guard code threw in generateMetadata + the page body (500).
+  assert.equal(parseSearchQuery(['a', 'b']), 'a');
+  assert.equal(parseSearchQuery([]), null);
+  assert.equal(parseSearchQuery(['', 'b']), null);
+});
+
 test('parseSearchQuery: caps at SEARCH_QUERY_MAX_LENGTH post-normalization', () => {
   const long = 'a'.repeat(SEARCH_QUERY_MAX_LENGTH + 40);
   assert.equal(parseSearchQuery(long)?.length, SEARCH_QUERY_MAX_LENGTH);

@@ -42,15 +42,21 @@ import {
 } from '@/lib/queries/search';
 
 interface PageProps {
-  searchParams: Promise<{ q?: string }>;
+  // string[] when the URL carries duplicate ?q= keys — both consumers below
+  // first-value through the same guard as parseSearchQuery (/code-review
+  // fold #1).
+  searchParams: Promise<{ q?: string | string[] }>;
 }
 
 // H1 + <title> query echo — raw (un-normalized) q, but clamped: trimmed +
 // sliced to the parser's 80-char cap so an arbitrarily long ?q= can't blow
 // out the title bar or the H1 line (close-out fold #3; matching only ever
-// sees the first 80 normalized chars anyway).
-function clampEcho(rawQ: string): string {
-  return rawQ.trim().slice(0, SEARCH_QUERY_MAX_LENGTH);
+// sees the first 80 normalized chars anyway). Array guard mirrors
+// parseSearchQuery — first value wins, so the echo names the value that
+// drove matching.
+function clampEcho(rawQ: string | string[] | undefined): string {
+  const single = Array.isArray(rawQ) ? rawQ[0] : rawQ;
+  return (single ?? '').trim().slice(0, SEARCH_QUERY_MAX_LENGTH);
 }
 
 // Per-query title in the guide L105 SERP convention `{specific} —
@@ -66,7 +72,7 @@ export async function generateMetadata({
     title:
       q === null
         ? 'Search — CoralTicker'
-        : `Results for "${clampEcho(sp.q!)}" — CoralTicker`,
+        : `Results for "${clampEcho(sp.q)}" — CoralTicker`,
     robots: { index: false, follow: true },
   };
 }
@@ -176,11 +182,22 @@ function ListingsRows({ listings }: { listings: Listing[] }) {
     const prev = i > 0 ? listings[i - 1]! : null;
     if (prev === null) {
       // Leading carve-out: bucketTransition against now answers "is the top
-      // bucket a different local day than today."
+      // bucket a different local day than today." Different-AND-AHEAD (a
+      // future-dated top row — midnight Neon-vs-Vercel clock skew reaches
+      // it) suppresses instead of throwing: bucketLabel's dayDiff <= 0
+      // throw is a caller contract, so the past-day check rides the label
+      // computation caller-side (/code-review fold #2; the lib-level
+      // totality fix is the Tier 3 bundle CTK's).
       if (bucketTransition(now.toISOString(), curr.firstSeenAt)) {
-        out.push(
-          <GroupDivider key="div-lead" label={bucketLabel(curr.firstSeenAt, now)} />,
-        );
+        const currDate = new Date(curr.firstSeenAt);
+        const isPastDay =
+          new Date(currDate.getFullYear(), currDate.getMonth(), currDate.getDate()).getTime() <
+          new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        if (isPastDay) {
+          out.push(
+            <GroupDivider key="div-lead" label={bucketLabel(curr.firstSeenAt, now)} />,
+          );
+        }
       }
     } else if (bucketTransition(prev.firstSeenAt, curr.firstSeenAt)) {
       out.push(

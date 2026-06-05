@@ -73,11 +73,20 @@ export function parseIncludeOOS(raw: string | undefined): boolean {
 
 // /search query normalizer (CTK-058 D-058-4). Mirrors the §3.3 runtime
 // normalization that produced vendor_listings.normalized_title and
-// named_corals.normalized_name (scrapers/common/normalize.py): lowercase +
-// NFKD-unaccent + whitespace-collapse — an accent-bearing query must
-// normalize the same way or it silently misses unaccented stored values
-// (/review-plan fold #3). The trailing-junk strip stage is scrape-side only
-// and deliberately not replicated — user queries don't carry SKU tails.
+// named_corals.normalized_name (scrapers/common/normalize.py), same op
+// order: lowercase → NFKD → strip combining marks → whitespace-collapse.
+// One predicate difference remains: JS strips \p{M} (all marks) where
+// Python strips unicodedata.combining() != 0 (nonzero combining class) —
+// no practical divergence on this corpus (/code-review fold #4). An
+// accent-bearing query must normalize the same way or it silently misses
+// unaccented stored values (/review-plan fold #3). The trailing-junk strip
+// stage is scrape-side only and deliberately not replicated — user queries
+// don't carry SKU tails.
+//
+// Array guard (/code-review fold #1): Next.js delivers string[] when the
+// URL carries duplicate ?q= keys — first value wins, matching the sibling
+// parsers' effective behavior, instead of .normalize() throwing on an
+// array in both generateMetadata and the page body.
 //
 // Length-cap 80 applies post-normalization; a cap-cut partial trailing token
 // still substring-matches per the D-058-1 ILIKE semantics. Empty / missing /
@@ -86,12 +95,15 @@ export function parseIncludeOOS(raw: string | undefined): boolean {
 // drives matching only.
 export const SEARCH_QUERY_MAX_LENGTH = 80;
 
-export function parseSearchQuery(raw: string | undefined): string | null {
-  if (!raw) return null;
-  const normalized = raw
+export function parseSearchQuery(
+  raw: string | string[] | undefined,
+): string | null {
+  const single = Array.isArray(raw) ? raw[0] : raw;
+  if (!single) return null;
+  const normalized = single
+    .toLowerCase()
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
-    .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, SEARCH_QUERY_MAX_LENGTH);
