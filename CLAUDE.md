@@ -178,6 +178,12 @@ Neon Postgres auth is the credential embedded in `NEON_DATABASE_URL`; rotation i
 
 Never run commands that dump secret VALUES to stdout — `supabase projects api-keys`, `cat .env`, `gh secret list --json` with values, `aws secretsmanager get-secret-value`, etc. Bash/PowerShell tool output lands in the conversation transcript; secrets in transcript = leak per architecture-v1.md §6.3 rotate-on-suspected-leak. To stash a new secret to GitHub Actions or similar: have Jon run `gh secret set --body "<value>"` in his own terminal so the value never crosses the agent surface; verify via timestamp on `gh secret list` (no values shown). See `feedback_secret_stash_jon_terminal.md` memory for the full discipline.
 
+## Memory index hygiene
+
+The persistent memory lives outside this repo (harness path); each fact is one topic file, indexed by a one-line pointer in `MEMORY.md`. `MEMORY.md` is loaded whole into context every session, so it has a size ceiling — keep it lean or entries silently stop reaching context.
+
+Index-line format is a **pointer, not a summary**: `- [Title](file.md) — one-line relevance hook`. The hook exists only to answer "is this memory relevant to what I'm doing now?" at recall time. **No CTK numbers, no dates, no session/provenance tails in the index line** — that detail belongs in the topic file body, not the index. (Provenance is real and worth keeping; it just lives one level down, read on demand after a memory is pulled.) Keep each line under ~200 characters.
+
 ## When in doubt
 
 If a slash command fits the work, use it. If not, read the source-of-truth files and proceed in the project's voice. Don't invent state — the plan's checkboxes and the ticket index are authoritative.
