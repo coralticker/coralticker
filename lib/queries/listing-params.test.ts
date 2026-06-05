@@ -11,9 +11,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CATEGORY_LABELS,
+  SEARCH_QUERY_MAX_LENGTH,
   SORT_LABELS,
   parseCategory,
   parseIncludeOOS,
+  parseSearchQuery,
   parseSort,
 } from './listing-params.ts';
 
@@ -59,6 +61,48 @@ test('parseCategory: label record carries the 8 locked chips in display order', 
     'anemone',
     'softie',
   ]);
+});
+
+// CTK-058 D-058-4 — /search query normalizer. Mirror cases against the §3.3
+// runtime rules the stored normalized_title/normalized_name were built with.
+
+test('parseSearchQuery: plain query round-trips lowercased', () => {
+  assert.equal(parseSearchQuery('homewrecker'), 'homewrecker');
+  assert.equal(parseSearchQuery('JF Homewrecker'), 'jf homewrecker');
+});
+
+test('parseSearchQuery: whitespace trims + collapses', () => {
+  assert.equal(parseSearchQuery('  rainbow   tenuis '), 'rainbow tenuis');
+  assert.equal(parseSearchQuery('rainbow\ttenuis\n'), 'rainbow tenuis');
+});
+
+test('parseSearchQuery: accents normalize per §3.3 unaccent (NFKD + strip marks)', () => {
+  // An accent-bearing query must reach the same form as the unaccented
+  // stored normalized_title or the match silently misses.
+  assert.equal(parseSearchQuery('café'), 'cafe');
+  assert.equal(parseSearchQuery('AÇAN LORD'), 'acan lord');
+  assert.equal(parseSearchQuery('tÉnuis'), 'tenuis');
+});
+
+test('parseSearchQuery: empty / missing / whitespace-only fall back to null', () => {
+  assert.equal(parseSearchQuery(undefined), null);
+  assert.equal(parseSearchQuery(''), null);
+  assert.equal(parseSearchQuery('   '), null);
+  assert.equal(parseSearchQuery('\t\n'), null);
+});
+
+test('parseSearchQuery: caps at SEARCH_QUERY_MAX_LENGTH post-normalization', () => {
+  const long = 'a'.repeat(SEARCH_QUERY_MAX_LENGTH + 40);
+  assert.equal(parseSearchQuery(long)?.length, SEARCH_QUERY_MAX_LENGTH);
+  // Cap counts normalized characters — pre-collapse padding doesn't consume it.
+  const padded = `${'  '.repeat(10)}rainbow tenuis`;
+  assert.equal(parseSearchQuery(padded), 'rainbow tenuis');
+});
+
+test('parseSearchQuery: SQL metacharacters pass through for the pattern-builder to escape', () => {
+  // Escaping is buildIlikePatterns' job (lib/queries/search.ts) — the parser
+  // must not strip or double-handle % / _ / !.
+  assert.equal(parseSearchQuery('50%_off!'), '50%_off!');
 });
 
 test('parseIncludeOOS: only literal "1" toggles', () => {

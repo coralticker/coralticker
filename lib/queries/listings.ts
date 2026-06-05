@@ -73,7 +73,10 @@ export interface Listing {
 // Flat row shape returned by the JOIN below. PostgREST's nested-relation
 // shape (vendors: {...}, named_corals: {...}) is gone post-cut-4; columns
 // flatten with vendor_/named_coral_ prefixes.
-interface VendorListingRow {
+// Exported (CTK-058): lib/queries/search.ts projects the same column set for
+// the /search listings class and reuses rowToListing below — one cast path,
+// no shape fork.
+export interface VendorListingRow {
   id: number;
   raw_title: string;
   current_price: number | string | null;
@@ -91,7 +94,7 @@ interface VendorListingRow {
   named_coral_origin_vendor: string | null;
 }
 
-function rowToListing(row: VendorListingRow): Listing {
+export function rowToListing(row: VendorListingRow): Listing {
   return {
     id: row.id,
     vendorSlug: row.vendor_slug,

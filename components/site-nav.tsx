@@ -26,8 +26,15 @@
 // Client-component carve-out per site.md §0.2 #2: active-route detection
 // via usePathname() requires client JS — Q-3 cannot render correctly from
 // a pure RSC at the layout level. Same narrow-leaf carve-out pattern as
-// <SignupForm> (§3.5.8). No other client behavior at v1; search-bar
-// typeahead deferred to CTK-058.
+// <SignupForm> (§3.5.8). No other client behavior at v1; typeahead stays
+// CTK-058 v2.
+//
+// CTK-058 v1: <SearchBar> mounts bare-gap-separated between the link run
+// and SIGNUP per the INV-02 round-2 variant A lock (branding-guide L286) —
+// a control is the third bare-gap non-peer species; never inside the
+// mid-dot run (its every-item-navigates grammar binds IA peers only). The
+// bar is a hook-free GET form — riding inside this client boundary adds no
+// new client behavior.
 //
 // Mobile pattern: flex-wrap on the nav row + flex-wrap inside the middle
 // cluster <ul>, with each link + trailing forest mid-dot pair wrapped in
@@ -40,6 +47,7 @@
 import { Fragment } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { SearchBar } from '@/components/ui/search-bar';
 import { Wordmark } from '@/components/ui/wordmark';
 
 interface NavLink {
@@ -96,6 +104,8 @@ export function SiteNav() {
           );
         })}
       </ul>
+
+      <SearchBar />
 
       <Link
         href="/signup"
