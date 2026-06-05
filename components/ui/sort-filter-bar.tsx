@@ -8,7 +8,7 @@
 //   FILTER: LPS · SPS · ZOA · MUSHROOM · CHALICE · CLAM · ANEMONE · SOFTIE
 //           INCLUDE OUT OF STOCK
 //
-// Three stacked axis-rows. Each option is bare Plex Mono uppercase text with
+// Stacked axis-rows. Each option is bare Plex Mono uppercase text with
 // forest mid-dot separators per <PaginationNav> precedent (register-chrome
 // binder, not a sixth forest job). Underline-on-active marks current
 // selection; underline-on-hover signals "interactive." Click-active-to-clear
@@ -27,18 +27,26 @@
 // app/vendor/[slug]/page.tsx is defense-in-depth for manual URL tampering
 // like ?category=sps&page=999.
 //
-// Single-view co-located per CTK-053 plan §Scope #1 — only /vendor/[slug]
-// consumes at v1. Promotes to components/ui/sort-filter-bar.tsx if CTK-009
-// Phase 3 cross-surface reuse triggers.
+// CTK-127 promotion (2026-06-05): the CTK-053 cross-surface reuse trigger
+// fired — promoted from app/vendor/[slug]/_components/ with an axis-subset
+// API. /vendor/[slug] renders all three axes (includeOOS: boolean); /new +
+// /deals render SORT + FILTER only (includeOOS omitted — feeds filter
+// in_stock = true at the query layer per branding-guide §"State markers"
+// deal-buyer query-filter lock; no OOS axis on feed surfaces). /coral/[slug]'s
+// single-axis toggle stays a local variant per the CTK-126 chrome-scope
+// ruling — not a consumer of this component.
 
 import Link from 'next/link';
 import type { ListingCategory, ListingSort } from '@/lib/queries/listings';
 
 interface SortFilterBarProps {
-  slug: string;
+  // Route the axis hrefs resolve against — '/vendor/{slug}', '/new', '/deals'.
+  basePath: string;
   sort: ListingSort;
   category: ListingCategory | null;
-  includeOOS: boolean;
+  // undefined = OOS axis not rendered (feed surfaces); boolean = axis
+  // rendered with that toggle state (inventory-recon surfaces).
+  includeOOS?: boolean;
 }
 
 // Category list locked at CTK-053 Session 1 Q-CTK053-3: 8 schema-aligned
@@ -69,23 +77,24 @@ const SORT_OPTIONS: { value: ListingSort; label: string }[] = [
 
 // Href builder per canonical-chain discipline: default values omit their
 // param; page param is dropped on every filter/sort change (filter-change
-// resets pagination to page=1 → bare-route).
+// resets pagination to page=1 → bare-route). undefined includeOOS (feed
+// surfaces) never emits the param.
 function buildHref(
-  slug: string,
+  basePath: string,
   sort: ListingSort,
   category: ListingCategory | null,
-  includeOOS: boolean,
+  includeOOS: boolean | undefined,
 ): string {
   const params = new URLSearchParams();
   if (sort !== 'newest') params.set('sort', sort);
   if (category !== null) params.set('category', category);
   if (includeOOS) params.set('include-oos', '1');
   const qs = params.toString();
-  return qs ? `/vendor/${slug}?${qs}` : `/vendor/${slug}`;
+  return qs ? `${basePath}?${qs}` : basePath;
 }
 
 export function SortFilterBar({
-  slug,
+  basePath,
   sort,
   category,
   includeOOS,
@@ -102,7 +111,7 @@ export function SortFilterBar({
   // break to land at the post-dot space, keeping the dot with the prior label.
   const midDot = (
     <span aria-hidden="true" className="text-forest">
-      {' · '}
+      {' · '}
     </span>
   );
 
@@ -117,7 +126,7 @@ export function SortFilterBar({
           const isActive = sort === opt.value;
           // Active option clicks clear back to default sort ('newest').
           const targetSort: ListingSort = isActive ? 'newest' : opt.value;
-          const href = buildHref(slug, targetSort, category, includeOOS);
+          const href = buildHref(basePath, targetSort, category, includeOOS);
           const isLast = i === SORT_OPTIONS.length - 1;
           // Mid-dot TRAILS the preceding option so wrap-breaks keep the dot
           // at end-of-line-N with the previous label, not at start-of-line-N+1
@@ -146,7 +155,7 @@ export function SortFilterBar({
           const targetCategory: ListingCategory | null = isActive
             ? null
             : opt.value;
-          const href = buildHref(slug, sort, targetCategory, includeOOS);
+          const href = buildHref(basePath, sort, targetCategory, includeOOS);
           const isLast = i === CATEGORY_OPTIONS.length - 1;
           return (
             <span key={opt.value}>
@@ -163,15 +172,17 @@ export function SortFilterBar({
         })}
       </div>
 
-      <div>
-        <Link
-          href={buildHref(slug, sort, category, !includeOOS)}
-          className={includeOOS ? activeClass : linkClass}
-          aria-current={includeOOS ? 'true' : undefined}
-        >
-          INCLUDE OUT OF STOCK
-        </Link>
-      </div>
+      {includeOOS !== undefined && (
+        <div>
+          <Link
+            href={buildHref(basePath, sort, category, !includeOOS)}
+            className={includeOOS ? activeClass : linkClass}
+            aria-current={includeOOS ? 'true' : undefined}
+          >
+            INCLUDE OUT OF STOCK
+          </Link>
+        </div>
+      )}
     </nav>
   );
 }

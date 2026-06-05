@@ -230,6 +230,18 @@ export async function getRecentDrops(limit = 10): Promise<Listing[]> {
 // the page-level cadence (CTK-047 B-2 medal-bearing surface). sevenDaysAgo
 // computed inside the cached fn per getVendorInventory precedent.
 //
+// CTK-127 (2026-06-05): buy-intent ordering ladder per branding-guide
+// §"Recent-first ordering by default" buy-intent carve-out (Jon-ratified
+// 2026-06-05) — the surface answers "where do I buy this cheapest," and
+// recent-first buried markdown rows below the fold at live eyeball. Ladder:
+// in-stock priced rows current_price ASC (tie-break first_seen_at DESC) →
+// NULL-price in-stock rows (price-on-request / auction class) → OOS rows
+// last (toggled-on view only), newest-first within — recency is the
+// staleness signal on invalidated rows; price-ordering them would rank by
+// stale data. One ORDER BY implements the whole contract: the CASE yields
+// NULL for every OOS row, collapsing the OOS block to the first_seen_at DESC
+// tie-break.
+//
 // CTK-125 adjacency note (do NOT fold here): this query carries no
 // v.active / sentinel-slug vendor guards — the Tier 4 vendor-guard sibling
 // (CTK-125) owns that predicate change; mechanism-class discipline keeps it
@@ -267,7 +279,9 @@ export async function getCoralAvailability(
         WHERE vl.named_coral_id = ${namedCoralId}
           AND vl.last_seen_at > ${sevenDaysAgo}
           AND (${includeOOSParam}::boolean OR vl.in_stock = true)
-        ORDER BY vl.first_seen_at DESC
+        ORDER BY vl.in_stock DESC,
+                 CASE WHEN vl.in_stock THEN vl.current_price END ASC NULLS LAST,
+                 vl.first_seen_at DESC
       `) as unknown as VendorListingRow[];
 
       const listings = rows.map(rowToListing);
@@ -289,7 +303,12 @@ export async function getCoralAvailability(
           : l;
       });
     },
-    ['getCoralAvailabilityV1', String(namedCoralId), includeOOS ? '1' : '0'],
+    // V2 prefix bump 2026-06-05 (CTK-127) — default ordering flipped
+    // recent-first → buy-intent ladder (below). Not a shape change, but the
+    // Data Cache persists across deploys per
+    // feedback_unstable_cache_shape_change.md — without the bump, stale-order
+    // arrays serve up to 300s post-deploy.
+    ['getCoralAvailabilityV2', String(namedCoralId), includeOOS ? '1' : '0'],
     {
       revalidate: 300,
       tags: [`coral-${namedCoralId}-availability-${includeOOS ? '1' : '0'}`],
@@ -628,10 +647,71 @@ function rpcRowToPriceDrop(row: RpcPriceDropRow): PriceDropListing {
 // to add compare_at_price to the projection + AND vl.auction_end_time IS NULL
 // to the WHERE clause (INV-05 #4 first-enforce). Body otherwise verbatim from
 // migration 0026's CTK-099 in_stock=true filter.
-export async function getRecentPriceDrops(): Promise<PriceDropListing[]> {
-  const sql = getNeonSql();
-  const rows = (await sql`SELECT * FROM get_recent_price_drops()`) as unknown as RpcPriceDropRow[];
-  return rows.map(rpcRowToPriceDrop);
+//
+// CTK-127: sort + category params via wrapper JOIN, not RPC migration —
+// category lives on vendor_listings, not in the RPC projection, so filter +
+// sort apply in a wrapper around the function (JOIN on PK). RPC body
+// untouched (INV-05 predicates stay inside it); bare call (newest, no
+// category) stays the literal pre-CTK-127 statement — the function's own
+// ORDER BY observed_at DESC (migration 0026 L111) carries the default order.
+// Filtered-newest reproduces that ORDER BY explicitly (join output ordering
+// isn't guaranteed). ORDER BY branches per allowlisted sort string — the
+// Neon sql template can't parameterize ORDER BY; sort is validated at the
+// view layer (lib/queries/listing-params.ts allowlist), no string
+// interpolation into the template. unstable_cache wrap per CTK-046/126
+// precedent: the searchParams read flips /deals dynamic at runtime; key
+// carries (sort, category), V1 prefix is this function's first cached
+// generation. revalidate 300 matches the page cadence.
+export async function getRecentPriceDrops(
+  sort: ListingSort = 'newest',
+  category: ListingCategory | null = null,
+): Promise<PriceDropListing[]> {
+  return unstable_cache(
+    async () => {
+      const sql = getNeonSql();
+      const categoryParam = category ?? null;
+
+      const rows = (await (() => {
+        if (sort === 'price-asc') {
+          return sql`
+            SELECT e.*
+            FROM get_recent_price_drops() e
+            JOIN vendor_listings vl ON vl.id = e.id
+            WHERE (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
+            ORDER BY e.current_price ASC NULLS LAST, e.observed_at DESC
+          `;
+        }
+        if (sort === 'price-desc') {
+          return sql`
+            SELECT e.*
+            FROM get_recent_price_drops() e
+            JOIN vendor_listings vl ON vl.id = e.id
+            WHERE (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
+            ORDER BY e.current_price DESC NULLS LAST, e.observed_at DESC
+          `;
+        }
+        // sort === 'newest'
+        if (categoryParam !== null) {
+          return sql`
+            SELECT e.*
+            FROM get_recent_price_drops() e
+            JOIN vendor_listings vl ON vl.id = e.id
+            WHERE vl.category = ${categoryParam}
+            ORDER BY e.observed_at DESC
+          `;
+        }
+        // Bare default — identical statement to pre-CTK-127.
+        return sql`SELECT * FROM get_recent_price_drops()`;
+      })()) as unknown as RpcPriceDropRow[];
+
+      return rows.map(rpcRowToPriceDrop);
+    },
+    ['getRecentPriceDropsV1', sort, category ?? '_'],
+    {
+      revalidate: 300,
+      tags: [`recent-price-drops-${sort}-${category ?? '_'}`],
+    },
+  )();
 }
 
 // /new arrivals feed per site.md §4.4.
@@ -702,8 +782,61 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
   };
 }
 
-export async function getRecentArrivals(): Promise<ArrivalListing[]> {
-  const sql = getNeonSql();
-  const rows = (await sql`SELECT * FROM get_listing_lead_event(NULL, 24, NULL)`) as unknown as RpcArrivalRow[];
-  return rows.map(rpcRowToArrival);
+// CTK-127: sort + category params — same wrapper-JOIN shape and rationale as
+// getRecentPriceDrops above (category via vendor_listings JOIN, RPC body +
+// INV-05 predicates untouched, ORDER BY branch-per-allowlisted-sort, bare
+// call literal pre-CTK-127). Filtered-newest reproduces the function's own
+// ORDER BY event_at DESC (migration 0028 L253). unstable_cache key carries
+// (sort, category), V1 first cached generation, revalidate 300 per page
+// cadence.
+export async function getRecentArrivals(
+  sort: ListingSort = 'newest',
+  category: ListingCategory | null = null,
+): Promise<ArrivalListing[]> {
+  return unstable_cache(
+    async () => {
+      const sql = getNeonSql();
+      const categoryParam = category ?? null;
+
+      const rows = (await (() => {
+        if (sort === 'price-asc') {
+          return sql`
+            SELECT e.*
+            FROM get_listing_lead_event(NULL, 24, NULL) e
+            JOIN vendor_listings vl ON vl.id = e.id
+            WHERE (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
+            ORDER BY e.current_price ASC NULLS LAST, e.event_at DESC
+          `;
+        }
+        if (sort === 'price-desc') {
+          return sql`
+            SELECT e.*
+            FROM get_listing_lead_event(NULL, 24, NULL) e
+            JOIN vendor_listings vl ON vl.id = e.id
+            WHERE (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
+            ORDER BY e.current_price DESC NULLS LAST, e.event_at DESC
+          `;
+        }
+        // sort === 'newest'
+        if (categoryParam !== null) {
+          return sql`
+            SELECT e.*
+            FROM get_listing_lead_event(NULL, 24, NULL) e
+            JOIN vendor_listings vl ON vl.id = e.id
+            WHERE vl.category = ${categoryParam}
+            ORDER BY e.event_at DESC
+          `;
+        }
+        // Bare default — identical statement to pre-CTK-127.
+        return sql`SELECT * FROM get_listing_lead_event(NULL, 24, NULL)`;
+      })()) as unknown as RpcArrivalRow[];
+
+      return rows.map(rpcRowToArrival);
+    },
+    ['getRecentArrivalsV1', sort, category ?? '_'],
+    {
+      revalidate: 300,
+      tags: [`recent-arrivals-${sort}-${category ?? '_'}`],
+    },
+  )();
 }

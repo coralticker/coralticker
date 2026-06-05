@@ -20,13 +20,18 @@ import {
   type ListingCategory,
   type ListingSort,
 } from '@/lib/queries/listings';
+import {
+  parseCategory,
+  parseIncludeOOS,
+  parseSort,
+} from '@/lib/queries/listing-params';
 import { getLatestScrapeFinishedAt } from '@/lib/queries/scraper-runs';
 import { DataRowSkeleton } from '@/components/ui/data-row-skeleton';
 import { PageEyebrow } from '@/components/ui/page-eyebrow';
+import { SortFilterBar } from '@/components/ui/sort-filter-bar';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { VendorInventoryRow } from './_components/vendor-inventory-row';
 import { PaginationNav } from './_components/pagination-nav';
-import { SortFilterBar } from './_components/sort-filter-bar';
 
 // CTK-047 B-2 cascade — medal-bearing surface; cadence equalized to 5min per
 // /lead-architect re-disposition 2026-06-02. Wrapped data-fetch in
@@ -52,40 +57,9 @@ function parsePage(raw: string | undefined): number {
   return n;
 }
 
-const SORT_ALLOWLIST: readonly ListingSort[] = [
-  'newest',
-  'price-asc',
-  'price-desc',
-];
-function parseSort(raw: string | undefined): ListingSort {
-  if (!raw) return 'newest';
-  return (SORT_ALLOWLIST as readonly string[]).includes(raw)
-    ? (raw as ListingSort)
-    : 'newest';
-}
-
-// Schema enum has 12 values; fish / invert / equipment / other are excluded
-// from the filter UI and silently fall back to null here.
-const CATEGORY_ALLOWLIST: readonly ListingCategory[] = [
-  'sps',
-  'lps',
-  'softie',
-  'zoa',
-  'mushroom',
-  'chalice',
-  'anemone',
-  'clam',
-];
-function parseCategory(raw: string | undefined): ListingCategory | null {
-  if (!raw) return null;
-  return (CATEGORY_ALLOWLIST as readonly string[]).includes(raw)
-    ? (raw as ListingCategory)
-    : null;
-}
-
-function parseIncludeOOS(raw: string | undefined): boolean {
-  return raw === '1';
-}
+// Sort / category / include-oos parsers moved to lib/queries/listing-params.ts
+// at CTK-127 (three consumer routes post-promotion); parsePage stays local —
+// pagination is a /vendor/[slug]-only axis.
 
 export async function generateStaticParams(): Promise<{ slug: string }[]> {
   return getAllActiveVendorSlugs();
@@ -274,7 +248,7 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
 
       <div className="mt-10">
         <SortFilterBar
-          slug={slug}
+          basePath={`/vendor/${slug}`}
           sort={sort}
           category={category}
           includeOOS={includeOOS}
