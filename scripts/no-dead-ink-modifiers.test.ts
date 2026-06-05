@@ -7,7 +7,10 @@
 // §"Served-neutral re-spec") adopted literal tokens (line / mute / wash)
 // instead; this test fails the suite if any dead-modifier form re-enters
 // app/ or components/ source. Covers numeric (/30) and arbitrary-value
-// (/[0.02]) forms across the utility prefixes the sweep retired.
+// (/[0.02]) forms on ANY utility prefix (ring-/outline-/from-/etc. carry
+// the same no-compile defect as the six the sweep retired — CTK-129 close
+// /code-review #1), and covers `cream`, which shares ink's missing
+// <alpha-value> and would die identically.
 //
 // Runs via Node's built-in test runner with native TypeScript type stripping:
 //   node --test --experimental-strip-types scripts/*.test.ts
@@ -17,8 +20,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-const DEAD_MODIFIER =
-  /(?:text|border|bg|divide|placeholder:text|hover:bg)-ink\/[\d[]/;
+const DEAD_MODIFIER = /-(?:ink|cream)\/[\d[]/;
 
 const ROOTS = ['app', 'components'];
 const EXTENSIONS = new Set(['.ts', '.tsx']);
@@ -49,8 +51,9 @@ test('no dead ink/NN opacity-modifier utilities in app/ or components/ source', 
   assert.deepEqual(
     hits,
     [],
-    `ink/NN opacity modifiers generate NO CSS (ink has no <alpha-value>; ` +
-      `the config flip is canon-rejected). Use the served-neutral tokens ` +
+    `ink/NN and cream/NN opacity modifiers generate NO CSS (neither color ` +
+      `carries <alpha-value>; the config flip is canon-rejected). Use the ` +
+      `served-neutral tokens ` +
       `instead — line (hairlines), mute (placeholders), wash (skeleton/` +
       `wash fills) — per branding-guide §"Served-neutral re-spec".\n` +
       hits.join('\n'),
