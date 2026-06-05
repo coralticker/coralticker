@@ -67,6 +67,18 @@ test('resolveOriginVendor: single-value Reeffarmers → Reeffarmers', () => {
   });
 });
 
+test('resolveOriginVendor: single-value Pro Corals → Pro Corals (CTK-126 drift-add, plain full-name)', () => {
+  // branding-guide.md L143 — "PC" is in-name shorthand only, too ambiguous
+  // standalone for the carve-out; plain full-name default applies.
+  assert.deepEqual(resolveOriginVendor('Pro Corals'), { display: 'Pro Corals' });
+});
+
+test('resolveOriginVendor: single-value GARF → GARF (CTK-126 drift-add, self-branded-abbreviation carve-out)', () => {
+  // branding-guide.md L144 — GARF IS the brand (ORA pattern); expansion
+  // "Geothermal Aquaculture Research Foundation" reserved for /about contexts.
+  assert.deepEqual(resolveOriginVendor('GARF'), { display: 'GARF' });
+});
+
 test('resolveOriginVendor: compound Tyree/Reeffarmers → "Steve Tyree / Reeffarmers"', () => {
   // Compound-attribution per branding-guide.md L141 + §"Compound-attribution
   // shape" — split on /, per-component lookup, join with ' / ' (space-slash-

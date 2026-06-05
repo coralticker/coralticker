@@ -33,6 +33,12 @@ const ORIGIN_VENDOR_DISPLAY: Record<string, string> = {
   ORA: 'ORA',
   Tyree: 'Steve Tyree',
   Reeffarmers: 'Reeffarmers',
+  // CTK-126 seed-attribution drift-add (branding-guide L143-144). Both display
+  // as their own value: 'Pro Corals' is the plain full-name default ("PC" is
+  // in-name shorthand only); 'GARF' is the self-branded-abbreviation carve-out
+  // (ORA pattern, expansion reserved for /about-class contexts).
+  'Pro Corals': 'Pro Corals',
+  GARF: 'GARF',
 };
 
 function resolveComponent(raw: string): string {
