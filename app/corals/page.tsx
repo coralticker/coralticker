@@ -103,16 +103,21 @@ function CoralListSkeleton() {
 // <SocialLinks> primitive promotion still waits for its second-surface
 // trigger per branding-guide L99 — this is a prose link, not the primitive.
 //
+// FEEDBACK invite, not DROPS (CTK-126 close micro-session 2026-06-05): the
+// block's ask is additions + corrections, so the link targets the #feedback
+// channel invite. DISCORD_DROPS_INVITE_URL stays valid for drop-watching
+// surfaces (no consumer today).
+//
 // Throw-on-missing per the lib/db/neon.ts:24 idiom (CTK-126 fold,
 // /code-review #2 Tier 1B): a missing var fails the build loudly instead of
 // shipping a dead Discord anchor (href={undefined} renders a non-link).
-const DISCORD_DROPS_INVITE_URL_RAW = process.env.DISCORD_DROPS_INVITE_URL;
+const DISCORD_FEEDBACK_INVITE_URL_RAW = process.env.DISCORD_FEEDBACK_INVITE_URL;
 
-if (!DISCORD_DROPS_INVITE_URL_RAW) {
-  throw new Error('DISCORD_DROPS_INVITE_URL must be set. See .env.example.');
+if (!DISCORD_FEEDBACK_INVITE_URL_RAW) {
+  throw new Error('DISCORD_FEEDBACK_INVITE_URL must be set. See .env.example.');
 }
 
-const discordInviteUrl: string = DISCORD_DROPS_INVITE_URL_RAW;
+const discordInviteUrl: string = DISCORD_FEEDBACK_INVITE_URL_RAW;
 
 function AboutThisList() {
   return (

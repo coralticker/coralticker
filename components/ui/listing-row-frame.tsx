@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import Image from 'next/image';
-import { CaveatLabel } from '@/components/ui/caveat-label';
 import { DataRow, type DataRowField } from '@/components/ui/data-row';
 import { OutOfStockMarker } from '@/components/ui/out-of-stock-marker';
 import type { Listing } from '@/lib/queries/listings';
@@ -22,11 +21,16 @@ interface ListingRowFrameProps {
   matchIndicator?: boolean;
 }
 
-function shouldCaveat(listing: Listing): boolean {
-  if (listing.namedCoralCanonicalName === null) return false;
-  const c = listing.matchConfidence;
-  return c === 'fuzzy' || c === 'manual' || c === null;
-}
+// Per-row match caveat (<CaveatLabel kind="match-name-based"> on fuzzy/manual/
+// null-confidence rows) REMOVED 2026-06-05 (CTK-126 close micro-session) —
+// deferred-to-CTK-009, not honesty-rejected. Rationale: branding-guide
+// §"Provenance claim-bar" Disclosure-symmetry rule — partial per-row marking
+// silently overclaims the unmarked rows (an unmarked 'exact' row next to a
+// confessing 'fuzzy' row reads as verified, a claim the data can't back; even
+// 'exact' is inferred per canonical-implicit-prefix). Page-level disclosure
+// (/corals "About this list." + /coral/[slug] pointer) is the ratified
+// carrier. Per-row markers re-enter at CTK-009 when match_confidence
+// enum-split gives every row a markable class; <CaveatLabel> stays dormant.
 
 function deriveAltText(listing: Listing): string {
   if (listing.namedCoralCanonicalName !== null) {
@@ -73,11 +77,6 @@ export function ListingRowFrame({
           {isOutOfStock ? <OutOfStockMarker /> : null}
           {leadSlot}
           {leadSlot ? <div className="mt-2">{dataRow}</div> : dataRow}
-          {shouldCaveat(listing) ? (
-            <div className="mt-1">
-              <CaveatLabel kind="match-name-based" />
-            </div>
-          ) : null}
         </div>
       </div>
     </a>
