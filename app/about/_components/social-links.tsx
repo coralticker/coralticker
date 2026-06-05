@@ -8,6 +8,20 @@
 
 import type { ReactNode } from 'react';
 
+// CTK-126 D-5(b) — hardcoded invite literal migrated to a per-surface env
+// var (the old DbGnQTfzC invite was expiring 2026-06-18; Jon minted a
+// permanent replacement 2026-06-05). Per-surface vars are DELIBERATE —
+// Discord's native invite tracking gives per-surface join attribution; do
+// NOT consolidate with the /corals invite (DISCORD_DROPS_INVITE_URL).
+// Throw-on-missing per the lib/db/neon.ts:24 idiom (/code-review #2 class).
+const DISCORD_ABOUT_INVITE_URL_RAW = process.env.DISCORD_ABOUT_INVITE_URL;
+
+if (!DISCORD_ABOUT_INVITE_URL_RAW) {
+  throw new Error('DISCORD_ABOUT_INVITE_URL must be set. See .env.example.');
+}
+
+const DISCORD_ABOUT_INVITE_URL: string = DISCORD_ABOUT_INVITE_URL_RAW;
+
 type SocialLink = {
   href: string;
   label: string;
@@ -17,7 +31,7 @@ type SocialLink = {
 
 const links: SocialLink[] = [
   {
-    href: 'https://discord.gg/DbGnQTfzC',
+    href: DISCORD_ABOUT_INVITE_URL,
     label: 'Discord',
     ariaLabel: 'Discord',
     iconPaths: (

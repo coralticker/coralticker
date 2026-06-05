@@ -297,6 +297,38 @@ export async function getCoralAvailability(
   )();
 }
 
+// CTK-126 fold (/code-review #1, Tier 1A): cheap second signal for the
+// /coral/[slug] third render state (all-OOS). Distinct-vendor count over the
+// stock-UNFILTERED in-window set — getCoralAvailability's predicate MINUS
+// the in_stock default — so the page can distinguish "listed but all out of
+// stock" from "not listed" on the default render without widening the
+// default availability query (/lead-backend call: separate count over
+// query-widening). N = distinct vendors per the locked eyebrow shape
+// (`N VENDORS · ALL OUT OF STOCK`, branding-guide §"Eyebrow shape + slot").
+// Deliberately no vendor guards, matching getCoralAvailability — CTK-125
+// adjacency; both gain them together if CTK-125 fires. Fetched by the page
+// only when no in-stock row rendered (the toggled-on view derives N from
+// its own rows instead).
+export async function getCoralInWindowVendorCount(
+  namedCoralId: number,
+): Promise<number> {
+  return unstable_cache(
+    async () => {
+      const sql = getNeonSql();
+      const sevenDaysAgo = new Date(Date.now() - CORAL_RECENCY_DAYS * MS_PER_DAY).toISOString();
+      const rows = (await sql`
+        SELECT count(DISTINCT vl.vendor_id)::int AS n
+        FROM vendor_listings vl
+        WHERE vl.named_coral_id = ${namedCoralId}
+          AND vl.last_seen_at > ${sevenDaysAgo}
+      `) as unknown as { n: number }[];
+      return rows[0]?.n ?? 0;
+    },
+    ['getCoralInWindowVendorCountV1', String(namedCoralId)],
+    { revalidate: 300, tags: [`coral-${namedCoralId}-in-window-vendor-count`] },
+  )();
+}
+
 // /vendor/[slug] per site.md §4.5.
 // Filtered by vendor_id AND last_seen_at > now() - interval '14 days'.
 // CTK-046: paginated via LIMIT PAGE_SIZE OFFSET ((page - 1) * PAGE_SIZE); default page = 1

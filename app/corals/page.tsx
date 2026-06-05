@@ -3,9 +3,10 @@
 // max-w-3xl frame, prose-register H1, Suspense + skeleton, py-3 rows.
 //
 // Dormancy gate: getAllNamedCoralsWithListings() restricts to corals with an
-// in-window in-stock listing — every rendered row routes to a populated
+// in-window in-stock listing — rendered rows route to a populated
 // /coral/[slug] DEFAULT render per the Default-render parity rule
-// (branding-guide §"State markers", CTK-126 D-2); vendor-side deliberately
+// (branding-guide §"State markers", CTK-126 D-2), modulo the 600/300 TTL
+// skew window documented at the helper's header; vendor-side deliberately
 // stricter (see the helper's header comment).
 //
 // CTK-126: "About this list." block below the row stack — scope caveat +
@@ -101,8 +102,19 @@ function CoralListSkeleton() {
 // rotation needs a redeploy/revalidate, acceptable for a stable invite.
 // <SocialLinks> primitive promotion still waits for its second-surface
 // trigger per branding-guide L99 — this is a prose link, not the primitive.
+//
+// Throw-on-missing per the lib/db/neon.ts:24 idiom (CTK-126 fold,
+// /code-review #2 Tier 1B): a missing var fails the build loudly instead of
+// shipping a dead Discord anchor (href={undefined} renders a non-link).
+const DISCORD_DROPS_INVITE_URL_RAW = process.env.DISCORD_DROPS_INVITE_URL;
+
+if (!DISCORD_DROPS_INVITE_URL_RAW) {
+  throw new Error('DISCORD_DROPS_INVITE_URL must be set. See .env.example.');
+}
+
+const discordInviteUrl: string = DISCORD_DROPS_INVITE_URL_RAW;
+
 function AboutThisList() {
-  const discordInviteUrl = process.env.DISCORD_DROPS_INVITE_URL;
   return (
     <section id="about-this-list" className="mt-12">
       {/* Sentence-case header + 1px under-rule per branding-guide

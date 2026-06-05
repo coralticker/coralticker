@@ -6,7 +6,10 @@ import {
   getCoralLastSeenAt,
   getNamedCoralBySlug,
 } from '@/lib/queries/named-corals';
-import { getCoralAvailability } from '@/lib/queries/listings';
+import {
+  getCoralAvailability,
+  getCoralInWindowVendorCount,
+} from '@/lib/queries/listings';
 import { DataRow } from '@/components/ui/data-row';
 import { PageEyebrow } from '@/components/ui/page-eyebrow';
 import { formatRelativeTime } from '@/lib/format/relative-time';
@@ -106,20 +109,52 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
   const listings = await getCoralAvailability(coral.id, includeOOS);
   const lineageFields = buildLineageFields(coral);
   const hasListings = listings.length > 0;
-  const sectionHeader = hasListings
+
+  // CTK-126 fold (/code-review #1, Tier 1A) — three availability states per
+  // branding-guide §"Eyebrow shape + slot" + §"Section transitions" (third
+  // state locked /brand-manager 2026-06-05). Branch order: populated (ANY
+  // in-stock row) → all-OOS (in-window rows exist, none in stock) → empty
+  // (zero in-window listings; NOT LISTED / "Currently unavailable." now
+  // reserved for this state — they were false over an all-OOS set, the live
+  // defect). State classifies by stock, not by rendered-row count, so the
+  // toggled-on view of an all-OOS set also reads "Currently out of stock."
+  // N = distinct vendors across the in-window (all-OOS) set: derived from
+  // the rendered rows when toggled on, from the stock-unfiltered count query
+  // when the default view excludes them (/lead-backend call — separate cheap
+  // signal, do NOT widen the default availability query).
+  const hasInStockRow = listings.some((l) => l.inStock);
+  const oosVendorCount = hasInStockRow
+    ? 0
+    : hasListings
+      ? new Set(listings.map((l) => l.vendorSlug)).size
+      : await getCoralInWindowVendorCount(coral.id);
+  const isAllOOS = !hasInStockRow && oosVendorCount > 0;
+
+  const sectionHeader = hasInStockRow
     ? 'Currently available.'
-    : 'Currently unavailable.';
+    : isAllOOS
+      ? 'Currently out of stock.'
+      : 'Currently unavailable.';
 
   const now = new Date();
-  const lastSeenAt = hasListings ? null : await getCoralLastSeenAt(coral.id);
-  const eyebrowChunks = hasListings
+  const lastSeenAt =
+    hasInStockRow || isAllOOS ? null : await getCoralLastSeenAt(coral.id);
+  // All-OOS eyebrow: count chunk keeps continuity with the populated state;
+  // freshness chunk omitted ("last seen" is ambiguous across an all-OOS set;
+  // per-row Listed. carries it once toggled on) per the eyebrow-slot lock.
+  const eyebrowChunks = hasInStockRow
     ? [
         `${listings.length} ${listings.length === 1 ? 'VENDOR' : 'VENDORS'}`,
         `LATEST ${formatRelativeTime(listings[0]!.firstSeenAt, now).toUpperCase()}`,
       ]
-    : lastSeenAt === null
-      ? ['NOT LISTED']
-      : ['NOT LISTED', `LAST SEEN ${formatRelativeTime(lastSeenAt, now).toUpperCase()}`];
+    : isAllOOS
+      ? [
+          `${oosVendorCount} ${oosVendorCount === 1 ? 'VENDOR' : 'VENDORS'}`,
+          'ALL OUT OF STOCK',
+        ]
+      : lastSeenAt === null
+        ? ['NOT LISTED']
+        : ['NOT LISTED', `LAST SEEN ${formatRelativeTime(lastSeenAt, now).toUpperCase()}`];
 
   return (
     <main className="px-6 py-12 max-w-3xl mx-auto">
@@ -152,6 +187,18 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
             <VendorAvailabilityRow key={listing.id} listing={listing} />
           ))}
         </div>
+      ) : isAllOOS ? (
+        // Locked one-line hint per branding-guide §"Section transitions"
+        // third state — without it the state is a dead end (eyebrow says N
+        // vendors carry it, default view shows no rows). Mono-uppercase
+        // phrase names the literal toggle label.
+        <p role="status" className="text-base text-ink py-6">
+          All listings are out of stock right now &mdash;{' '}
+          <span className="font-mono text-sm uppercase tracking-[0.08em]">
+            INCLUDE OUT OF STOCK
+          </span>{' '}
+          shows them.
+        </p>
       ) : (
         <p role="status" className="text-base text-ink py-6">
           {EMPTY_FALLBACK}

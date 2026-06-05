@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { unstable_cache } from 'next/cache';
 import { getNeonSql } from '@/lib/db/neon';
 import { CORAL_RECENCY_DAYS, MS_PER_DAY } from '@/lib/queries/listings';
@@ -30,28 +31,36 @@ interface NamedCoralRow {
   active: boolean;
 }
 
-export async function getNamedCoralBySlug(slug: string): Promise<NamedCoral | null> {
-  const sql = getNeonSql();
-  const rows = (await sql`
-    SELECT
-      id,
-      slug,
-      canonical_name,
-      coral_type,
-      origin_vendor,
-      source_urls,
-      requires_vendor_prefix,
-      active
-    FROM named_corals
-    WHERE slug = ${slug}
-      AND active = true
-    LIMIT 1
-  `) as unknown as NamedCoralRow[];
+// React cache() wrap (CTK-126 fold, /code-review #4): /coral/[slug] went
+// dynamic at D-2 and calls this twice per hit (generateMetadata + the page
+// body) — two live Neon roundtrips for the same row. cache() dedups within
+// a single request render (metadata + page share one fetch); chosen over
+// unstable_cache because per-request duplication is the defect — no
+// cross-request TTL semantics needed on near-static seed rows.
+export const getNamedCoralBySlug = cache(
+  async (slug: string): Promise<NamedCoral | null> => {
+    const sql = getNeonSql();
+    const rows = (await sql`
+      SELECT
+        id,
+        slug,
+        canonical_name,
+        coral_type,
+        origin_vendor,
+        source_urls,
+        requires_vendor_prefix,
+        active
+      FROM named_corals
+      WHERE slug = ${slug}
+        AND active = true
+      LIMIT 1
+    `) as unknown as NamedCoralRow[];
 
-  const row = rows[0];
-  if (!row) return null;
-  return { ...row, description: null };
-}
+    const row = rows[0];
+    if (!row) return null;
+    return { ...row, description: null };
+  },
+);
 
 export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
   const sql = getNeonSql();
@@ -68,14 +77,19 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // only corals with at-least-one in-window listing render — a row must never
 // route to an empty /coral/[slug]. The window derives from the imported
 // CORAL_RECENCY_DAYS (lib/queries/listings.ts) — the same constant that gates
-// the getCoralAvailability populated branch, so listing-side window drift is
-// impossible. CTK-126 D-2 (2026-06-05): EXISTS carries in_stock = true per
-// the **Default-render parity** rule (branding-guide §"State markers") —
-// /coral/[slug] now defaults to in-stock rows behind an INCLUDE OUT OF STOCK
-// toggle, and parity is measured against the destination's DEFAULT (bare-URL)
-// render, not the toggled-on view: a coral whose only in-window listing is
-// OOS drops off the index until it restocks rather than routing to a
-// default-empty detail page.
+// the getCoralAvailability populated branch, so constant-level window drift
+// is closed (the runtime TTL skew below is not). CTK-126 D-2 (2026-06-05):
+// EXISTS carries in_stock = true per the **Default-render parity** rule
+// (branding-guide §"State markers") — /coral/[slug] now defaults to in-stock
+// rows behind an INCLUDE OUT OF STOCK toggle, and parity is measured against
+// the destination's DEFAULT (bare-URL) render, not the toggled-on view: a
+// coral whose only in-window listing is OOS drops off the index until it
+// restocks. Parity holds at query time, not continuously: this cache
+// revalidates at 600s, the destination's at 300s, so a coral that sells out
+// can hold its index row for up to ~10 min and route to the all-OOS third
+// state in that window (/code-review 2026-06-05 #3; skew disposition
+// DEFERRED to the D-2 hygiene bundle CTK — cite the number once /reef-lead
+// assigns it).
 // The VENDOR-side EXISTS guards (active + sentinel-slug, CTK-095 Axis 3
 // belt-and-suspenders; ESCAPE '!' — backslash collapses in JS template cooking
 // and would invert the filter) are deliberately STRICTER than the destination:
