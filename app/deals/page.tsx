@@ -9,7 +9,12 @@ import { SortFilterBar } from '@/components/ui/sort-filter-bar';
 import { bucketLabel, bucketTransition, DIVIDER_THRESHOLD } from '@/lib/format/group-bucket';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { formatTypeLabel } from '@/lib/format/type-label';
-import { parseCategory, parseSort } from '@/lib/queries/listing-params';
+import { latestTimestamp } from '@/lib/format/latest-timestamp';
+import {
+  chromeCategoryLabel,
+  parseCategory,
+  parseSort,
+} from '@/lib/queries/listing-params';
 import {
   getRecentPriceDrops,
   type ListingCategory,
@@ -59,14 +64,6 @@ function priceDropToProps(d: PriceDropListing) {
   return { listing: d };
 }
 
-// Chrome register is always ALL-CAPS regardless of type-label class
-// (branding-guide §"Type label casing" chrome-inheritance) — all 8 filterable
-// categories are single-word enum values, so the blanket transform is safe
-// here; prose register below goes through formatTypeLabel instead.
-function chromeCategoryLabel(category: ListingCategory): string {
-  return category.toUpperCase();
-}
-
 async function Eyebrow({
   sort,
   category,
@@ -94,14 +91,8 @@ async function Eyebrow({
   }
 
   // LATEST = max(observedAt), not index 0 — price-sorted renders break the
-  // recency-order assumption (/review-plan pin).
-  const latestObservedAt = drops.reduce(
-    (max, d) =>
-      new Date(d.observedAt).getTime() > new Date(max).getTime()
-        ? d.observedAt
-        : max,
-    drops[0]!.observedAt,
-  );
+  // recency-order assumption (/review-plan pin; shared helper per fold #1).
+  const latestObservedAt = latestTimestamp(drops, (d) => d.observedAt);
   const latestRelative = formatRelativeTime(latestObservedAt, new Date()).toUpperCase();
   const countNoun = drops.length === 1 ? 'PRICE DROP' : 'PRICE DROPS';
   // Filtered eyebrows qualify the count chunk — the filtered page covers the
@@ -154,7 +145,10 @@ async function PriceDropsFeed({
     return (
       <>
         {drops.map((d) => (
-          <ListingCard key={d.id} {...priceDropToProps(d)} />
+          // CTK-127 fold #5: composite key — get_recent_price_drops()
+          // preserves the multi-event-per-listing semantic (CTK-109), so a
+          // listing id alone can collide across two drop events in-window.
+          <ListingCard key={`${d.id}-${d.observedAt}`} {...priceDropToProps(d)} />
         ))}
       </>
     );
@@ -173,7 +167,10 @@ async function PriceDropsFeed({
         />,
       );
     }
-    out.push(<ListingCard key={curr.id} {...priceDropToProps(curr)} />);
+    // Composite key per fold #5 — same collision rationale as the flat path.
+    out.push(
+      <ListingCard key={`${curr.id}-${curr.observedAt}`} {...priceDropToProps(curr)} />,
+    );
   }
   return <>{out}</>;
 }
@@ -210,7 +207,12 @@ export default async function DealsPage({ searchParams }: PageProps) {
       {/* Two axes only — no INCLUDE OUT OF STOCK on feed surfaces per
           branding-guide §"State markers" deal-buyer query-filter lock
           (includeOOS omitted → axis not rendered). */}
-      <SortFilterBar basePath="/deals" sort={sort} category={category} />
+      <SortFilterBar
+        basePath="/deals"
+        sort={sort}
+        category={category}
+        ariaLabel="Sort and filter listings"
+      />
       <Suspense fallback={<FeedSkeleton />}>
         <PriceDropsFeed sort={sort} category={category} />
       </Suspense>

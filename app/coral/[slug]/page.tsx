@@ -13,6 +13,7 @@ import {
 import { DataRow } from '@/components/ui/data-row';
 import { PageEyebrow } from '@/components/ui/page-eyebrow';
 import { formatRelativeTime } from '@/lib/format/relative-time';
+import { latestTimestamp } from '@/lib/format/latest-timestamp';
 import { buildLineageFields } from '@/lib/format/lineage-fields';
 import { VendorAvailabilityRow } from './_components/vendor-availability-row';
 
@@ -142,10 +143,13 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
   // All-OOS eyebrow: count chunk keeps continuity with the populated state;
   // freshness chunk omitted ("last seen" is ambiguous across an all-OOS set;
   // per-row Listed. carries it once toggled on) per the eyebrow-slot lock.
+  // CTK-127 fold #1 (Tier 1A): LATEST = max(firstSeenAt) over the set — the
+  // buy-intent ladder orders cheapest-first, so index 0 is no longer the
+  // newest row.
   const eyebrowChunks = hasInStockRow
     ? [
         `${listings.length} ${listings.length === 1 ? 'VENDOR' : 'VENDORS'}`,
-        `LATEST ${formatRelativeTime(listings[0]!.firstSeenAt, now).toUpperCase()}`,
+        `LATEST ${formatRelativeTime(latestTimestamp(listings, (l) => l.firstSeenAt), now).toUpperCase()}`,
       ]
     : isAllOOS
       ? [

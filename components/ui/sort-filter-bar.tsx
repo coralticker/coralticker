@@ -38,6 +38,7 @@
 
 import Link from 'next/link';
 import type { ListingCategory, ListingSort } from '@/lib/queries/listings';
+import { CATEGORY_LABELS, SORT_LABELS } from '@/lib/queries/listing-params';
 
 interface SortFilterBarProps {
   // Route the axis hrefs resolve against — '/vendor/{slug}', '/new', '/deals'.
@@ -47,33 +48,23 @@ interface SortFilterBarProps {
   // undefined = OOS axis not rendered (feed surfaces); boolean = axis
   // rendered with that toggle state (inventory-recon surfaces).
   includeOOS?: boolean;
+  // CTK-127 fold #7: feeds pass "Sort and filter listings"; the default
+  // keeps the CTK-053 inventory wording on /vendor/[slug].
+  ariaLabel?: string;
 }
 
-// Category list locked at CTK-053 Session 1 Q-CTK053-3: 8 schema-aligned
-// values rendered in display-order per brand-manager session §Q-1 spec
-// (LPS top — DB-cardinality lead — then SPS / ZOA / MUSHROOM / CHALICE /
-// CLAM / ANEMONE / SOFTIE). Hidden from filter UI: fish / invert / equipment
-// / other — vendor-tail noise per plan §Out-of-scope.
-const CATEGORY_OPTIONS: { value: ListingCategory; label: string }[] = [
-  { value: 'lps', label: 'LPS' },
-  { value: 'sps', label: 'SPS' },
-  { value: 'zoa', label: 'ZOA' },
-  { value: 'mushroom', label: 'MUSHROOM' },
-  { value: 'chalice', label: 'CHALICE' },
-  { value: 'clam', label: 'CLAM' },
-  { value: 'anemone', label: 'ANEMONE' },
-  { value: 'softie', label: 'SOFTIE' },
-];
+// Option rows derive from the label records in lib/queries/listing-params.ts
+// (CTK-127 fold #4 single-source rule) — record insertion order carries the
+// brand-locked display order (sort per CTK-053 §Q-2 symbol-register lock;
+// categories per §Q-1 LPS-lead spec). Add a chip by editing the record, not
+// this file.
+const SORT_OPTIONS = (
+  Object.entries(SORT_LABELS) as [ListingSort, string][]
+).map(([value, label]) => ({ value, label }));
 
-// Sort labels per brand-manager session §Q-2 lock — symbol register (↑ / ↓)
-// carries direction-as-data; word-pair LOW-TO-HIGH register rejected (extra
-// chars, less data-density, register-conflict with PaginationNav's
-// no-arrows-on-affordance discipline).
-const SORT_OPTIONS: { value: ListingSort; label: string }[] = [
-  { value: 'newest', label: 'NEWEST' },
-  { value: 'price-asc', label: 'PRICE ↑' },
-  { value: 'price-desc', label: 'PRICE ↓' },
-];
+const CATEGORY_OPTIONS = (
+  Object.entries(CATEGORY_LABELS) as [ListingCategory, string][]
+).map(([value, label]) => ({ value, label }));
 
 // Href builder per canonical-chain discipline: default values omit their
 // param; page param is dropped on every filter/sort change (filter-change
@@ -98,6 +89,7 @@ export function SortFilterBar({
   sort,
   category,
   includeOOS,
+  ariaLabel = 'Sort and filter inventory',
 }: SortFilterBarProps) {
   const linkClass =
     'hover:underline focus-visible:underline underline-offset-[3px] decoration-1';
@@ -109,15 +101,18 @@ export function SortFilterBar({
   // enough — browser greedy line-break at MUSHROOM's preceding-space at 375px
   // still produced a leading-dot line-2 start. nbsp-before-dot forces the
   // break to land at the post-dot space, keeping the dot with the prior label.
+  // CTK-127 fold #2: NBSP + mid-dot written as \u00A0\u00B7 escapes — the literal char was
+  // silently flattened to a regular space in the promotion rewrite; the
+  // escape is grep- and review-visible.
   const midDot = (
     <span aria-hidden="true" className="text-forest">
-      {' · '}
+      {'\u00A0\u00B7 '}
     </span>
   );
 
   return (
     <nav
-      aria-label="Sort and filter inventory"
+      aria-label={ariaLabel}
       className="pt-6 pb-6 font-mono text-sm uppercase tracking-[0.08em] text-ink flex flex-col gap-y-2"
     >
       <div>

@@ -27,6 +27,12 @@ const PAGE_SIZE = 50; // site.md §4.5 — vendor-inventory pagination chunk.
 // index window and the user-facing "7 days" string move with it.
 export const CORAL_RECENCY_DAYS = 7; // site.md §4.1 — /coral/[slug] availability window.
 const VENDOR_RECENCY_DAYS = 14; // site.md §4.5 — /vendor/[slug] inventory window.
+// /new lead-event window (site.md §4.4) — passed to get_listing_lead_event()
+// below AND the source for app/new/page.tsx's user-facing window copy
+// (downtime fallback, filtered-empty line, filtered-zero eyebrow chunk), per
+// the CTK-124 Q-1 one-constant pattern (CTK-127 fold #3). Window drift stays
+// grep-able: query arg and label move together.
+export const ARRIVALS_WINDOW_HOURS = 24;
 export const MS_PER_DAY = 86_400_000;
 
 export interface Listing {
@@ -802,7 +808,7 @@ export async function getRecentArrivals(
         if (sort === 'price-asc') {
           return sql`
             SELECT e.*
-            FROM get_listing_lead_event(NULL, 24, NULL) e
+            FROM get_listing_lead_event(NULL, ${ARRIVALS_WINDOW_HOURS}, NULL) e
             JOIN vendor_listings vl ON vl.id = e.id
             WHERE (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
             ORDER BY e.current_price ASC NULLS LAST, e.event_at DESC
@@ -811,7 +817,7 @@ export async function getRecentArrivals(
         if (sort === 'price-desc') {
           return sql`
             SELECT e.*
-            FROM get_listing_lead_event(NULL, 24, NULL) e
+            FROM get_listing_lead_event(NULL, ${ARRIVALS_WINDOW_HOURS}, NULL) e
             JOIN vendor_listings vl ON vl.id = e.id
             WHERE (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
             ORDER BY e.current_price DESC NULLS LAST, e.event_at DESC
@@ -821,14 +827,14 @@ export async function getRecentArrivals(
         if (categoryParam !== null) {
           return sql`
             SELECT e.*
-            FROM get_listing_lead_event(NULL, 24, NULL) e
+            FROM get_listing_lead_event(NULL, ${ARRIVALS_WINDOW_HOURS}, NULL) e
             JOIN vendor_listings vl ON vl.id = e.id
             WHERE vl.category = ${categoryParam}
             ORDER BY e.event_at DESC
           `;
         }
         // Bare default — identical statement to pre-CTK-127.
-        return sql`SELECT * FROM get_listing_lead_event(NULL, 24, NULL)`;
+        return sql`SELECT * FROM get_listing_lead_event(NULL, ${ARRIVALS_WINDOW_HOURS}, NULL)`;
       })()) as unknown as RpcArrivalRow[];
 
       return rows.map(rpcRowToArrival);

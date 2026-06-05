@@ -9,8 +9,14 @@ import { SortFilterBar } from '@/components/ui/sort-filter-bar';
 import { bucketLabel, bucketTransition, DIVIDER_THRESHOLD } from '@/lib/format/group-bucket';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { formatTypeLabel } from '@/lib/format/type-label';
-import { parseCategory, parseSort } from '@/lib/queries/listing-params';
+import { latestTimestamp } from '@/lib/format/latest-timestamp';
 import {
+  chromeCategoryLabel,
+  parseCategory,
+  parseSort,
+} from '@/lib/queries/listing-params';
+import {
+  ARRIVALS_WINDOW_HOURS,
   getRecentArrivals,
   type ArrivalListing,
   type ListingCategory,
@@ -34,8 +40,13 @@ interface PageProps {
 
 const SKELETON_ROW_COUNT = 6;
 
-const DOWNTIME_FALLBACK =
-  "No new arrivals in the last 24 hours. I'll surface them as vendors list.";
+// Window label derives from the same constant the query passes to
+// get_listing_lead_event() (CTK-127 fold #3, one-constant pattern per
+// /deals' PRICE_DROP_WINDOW) — three consumers: downtime fallback,
+// filtered-empty line, filtered-zero eyebrow chunk.
+const ARRIVALS_WINDOW = `${ARRIVALS_WINDOW_HOURS} hours`;
+
+const DOWNTIME_FALLBACK = `No new arrivals in the last ${ARRIVALS_WINDOW}. I'll surface them as vendors list.`;
 
 // CTK-127: arg-taking per the /review-plan cache() re-key pin — a no-arg
 // wrapper would serve one cached shape for all filter states in a request
@@ -56,14 +67,6 @@ function rowToProps(arrival: ArrivalListing) {
   return { listing, baseEvent } as const;
 }
 
-// Chrome register is always ALL-CAPS regardless of type-label class
-// (branding-guide §"Type label casing" chrome-inheritance) — all 8 filterable
-// categories are single-word enum values, so the blanket transform is safe
-// here; prose register below goes through formatTypeLabel instead.
-function chromeCategoryLabel(category: ListingCategory): string {
-  return category.toUpperCase();
-}
-
 async function Eyebrow({
   sort,
   category,
@@ -82,18 +85,17 @@ async function Eyebrow({
     // impossible.
     return (
       <PageEyebrow
-        chunks={[`0 ${chromeCategoryLabel(category)} ARRIVALS`, 'LAST 24 HOURS']}
+        chunks={[
+          `0 ${chromeCategoryLabel(category)} ARRIVALS`,
+          `LAST ${ARRIVALS_WINDOW.toUpperCase()}`,
+        ]}
       />
     );
   }
 
   // LATEST = max(eventAt), not index 0 — price-sorted renders break the
-  // recency-order assumption (/review-plan pin).
-  const latestEventAt = arrivals.reduce(
-    (max, a) =>
-      new Date(a.eventAt).getTime() > new Date(max).getTime() ? a.eventAt : max,
-    arrivals[0]!.eventAt,
-  );
+  // recency-order assumption (/review-plan pin; shared helper per fold #1).
+  const latestEventAt = latestTimestamp(arrivals, (a) => a.eventAt);
   const latestRelative = formatRelativeTime(latestEventAt, new Date()).toUpperCase();
   const countNoun = arrivals.length === 1 ? 'ARRIVAL' : 'ARRIVALS';
   // Filtered eyebrows qualify the count chunk — the filtered page covers the
@@ -125,7 +127,8 @@ async function ArrivalsFeed({
     if (category !== null) {
       return (
         <p role="status" className="text-base text-ink py-6">
-          No {formatTypeLabel(category).display} arrivals in the last 24 hours.
+          No {formatTypeLabel(category).display} arrivals in the last{' '}
+          {ARRIVALS_WINDOW}.
         </p>
       );
     }
@@ -198,7 +201,12 @@ export default async function NewArrivalsPage({ searchParams }: PageProps) {
       {/* Two axes only — no INCLUDE OUT OF STOCK on feed surfaces per
           branding-guide §"State markers" deal-buyer query-filter lock
           (includeOOS omitted → axis not rendered). */}
-      <SortFilterBar basePath="/new" sort={sort} category={category} />
+      <SortFilterBar
+        basePath="/new"
+        sort={sort}
+        category={category}
+        ariaLabel="Sort and filter listings"
+      />
       <Suspense fallback={<FeedSkeleton />}>
         <ArrivalsFeed sort={sort} category={category} />
       </Suspense>
