@@ -81,8 +81,9 @@ const rowLinkClass =
   'font-bold underline underline-offset-[3px] decoration-1 hover:decoration-2';
 
 // Section label per D-058-5 #1 (guide L282): mono-uppercase over a 1px
-// ink/30 under-rule, left-aligned to the data edge. Classification lives
-// positionally at section level — never per-row.
+// `line` under-rule (CTK-129 served-neutral token), left-aligned to the
+// data edge. Classification lives positionally at section level — never
+// per-row.
 function SectionLabel({
   first,
   children,
@@ -92,7 +93,7 @@ function SectionLabel({
 }) {
   return (
     <h2
-      className={`font-mono text-xs font-normal uppercase tracking-[0.08em] text-ink border-b border-ink/30 pb-2 ${
+      className={`font-mono text-xs font-normal uppercase tracking-[0.08em] text-ink border-b border-line pb-2 ${
         first ? 'mt-0' : 'mt-12'
       }`}
     >
@@ -127,7 +128,7 @@ function CoralRow({ hit }: { hit: CoralSearchHit }) {
   }
 
   return (
-    <div className="py-6 border-b border-ink/30">
+    <div className="py-6 border-b border-line">
       <p className="text-base leading-snug">
         <Link href={`/coral/${hit.slug}`} className={rowLinkClass}>
           {hit.canonicalName}
@@ -146,7 +147,7 @@ function CoralRow({ hit }: { hit: CoralSearchHit }) {
 // /vendor/[slug].
 function VendorRow({ hit }: { hit: VendorSearchHit }) {
   return (
-    <div className="py-6 border-b border-ink/30">
+    <div className="py-6 border-b border-line">
       <p className="text-base leading-snug">
         <Link href={`/vendor/${hit.slug}`} className={rowLinkClass}>
           {hit.displayName}

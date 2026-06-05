@@ -10,18 +10,20 @@
 // surfaces a `variant` discriminator per the same first-consumer-surfaces-
 // the-API pattern. 'box' is the original chrome verbatim; 'nav-underline' is
 // the INV-02 round-2 variant A lock (branding-guide §"Mono uppercase
-// register" <SearchBar> entry, L286): 2px ink/40 underline at rest;
+// register" <SearchBar> entry, L286): 2px `line` underline at rest;
 // focus flips to 1px full ink with pb compensated 4px->5px so total box
 // height is constant (rest/focus weights superseded at Jon live-eyeball
-// 2026-06-05 — 1px ink/30 rest read as nonexistent on cream; 2px full-ink
-// focus too heavy; 2px /40->/60 shift imperceptible; thick-quiet rest /
-// thin-sharp focus is the ratified pair) — no
-// box/chip/fill, transparent over the nav's surface, mono text at nav-chrome
-// size, placeholder ink/60 letterspaced (the literal-uppercase placeholder
-// string is the caller's job — CSS text-transform doesn't reliably reach
-// placeholders), no forest in any state, bounded width so the input wraps as
-// a unit on narrow viewports. WebKit's native search-cancel decoration is
-// suppressed — it would be the only non-bare control chrome in the system.
+// 2026-06-05; thick-quiet rest / thin-sharp focus is the ratified pair) —
+// no box/chip/fill, transparent over the nav's surface, mono text at
+// nav-chrome size, placeholder `mute` letterspaced (the literal-uppercase
+// placeholder string is the caller's job — CSS text-transform doesn't
+// reliably reach placeholders), no forest in any state, bounded width so
+// the input wraps as a unit on narrow viewports. WebKit's native
+// search-cancel decoration is suppressed — it would be the only non-bare
+// control chrome in the system. `line`/`mute` per the CTK-129
+// served-neutral re-spec (branding-guide §"Served-neutral re-spec") — the
+// adopted served values; the nominal ink/NN forms never compiled, and the
+// eyeball that ratified this pair was looking at these exact tones.
 
 interface InputProps {
   name: string;
@@ -36,9 +38,9 @@ interface InputProps {
 }
 
 const VARIANT_CLASS: Record<NonNullable<InputProps['variant']>, string> = {
-  box: 'block w-full px-3 py-2 bg-cream text-ink border border-ink/30 font-sans text-sm placeholder:text-ink/60 focus:outline-none focus:border-ink disabled:opacity-50',
+  box: 'block w-full px-3 py-2 bg-cream text-ink border border-line font-sans text-sm placeholder:text-mute focus:outline-none focus:border-ink disabled:opacity-50',
   'nav-underline':
-    'w-56 max-w-full py-1 bg-transparent text-ink border-0 border-b-2 border-ink/40 font-mono text-xs placeholder:text-ink/60 placeholder:tracking-[0.08em] focus:outline-none focus:border-b focus:border-ink focus:pb-[5px] appearance-none [&::-webkit-search-cancel-button]:appearance-none disabled:opacity-50',
+    'w-56 max-w-full py-1 bg-transparent text-ink border-0 border-b-2 border-line font-mono text-xs placeholder:text-mute placeholder:tracking-[0.08em] focus:outline-none focus:border-b focus:border-ink focus:pb-[5px] appearance-none [&::-webkit-search-cancel-button]:appearance-none disabled:opacity-50',
 };
 
 export function Input(props: InputProps) {

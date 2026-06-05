@@ -177,7 +177,7 @@ function FeedSkeleton() {
   return (
     <div aria-busy="true">
       {Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
-        <div key={i} className="py-6 border-b border-ink/30">
+        <div key={i} className="py-6 border-b border-line">
           <DataRowSkeleton fields={fields} />
         </div>
       ))}

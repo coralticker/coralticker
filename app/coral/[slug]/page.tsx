@@ -178,7 +178,7 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
       ) : null}
 
       <div className="mt-10 mb-2">
-        <h2 className="text-sm font-bold pb-2 border-b border-ink/20">
+        <h2 className="text-sm font-bold pb-2 border-b border-line">
           {sectionHeader}
         </h2>
       </div>
@@ -224,7 +224,7 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
 
       {coral.source_urls !== null && coral.source_urls.length > 0 ? (
         <footer className="mt-12 text-sm">
-          <h2 className="text-sm font-bold pb-2 mb-2 border-b border-ink/20">
+          <h2 className="text-sm font-bold pb-2 mb-2 border-b border-line">
             Sources.
           </h2>
           <ul className="space-y-1">

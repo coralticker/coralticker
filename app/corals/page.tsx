@@ -85,7 +85,7 @@ function CoralListSkeleton() {
         <li key={i} className="py-3">
           <span
             aria-hidden="true"
-            className="inline-block h-4 w-40 align-middle bg-ink/15 rounded-sm animate-pulse"
+            className="inline-block h-4 w-40 align-middle bg-wash rounded-sm animate-pulse"
           />
         </li>
       ))}
@@ -124,7 +124,7 @@ function AboutThisList() {
     <section id="about-this-list" className="mt-12">
       {/* Sentence-case header + 1px under-rule per branding-guide
           §"Section transitions on content surfaces". */}
-      <h2 className="text-sm font-bold pb-2 mb-2 border-b border-ink/20">
+      <h2 className="text-sm font-bold pb-2 mb-2 border-b border-line">
         About this list.
       </h2>
       <div className="text-base leading-relaxed space-y-4 pt-2">

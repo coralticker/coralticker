@@ -16,5 +16,5 @@ const COPY: Record<CaveatLabelKind, string> = {
 };
 
 export function CaveatLabel({ kind }: CaveatLabelProps) {
-  return <span className="text-ink/60 text-sm">{COPY[kind]}</span>;
+  return <span className="text-sm">{COPY[kind]}</span>;
 }

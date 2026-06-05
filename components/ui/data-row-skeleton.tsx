@@ -37,7 +37,7 @@ export function DataRowSkeleton({ fields }: DataRowSkeletonProps) {
           <strong className="font-bold">{field.label}.</strong>{' '}
           <span
             aria-hidden="true"
-            className="inline-block h-4 w-24 align-middle bg-ink/15 rounded-sm animate-pulse"
+            className="inline-block h-4 w-24 align-middle bg-wash rounded-sm animate-pulse"
           />
         </Fragment>
       ))}

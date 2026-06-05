@@ -153,7 +153,7 @@ function VendorInventorySkeleton() {
   return (
     <div aria-busy="true">
       {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="py-6 border-b border-ink/30">
+        <div key={i} className="py-6 border-b border-line">
           <DataRowSkeleton fields={fields} />
         </div>
       ))}
@@ -253,7 +253,7 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
           category={category}
           includeOOS={includeOOS}
         />
-        <h2 className="text-sm font-bold pb-2 mb-2 border-b border-ink/20">
+        <h2 className="text-sm font-bold pb-2 mb-2 border-b border-line">
           Current inventory.
         </h2>
         <Suspense fallback={<VendorInventorySkeleton />}>

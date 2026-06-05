@@ -53,10 +53,10 @@ export function ListingRowFrame({
       href={listing.productUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="block py-6 border-b border-ink/30 hover:bg-ink/[0.02]"
+      className="block py-6 border-b border-line hover:bg-wash"
     >
       <div className="flex gap-4">
-        <div className="shrink-0 w-24 h-24 bg-ink/5" aria-hidden={!listing.imageUrl}>
+        <div className="shrink-0 w-24 h-24 bg-wash" aria-hidden={!listing.imageUrl}>
           {listing.imageUrl ? (
             <Image
               src={listing.imageUrl}

@@ -8,7 +8,7 @@
 //
 // SSR/CSR disposition per Q-NEW-A REDISPOSED Option C 2026-05-14:
 //   - SSR + initial-CSR render a bones-register pulse-bar matching <DataRowSkeleton> Listed
-//     field shape (bg-ink/15 + animate-pulse + h-4 + w-16 + rounded-sm + align-middle).
+//     field shape (bg-wash + animate-pulse + h-4 + w-16 + rounded-sm + align-middle).
 //     aria-hidden="true" so screen readers don't double-announce post-Suspense — the parent
 //     feed's <DataRowSkeleton role="status"> already covered the loading announcement.
 //   - useEffect on mount swaps to a <time datetime={...}> element rendering the relative
@@ -63,7 +63,7 @@ export function RelativeTime({ timestamp }: RelativeTimeProps) {
     return (
       <span
         aria-hidden="true"
-        className="inline-block h-4 w-16 align-middle bg-ink/15 rounded-sm animate-pulse"
+        className="inline-block h-4 w-16 align-middle bg-wash rounded-sm animate-pulse"
       />
     );
   }

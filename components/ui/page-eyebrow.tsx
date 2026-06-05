@@ -20,7 +20,7 @@ export function PageEyebrow({ chunks }: PageEyebrowProps) {
 export function PageEyebrowSkeleton() {
   return (
     <p
-      className="text-xs uppercase tracking-[0.08em] font-mono text-ink/40 mb-4"
+      className="text-xs uppercase tracking-[0.08em] font-mono mb-4"
       aria-busy="true"
       role="status"
       aria-label="Loading eyebrow"

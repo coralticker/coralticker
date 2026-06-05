@@ -61,7 +61,7 @@ function VendorListSkeleton() {
         <li key={i} className="py-3">
           <span
             aria-hidden="true"
-            className="inline-block h-4 w-40 align-middle bg-ink/15 rounded-sm animate-pulse"
+            className="inline-block h-4 w-40 align-middle bg-wash rounded-sm animate-pulse"
           />
         </li>
       ))}
