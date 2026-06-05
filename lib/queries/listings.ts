@@ -218,53 +218,83 @@ export async function getRecentDrops(limit = 10): Promise<Listing[]> {
 
 // /coral/[slug] per site.md §4.1.
 // Filtered by named_coral_id AND last_seen_at > now() - interval '7 days'.
-export async function getCoralAvailability(namedCoralId: number): Promise<Listing[]> {
-  const sql = getNeonSql();
-  const sevenDaysAgo = new Date(Date.now() - CORAL_RECENCY_DAYS * MS_PER_DAY).toISOString();
+// CTK-126 D-2 (2026-06-05): in-stock default — default RESTRICTS to
+// in_stock = true; includeOOS=true drops the predicate and restores the
+// inventory-recon mixed render (CTK-098 semantic, same constant-folding
+// predicate shape as getVendorInventory). The ?include-oos searchParams read
+// flips /coral/[slug] pure-dynamic at runtime, so the fetch gains the
+// unstable_cache wrap per the CTK-046 /vendor/[slug] precedent — key carries
+// (namedCoralId, includeOOS); V1 prefix is this function's first cached
+// generation (no pre-wrap Data Cache entries exist; bump on any future shape
+// change per feedback_unstable_cache_shape_change). revalidate 300 matches
+// the page-level cadence (CTK-047 B-2 medal-bearing surface). sevenDaysAgo
+// computed inside the cached fn per getVendorInventory precedent.
+//
+// CTK-125 adjacency note (do NOT fold here): this query carries no
+// v.active / sentinel-slug vendor guards — the Tier 4 vendor-guard sibling
+// (CTK-125) owns that predicate change; mechanism-class discipline keeps it
+// out of the CTK-126 D-2 edit.
+export async function getCoralAvailability(
+  namedCoralId: number,
+  includeOOS: boolean = false,
+): Promise<Listing[]> {
+  return unstable_cache(
+    async () => {
+      const sql = getNeonSql();
+      const sevenDaysAgo = new Date(Date.now() - CORAL_RECENCY_DAYS * MS_PER_DAY).toISOString();
+      const includeOOSParam = includeOOS;
 
-  const rows = (await sql`
-    SELECT
-      vl.id,
-      vl.raw_title,
-      vl.current_price,
-      vl.compare_at_price,
-      vl.in_stock,
-      vl.image_url,
-      vl.product_url,
-      vl.first_seen_at,
-      vl.match_confidence,
-      vl.named_coral_id,
-      v.slug AS vendor_slug,
-      v.display_name AS vendor_display_name,
-      nc.canonical_name AS named_coral_canonical_name,
-      nc.slug AS named_coral_slug,
-      nc.origin_vendor AS named_coral_origin_vendor
-    FROM vendor_listings vl
-    JOIN vendors v ON v.id = vl.vendor_id
-    LEFT JOIN named_corals nc ON nc.id = vl.named_coral_id
-    WHERE vl.named_coral_id = ${namedCoralId}
-      AND vl.last_seen_at > ${sevenDaysAgo}
-    ORDER BY vl.first_seen_at DESC
-  `) as unknown as VendorListingRow[];
+      const rows = (await sql`
+        SELECT
+          vl.id,
+          vl.raw_title,
+          vl.current_price,
+          vl.compare_at_price,
+          vl.in_stock,
+          vl.image_url,
+          vl.product_url,
+          vl.first_seen_at,
+          vl.match_confidence,
+          vl.named_coral_id,
+          v.slug AS vendor_slug,
+          v.display_name AS vendor_display_name,
+          nc.canonical_name AS named_coral_canonical_name,
+          nc.slug AS named_coral_slug,
+          nc.origin_vendor AS named_coral_origin_vendor
+        FROM vendor_listings vl
+        JOIN vendors v ON v.id = vl.vendor_id
+        LEFT JOIN named_corals nc ON nc.id = vl.named_coral_id
+        WHERE vl.named_coral_id = ${namedCoralId}
+          AND vl.last_seen_at > ${sevenDaysAgo}
+          AND (${includeOOSParam}::boolean OR vl.in_stock = true)
+        ORDER BY vl.first_seen_at DESC
+      `) as unknown as VendorListingRow[];
 
-  const listings = rows.map(rowToListing);
-  // CTK-047 B-5 — LEFT JOIN drop context for cross-surface medal on
-  // <VendorAvailabilityRow>. In-stock rows with priorPrice non-null render
-  // price-drop-new at position 2 in the precedence chain. Close-window
-  // addendum: eventAt populated so Listed. reads "X hours ago" not "X days
-  // ago" on rows with a recent CT-observed drop.
-  const context = await getListingDropContext(listings.map((l) => l.id));
-  return listings.map((l) => {
-    const ctx = context.get(Number(l.id));
-    return ctx
-      ? {
-          ...l,
-          priorPrice: ctx.priorPrice,
-          priceDropObservedAt: ctx.observedAt,
-          eventAt: ctx.eventAt,
-        }
-      : l;
-  });
+      const listings = rows.map(rowToListing);
+      // CTK-047 B-5 — LEFT JOIN drop context for cross-surface medal on
+      // <VendorAvailabilityRow>. In-stock rows with priorPrice non-null render
+      // price-drop-new at position 2 in the precedence chain. Close-window
+      // addendum: eventAt populated so Listed. reads "X hours ago" not "X days
+      // ago" on rows with a recent CT-observed drop.
+      const context = await getListingDropContext(listings.map((l) => l.id));
+      return listings.map((l) => {
+        const ctx = context.get(Number(l.id));
+        return ctx
+          ? {
+              ...l,
+              priorPrice: ctx.priorPrice,
+              priceDropObservedAt: ctx.observedAt,
+              eventAt: ctx.eventAt,
+            }
+          : l;
+      });
+    },
+    ['getCoralAvailabilityV1', String(namedCoralId), includeOOS ? '1' : '0'],
+    {
+      revalidate: 300,
+      tags: [`coral-${namedCoralId}-availability-${includeOOS ? '1' : '0'}`],
+    },
+  )();
 }
 
 // /vendor/[slug] per site.md §4.5.

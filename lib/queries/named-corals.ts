@@ -69,8 +69,13 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // route to an empty /coral/[slug]. The window derives from the imported
 // CORAL_RECENCY_DAYS (lib/queries/listings.ts) — the same constant that gates
 // the getCoralAvailability populated branch, so listing-side window drift is
-// impossible. Deliberately NO in_stock filter — getCoralAvailability renders
-// OOS rows (inventory-recon surface), so the listing-side window is parity.
+// impossible. CTK-126 D-2 (2026-06-05): EXISTS carries in_stock = true per
+// the **Default-render parity** rule (branding-guide §"State markers") —
+// /coral/[slug] now defaults to in-stock rows behind an INCLUDE OUT OF STOCK
+// toggle, and parity is measured against the destination's DEFAULT (bare-URL)
+// render, not the toggled-on view: a coral whose only in-window listing is
+// OOS drops off the index until it restocks rather than routing to a
+// default-empty detail page.
 // The VENDOR-side EXISTS guards (active + sentinel-slug, CTK-095 Axis 3
 // belt-and-suspenders; ESCAPE '!' — backslash collapses in JS template cooking
 // and would invert the filter) are deliberately STRICTER than the destination:
@@ -78,10 +83,12 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // in-window listings belong to a deactivated or sentinel vendor stays off the
 // index by design rather than advertising retired inventory. That
 // destination-side asymmetry (the detail page would still render such rows)
-// is tracked at /reef-lead intake (CTK pending as of 2026-06-04; cite the
-// number here once assigned). Window evaluates at query time inside the
-// cached fn; drift ≤ 10 min on a 7-day window per getVendorInventory
-// precedent.
+// is CTK-125 (Tier 4 trigger-gated). Window evaluates at query time inside
+// the cached fn; drift ≤ 10 min on a 7-day window per getVendorInventory
+// precedent. V2 key-prefix bump at the D-2 predicate flip — Data Cache
+// persists across deploys (feedback_unstable_cache_shape_change), and V1
+// pre-flip entries would keep OOS-only corals on the index against a
+// default-empty destination for up to the 600s window.
 export async function getAllNamedCoralsWithListings(): Promise<
   { slug: string; canonical_name: string }[]
 > {
@@ -102,6 +109,7 @@ export async function getAllNamedCoralsWithListings(): Promise<
             JOIN vendors v ON v.id = vl.vendor_id
             WHERE vl.named_coral_id = nc.id
               AND vl.last_seen_at > ${windowStart}
+              AND vl.in_stock = true
               AND v.active = true
               AND v.slug NOT LIKE '!_%' ESCAPE '!'
           )
@@ -109,7 +117,7 @@ export async function getAllNamedCoralsWithListings(): Promise<
       `) as unknown as { slug: string; canonical_name: string }[];
       return rows;
     },
-    ['getAllNamedCoralsWithListings'],
+    ['getAllNamedCoralsWithListingsV2'],
     { revalidate: 600, tags: ['corals-index'] },
   )();
 }

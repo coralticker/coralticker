@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
   getAllNamedCoralSlugs,
@@ -13,13 +14,27 @@ import { buildLineageFields } from '@/lib/format/lineage-fields';
 import { VendorAvailabilityRow } from './_components/vendor-availability-row';
 
 // CTK-047 B-2 — medal-bearing surface; cadence equalized to 5min with /deals
-// + /vendor/[slug] + homepage strip per /lead-architect 2026-06-02. Wrapped
-// data-fetch in getCoralAvailability is plain (no unstable_cache), so the
-// page-level revalidate IS the cache TTL for this surface.
+// + /vendor/[slug] + homepage strip per /lead-architect 2026-06-02.
+//
+// CTK-126 D-2 (2026-06-05): availability defaults to in-stock rows; the
+// INCLUDE OUT OF STOCK toggle (?include-oos=1) restores the inventory-recon
+// mixed render — single-axis variant of the CTK-098 <SortFilterBar> third
+// axis, toggle ONLY per the 2026-06-05 chrome-scope ruling (no SORT/FILTER
+// axes at 1-6 rows). The searchParams read flips the route pure-dynamic at
+// runtime, so getCoralAvailability now carries the unstable_cache wrap
+// (revalidate 300, key carries toggle state) per the CTK-046 /vendor/[slug]
+// precedent — the page-level revalidate no longer is the data-cache TTL.
 export const revalidate = 300;
 
 interface PageProps {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{
+    'include-oos'?: string;
+  }>;
+}
+
+function parseIncludeOOS(raw: string | undefined): boolean {
+  return raw === '1';
 }
 
 export async function generateStaticParams(): Promise<{ slug: string }[]> {
@@ -39,18 +54,56 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title: `${coral.canonical_name} — current vendor availability — CoralTicker`,
     description: `Current vendor availability and pricing for ${coral.canonical_name}. Drop alerts across reef coral vendors.`,
+    // Canonical = bare route per the /vendor/[slug] precedent — the
+    // ?include-oos=1 toggle variant resolves to the bare-route SERP card.
+    alternates: {
+      canonical: `/coral/${slug}`,
+    },
   };
 }
 
 const EMPTY_FALLBACK =
   "Nothing in stock right now. I'll surface it when it lists.";
 
-export default async function CoralPage({ params }: PageProps) {
+// CTK-126 D-2 — single-axis toggle chrome per the CTK-098 <SortFilterBar>
+// third-axis pattern (mono uppercase register, underline-on-active,
+// click-active-to-clear via canonical-chain bare-route). Toggle ONLY — no
+// SORT/FILTER axes per the 2026-06-05 chrome-scope ruling. Always rendered
+// (consistent chrome across populated/empty states, same as SortFilterBar).
+function IncludeOOSToggle({
+  slug,
+  includeOOS,
+}: {
+  slug: string;
+  includeOOS: boolean;
+}) {
+  const linkClass =
+    'hover:underline focus-visible:underline underline-offset-[3px] decoration-1';
+  const activeClass = 'underline underline-offset-[3px] decoration-1';
+  return (
+    <nav
+      aria-label="Availability filter"
+      className="pt-2 pb-2 font-mono text-sm uppercase tracking-[0.08em] text-ink"
+    >
+      <Link
+        href={includeOOS ? `/coral/${slug}` : `/coral/${slug}?include-oos=1`}
+        className={includeOOS ? activeClass : linkClass}
+        aria-current={includeOOS ? 'true' : undefined}
+      >
+        INCLUDE OUT OF STOCK
+      </Link>
+    </nav>
+  );
+}
+
+export default async function CoralPage({ params, searchParams }: PageProps) {
   const { slug } = await params;
+  const sp = await searchParams;
+  const includeOOS = parseIncludeOOS(sp['include-oos']);
   const coral = await getNamedCoralBySlug(slug);
   if (!coral) notFound();
 
-  const listings = await getCoralAvailability(coral.id);
+  const listings = await getCoralAvailability(coral.id, includeOOS);
   const lineageFields = buildLineageFields(coral);
   const hasListings = listings.length > 0;
   const sectionHeader = hasListings
@@ -91,6 +144,8 @@ export default async function CoralPage({ params }: PageProps) {
         </h2>
       </div>
 
+      <IncludeOOSToggle slug={slug} includeOOS={includeOOS} />
+
       {hasListings ? (
         <div>
           {listings.map((listing) => (
@@ -102,6 +157,19 @@ export default async function CoralPage({ params }: PageProps) {
           {EMPTY_FALLBACK}
         </p>
       )}
+
+      {/* CTK-126 — match-provenance pointer. One line; the canonical copy
+          lives in the /corals "About this list." block (links, never
+          duplicates). Link rides the phrase per the rev1 lock, underlined
+          at rest per branding-guide L196 link default (the /corals row-stack
+          hover-only carve-out doesn't reach prose links). */}
+      <p className="mt-4 text-sm">
+        Matched by name to{' '}
+        <Link href="/corals#about-this-list" className="underline">
+          a list I researched by hand
+        </Link>
+        .
+      </p>
 
       {coral.source_urls !== null && coral.source_urls.length > 0 ? (
         <footer className="mt-12 text-sm">
