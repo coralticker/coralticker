@@ -88,8 +88,7 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // revalidates at 600s, the destination's at 300s, so a coral that sells out
 // can hold its index row for up to ~10 min and route to the all-OOS third
 // state in that window (/code-review 2026-06-05 #3; skew disposition
-// DEFERRED to the D-2 hygiene bundle CTK — cite the number once /reef-lead
-// assigns it).
+// DEFERRED to CTK-128, the D-2 hygiene bundle).
 // The VENDOR-side EXISTS guards (active + sentinel-slug, CTK-095 Axis 3
 // belt-and-suspenders; ESCAPE '!' — backslash collapses in JS template cooking
 // and would invert the filter) are deliberately STRICTER than the destination:
