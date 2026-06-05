@@ -18,7 +18,7 @@ export default {
         // These literals adopt what actually served:
         line: '#E5E7EB', // hairlines/borders/dividers/under-rules (was preflight border default)
         mute: '#9CA3AF', // placeholder text ONLY (was preflight ::placeholder); AA exception named at canon, Phase 3 revisit
-        wash: '#EAE6E0', // skeleton bars / image-slot / row-hover repaint (bg-ink/NN served transparent); STARTING value — final hex at Jon eyeball
+        wash: '#EAE6E0', // skeleton bars / image-slot / row-hover repaint (bg-ink/NN served transparent); FINAL — Jon eyeball ratified 2026-06-05 (canon at branding-guide §"Served-neutral re-spec")
       },
       fontFamily: {
         sans: ['var(--font-plex-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
