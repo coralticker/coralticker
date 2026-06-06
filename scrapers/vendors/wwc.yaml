@@ -113,6 +113,17 @@ category_filter:
     - Favia/Favites BOGO              # id=15781
     - May $25 Build A Monti Pack      # id=15782
     - Rainbow Hammer January Special  # id=15800
+    # CTK-119 D-2 (2026-06-06): 'Build A' family lock off the 3-day rotation
+    # sample + two-lens substring audit — feed (days 2-3) and DB ILIKE both
+    # hit exactly the two class rows (15782 bridged; 15783 dormant May $49
+    # sibling, HEAD-404, in_stock=false). Subsumes the May $25 exact entry
+    # above and the id=15783 reactive-add candidate. Other family patterns
+    # dispositioned same sample: Special REJECTED (3 real-coral title
+    # families carry it); $N / BOGO / POS not locked (zero non-class
+    # recurrence; reactive exact-title fallback per plan review-fold #3).
+    # Accepted residual: substring also matches word-final '...build a'
+    # shapes ('Rebuild Acro...') — zero instances, feed + DB, 2026-06-06.
+    - Build A
   # CTK-119 D-1 (2026-06-04): WWC wholesale/live-sale channel prefix — 56 of
   # 523 user-facing rows carried title-initial 'WS - ' with dead retail routes
   # (in-feed + in_stock=true + storefront HEAD-404; published via a non-retail

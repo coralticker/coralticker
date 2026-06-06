@@ -49,12 +49,14 @@ WWC_CATEGORY_FILTER = {
     # PT rotated in a Dry-Goods-tagged hot sauce (id=15725).
     "tag_denylist": ["Dry Goods"],
     # CTK-107 D-2-quater fleet chaeto/macroalgae (4) + CTK-119 D-1 promo/POS/
-    # BOGO dead-route tail (7, exact-compound, ids 15744-15800).
+    # BOGO dead-route tail (7, exact-compound, ids 15744-15800) + CTK-119 D-2
+    # 'Build A' family lock (1, 2026-06-06 — subsumes the May $25 exact entry
+    # + id=15783).
     "title_denylist": [
         "Chaeto", "Cheato", "Macroalgae", "Macro Algae",
         "Acro Frag POS", "Special Sale - Frag", "BOGO Beginner SPS Frag",
         "$10 GSP Frag", "Favia/Favites BOGO", "May $25 Build A Monti Pack",
-        "Rainbow Hammer January Special",
+        "Rainbow Hammer January Special", "Build A",
     ],
     # CTK-119 D-1 anchored wholesale/live-sale channel-prefix axis.
     "title_denylist_prefix": ["WS - "],
@@ -333,7 +335,7 @@ def test_filter_rejects_promo_tail_exact_titles(products):
 # CTK-119 Test 21: coral false-kill guard across the real-shape fixture surface
 def test_filter_keeps_corals_post_ctk119(products):
     """CTK-119 D-1 false-kill guard — the 3 real-shape coral fixtures pass the
-    full post-CTK-119 mirror (11 title entries + prefix axis). Pins the new
+    full post-CTK-119 mirror (12 title entries + prefix axis). Pins the new
     entries against the coral surface the same way CTK-104's guard pinned the
     reef-safety family on TSA."""
     for title in (
@@ -381,6 +383,30 @@ def test_filter_keeps_live_sale_coral_without_dry_goods_tag(products):
     )
 
 
+# CTK-119 Test 24: Build A family entry rejects the rotating pack class
+def test_filter_rejects_build_a_family(products):
+    """CTK-119 D-2 (2026-06-06) — 'Build A' locked as a substring family entry
+    off the 3-day rotation sample + two-lens audit (feed days 2-3 and DB ILIKE
+    each hit exactly the two class rows, 15782/15783). Family semantics: future
+    month/price rotations of the pack promo reject without per-SKU reactive
+    adds. Accepted residual: substring also matches word-final '...build a'
+    shapes ('Rebuild Acro...') — zero instances feed + DB at lock time."""
+    for title in (
+        "May $49 Build A Zoa Pack",       # id=15783, the dormant class sibling
+        "June $30 Build A Acro Pack",     # synthetic next-month rotation
+        "build a reef pack",              # lowercase drift
+    ):
+        product = {
+            "title": title,
+            "product_type": "Frag-PoS",
+            "tags": [],
+            "variants": [{"available": True}],
+        }
+        assert _should_keep(product, WWC_CATEGORY_FILTER) is False, (
+            f"Build A family title {title!r} should reject via the family entry; product passed"
+        )
+
+
 # CTK-041 Test 17: auction_detection=None is no-op (permissive default)
 def test_auction_detection_none_is_noop(products):
     """Per-vendor opt-in shape — vendors without auction_detection block in
@@ -418,6 +444,7 @@ def main() -> int:
         test_filter_keeps_corals_post_ctk119,
         test_filter_rejects_dry_goods_tag_in_allowlisted_pt,
         test_filter_keeps_live_sale_coral_without_dry_goods_tag,
+        test_filter_rejects_build_a_family,
         test_auction_detection_none_is_noop,
     ]
 
