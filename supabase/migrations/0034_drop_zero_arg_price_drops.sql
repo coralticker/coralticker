@@ -1,0 +1,27 @@
+-- CTK-124 — overload two-step, step two: DROP the zero-arg
+-- get_recent_price_drops() signature.
+--
+-- Migration 0033 created the one-arg union function ALONGSIDE this
+-- zero-arg signature so live /deals (which called it via four statements
+-- in lib/queries/listings.ts) kept serving across the code/DB deploy
+-- race. The CTK-124 Session 2 frontend swap (commit 45a01f4, deployed +
+-- live-spot-checked 2026-06-06: three-chunk eyebrow, markdown-only row
+-- render, price-asc order) rebinds all four statements to
+-- get_recent_price_drops(DEALS_WINDOW_DAYS) — nothing calls the zero-arg
+-- signature anymore. This migration retires it; the verify cycle the
+-- 0033 header named is complete.
+--
+-- Ordering note: this DROP is gated on the Session 2 DEPLOY, not just
+-- the commit — applying it while the previous Vercel build still served
+-- would have 500'd /deals. Relative to its own push it follows the
+-- normal apply-pre-push order.
+--
+-- Postgres identifies functions by name + argument types: the DROP is
+-- scoped to the empty-args signature and cannot touch the live one-arg
+-- union function. GRANTs are per-signature, so the one-arg grants
+-- (asserted at 0033) are unaffected.
+--
+-- Idempotent: DROP IF EXISTS — re-running after the signature is gone
+-- is a no-op. Apply via scripts/apply_migration_0034.py (0033 shape).
+
+DROP FUNCTION IF EXISTS get_recent_price_drops();
