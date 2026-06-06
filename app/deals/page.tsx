@@ -16,6 +16,7 @@ import {
   parseSort,
 } from '@/lib/queries/listing-params';
 import {
+  DEALS_WINDOW_DAYS,
   getRecentPriceDrops,
   type ListingCategory,
   type ListingSort,
@@ -39,13 +40,13 @@ interface PageProps {
 
 const SKELETON_ROW_COUNT = 6;
 
-// /deals query-window value — one constant, three consumers (downtime
-// fallback, filtered-empty line, filtered-zero eyebrow window chunk) per the
-// CTK-124 Q-1 eyebrow lock (branding-guide §"Eyebrow shape + slot"). Tracks
-// the get_recent_price_drops() LAG-window cap (24h per migration 0009);
-// CTK-124 D-1 moves the window to 7 days with the union-scope RPC — update
-// this constant and the SQL together so window drift stays grep-able.
-const PRICE_DROP_WINDOW = '24 hours';
+// /deals user-facing window copy — derives from the exported constant the
+// RPC binds (CTK-124 D-1 one-constant pattern; branding-guide §"Eyebrow
+// shape + slot" CTK-124 Q-1 lock). Four consumers: downtime fallback,
+// filtered-empty line, filtered-zero eyebrow window chunk, populated-eyebrow
+// middle chunk. Singular-guarded against a hypothetical 1-day window.
+const PRICE_DROP_WINDOW =
+  DEALS_WINDOW_DAYS === 1 ? '1 day' : `${DEALS_WINDOW_DAYS} days`;
 
 const DOWNTIME_FALLBACK = `No price drops in the last ${PRICE_DROP_WINDOW}. I'll surface them as vendors update.`;
 
@@ -58,9 +59,11 @@ const dropsCached = cache(
 );
 
 function priceDropToProps(d: PriceDropListing) {
-  // CTK-047 Session 5 — <ListingCard> derives "price dropped at" from
-  // listing.priorPrice (non-null on every PriceDropListing row by the
-  // get_recent_price_drops() RPC contract). No explicit event prop needed.
+  // CTK-047 Session 5 / CTK-124 — <ListingCard> derives the lead from listing
+  // fields; no explicit event prop needed. Drop-arm rows: priorPrice non-null
+  // → price-drop-new render. Markdown-only union rows: priorPrice null,
+  // compareAtPrice carries the slash → vendor-markdown render + Q3 lead
+  // promotion. No kind-disclosure either way (canon: structural-not-visual).
   return { listing: d };
 }
 
@@ -92,18 +95,29 @@ async function Eyebrow({
 
   // LATEST = max(observedAt), not index 0 — price-sorted renders break the
   // recency-order assumption (/review-plan pin; shared helper per fold #1).
+  // observedAt is the union event_at (drop time or markdown onset).
   const latestObservedAt = latestTimestamp(drops, (d) => d.observedAt);
   const latestRelative = formatRelativeTime(latestObservedAt, new Date()).toUpperCase();
   const countNoun = drops.length === 1 ? 'PRICE DROP' : 'PRICE DROPS';
   // Filtered eyebrows qualify the count chunk — the filtered page covers the
   // category, not the market; a bare count under a filter silently overclaims
   // (disclosure-symmetry rule). Sort changes order, not coverage — no eyebrow
-  // change under sort.
+  // change under sort. Count = union result length (CTK-124 canon — no
+  // kind-split); middle chunk is the window disclosure per branding-guide
+  // §"Eyebrow shape + slot" feed-views lock.
   const countChunk =
     category === null
       ? `${drops.length} ${countNoun}`
       : `${drops.length} ${chromeCategoryLabel(category)} ${countNoun}`;
-  return <PageEyebrow chunks={[countChunk, `LATEST ${latestRelative}`]} />;
+  return (
+    <PageEyebrow
+      chunks={[
+        countChunk,
+        `LAST ${PRICE_DROP_WINDOW.toUpperCase()}`,
+        `LATEST ${latestRelative}`,
+      ]}
+    />
+  );
 }
 
 async function PriceDropsFeed({
@@ -145,10 +159,11 @@ async function PriceDropsFeed({
     return (
       <>
         {drops.map((d) => (
-          // CTK-127 fold #5: composite key — get_recent_price_drops()
-          // preserves the multi-event-per-listing semantic (CTK-109), so a
-          // listing id alone can collide across two drop events in-window.
-          <ListingCard key={`${d.id}-${d.observedAt}`} {...priceDropToProps(d)} />
+          // CTK-124: bare id key — the 0033 union dedups to one row per
+          // listing (ROW_NUMBER, price-dropped precedence), retiring the
+          // CTK-127 fold #5 composite key the multi-event-per-listing
+          // zero-arg RPC required.
+          <ListingCard key={d.id} {...priceDropToProps(d)} />
         ))}
       </>
     );
@@ -167,9 +182,9 @@ async function PriceDropsFeed({
         />,
       );
     }
-    // Composite key per fold #5 — same collision rationale as the flat path.
+    // Bare id key per the flat path — one row per listing under 0033.
     out.push(
-      <ListingCard key={`${curr.id}-${curr.observedAt}`} {...priceDropToProps(curr)} />,
+      <ListingCard key={curr.id} {...priceDropToProps(curr)} />,
     );
   }
   return <>{out}</>;

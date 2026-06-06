@@ -6,7 +6,7 @@
 //
 // Five helpers per site.md §4 contracts:
 //   getRecentDrops()        — homepage strip per §4.2 (plain JOIN + JS dedup)
-//   getRecentPriceDrops()   — /deals LAG-window per §4.3 (RPC function 0008)
+//   getRecentPriceDrops()   — /deals union per §4.3 + CTK-124 (RPC function 0033)
 //   getRecentArrivals()     — /new UNION two-arm per §4.4 (RPC function 0007)
 //   getCoralAvailability()  — /coral/[slug] per §4.1 (plain JOIN)
 //   getVendorInventory()    — /vendor/[slug] per §4.5 (plain JOIN)
@@ -33,6 +33,15 @@ const VENDOR_RECENCY_DAYS = 14; // site.md §4.5 — /vendor/[slug] inventory wi
 // the CTK-124 Q-1 one-constant pattern (CTK-127 fold #3). Window drift stays
 // grep-able: query arg and label move together.
 export const ARRIVALS_WINDOW_HOURS = 24;
+// /deals union window (CTK-124 D-1, Jon-ratified 7d) — bound into
+// get_recent_price_drops(p_window_days) below AND the source for
+// app/deals/page.tsx's user-facing window copy (eyebrow middle chunk,
+// empty-state lines), same one-constant pattern as ARRIVALS_WINDOW_HOURS.
+// The RPC carries NO DB-side DEFAULT (migration 0033 header — overload
+// ambiguity + single-source discipline): this constant is the only copy.
+// Typed `number`, not the literal — the page-side singular-guard derivation
+// compares against 1, which TS rejects on a literal-7 type.
+export const DEALS_WINDOW_DAYS: number = 7;
 export const MS_PER_DAY = 86_400_000;
 
 export interface Listing {
@@ -211,6 +220,10 @@ export async function getRecentDrops(limit = 10): Promise<Listing[]> {
   // Close-window addendum: eventAt populated so the homepage strip's price-
   // dropped rows show "X hours ago" on Listed. (the drop time) rather than
   // falling back to firstSeenAt.
+  // CTK-124: the 24h default here is DELIBERATE divergence from /deals'
+  // DEALS_WINDOW_DAYS union window — homepage strip stays a 24h drop-context
+  // surface per Jon strip ruling 2026-06-03 (CTK-111 trigger-gated). Do not
+  // couple to the /deals constant.
   const context = await getListingDropContext(out.map((l) => l.id));
   return out.map((l) => {
     const ctx = context.get(Number(l.id));
@@ -586,14 +599,24 @@ export async function getVendorInventoryTotal(
   )();
 }
 
-// /deals price-drop feed per site.md §4.3.
-// Backed by the get_recent_price_drops() SQL function (migration 0008)
-// wrapping the LAG-window CTE. Invoked as `SELECT * FROM get_recent_price_drops()`
-// rather than supabase.rpc post-cut-4.
-// CTK-061 migration 0009 caps the LAG window to 24h — limits price-drop event
-// surfacing to the most recent observation pair, not all historical drops.
+// /deals union feed per site.md §4.3 + CTK-124.
+// Backed by get_recent_price_drops(p_window_days) (migration 0033) — two-arm
+// union: CT-observed drops (price_history LAG window) ∪ active vendor
+// markdowns whose attested onset (vendor_listings.markdown_started_at) falls
+// in-window. One row per listing (ROW_NUMBER, price-dropped precedence per
+// 0028 canon); both arms in_stock = true AND auction_end_time IS NULL
+// (INV-05, enforced inside the RPC body). Window binds from
+// DEALS_WINDOW_DAYS above. Supersedes the zero-arg 24h drops-only function
+// (migrations 0008/0009/0026/0028 lineage; migration 0034 drops that
+// signature after the CTK-124 verify cycle).
 export interface PriceDropListing extends Listing {
-  priorPrice: number;
+  // null on markdown-only union rows (no CT-observed prior price — the slash
+  // renders from compareAtPrice); non-null on drop-arm rows.
+  priorPrice: number | null;
+  // Union event time — drop arm: price_history.observed_at; markdown arm:
+  // markdown_started_at (observation-attested onset). Field name kept from
+  // the zero-arg era so /deals consumers (latestTimestamp, bucketTransition,
+  // row keys) read it unchanged.
   observedAt: string;
 }
 
@@ -609,8 +632,9 @@ interface RpcPriceDropRow {
   first_seen_at: string;
   named_coral_id: number | null;
   match_confidence: 'exact' | 'alias' | 'fuzzy' | 'manual' | null;
-  prior_price: number | string;
-  observed_at: string;
+  // NULL on the markdown arm (migration 0033 — no fabricated prior).
+  prior_price: number | string | null;
+  event_at: string;
   vendor_slug: string;
   vendor_display_name: string;
   named_coral_canonical_name: string | null;
@@ -625,12 +649,9 @@ function rpcRowToPriceDrop(row: RpcPriceDropRow): PriceDropListing {
     vendorDisplayName: row.vendor_display_name,
     rawTitle: row.raw_title,
     currentPrice: row.current_price != null ? Number(row.current_price) : null,
-    // CTK-109: get_recent_price_drops() (migration 0028 DROP+CREATE) widened
-    // to project compare_at_price. /deals stays event-monotype on the
-    // dedicated price-drop RPC; vendor-markdown renders alongside the
-    // price-drop medal. Loose != null guards the T0→T1 deploy-window where
-    // the pre-0028 function shape is still serving (column undefined, not
-    // null) — strict !== would NaN-poison the field.
+    // Nullable in the 0033 union projection (drop-arm rows without a live
+    // vendor markdown). On markdown-only rows this carries the slash —
+    // <ListingCard> renders vendor-markdown + Q3 lead promotion from it.
     compareAtPrice: row.compare_at_price != null ? Number(row.compare_at_price) : null,
     inStock: row.in_stock,
     imageUrl: row.image_url,
@@ -640,82 +661,100 @@ function rpcRowToPriceDrop(row: RpcPriceDropRow): PriceDropListing {
     namedCoralCanonicalName: row.named_coral_canonical_name,
     namedCoralSlug: row.named_coral_slug,
     namedCoralOriginVendor: row.named_coral_origin_vendor,
-    priorPrice: Number(row.prior_price),
-    // CTK-047 B-3 base-Listing field — same data as observedAt below; PriceDropListing
-    // extension narrows to non-null observedAt for the /deals discriminated union.
-    priceDropObservedAt: row.observed_at,
+    // CTK-124: guard before Number() — markdown-only rows carry prior_price
+    // NULL, and Number(null) is 0, which would silently render a fake
+    // "$0.00 → $X" drop on every markdown row.
+    priorPrice: row.prior_price != null ? Number(row.prior_price) : null,
+    // CTK-047 B-3 base-Listing field — union event_at on every row (markdown
+    // rows: the attested onset). <ListingCard>'s CT-drop branches guard
+    // conjunctively on priorPrice ≠ null, so markdown-only rows still route
+    // to the vendor-markdown render despite this being populated.
+    priceDropObservedAt: row.event_at,
     // CTK-047 Session 5 — Listed. consumes eventAt ?? firstSeenAt; for /deals
-    // this is the drop time (matches pre-Session-5 behavior driven by props.observedAt).
-    eventAt: row.observed_at,
-    observedAt: row.observed_at,
+    // this is the drop time (drop arm) or markdown onset (markdown arm).
+    eventAt: row.event_at,
+    observedAt: row.event_at,
   };
 }
 
-// CTK-109: /deals stays on get_recent_price_drops() (event-monotype; preserves
-// multi-event-per-listing semantic). Migration 0028 DROP+CREATEs the function
-// to add compare_at_price to the projection + AND vl.auction_end_time IS NULL
-// to the WHERE clause (INV-05 #4 first-enforce). Body otherwise verbatim from
-// migration 0026's CTK-099 in_stock=true filter.
+// CTK-124 / CTK-127 #6 fold — shared ORDER-BY-ladder wrapper for the two
+// event-RPC feeds (getRecentPriceDrops + getRecentArrivals). Both RPCs
+// project `event_at` + `current_price`, so one ladder serves both; CTK-127
+// landed the four-branch wrapper per-query because the pre-0033 drops RPC
+// still projected `observed_at` — the union swap unifies the column and the
+// extraction rides it (plan §Cross-CTK).
 //
-// CTK-127: sort + category params via wrapper JOIN, not RPC migration —
-// category lives on vendor_listings, not in the RPC projection, so filter +
-// sort apply in a wrapper around the function (JOIN on PK). RPC body
-// untouched (INV-05 predicates stay inside it); bare call (newest, no
-// category) stays the literal pre-CTK-127 statement — the function's own
-// ORDER BY observed_at DESC (migration 0026 L111) carries the default order.
-// Filtered-newest reproduces that ORDER BY explicitly (join output ordering
-// isn't guaranteed). ORDER BY branches per allowlisted sort string — the
-// Neon sql template can't parameterize ORDER BY; sort is validated at the
-// view layer (lib/queries/listing-params.ts allowlist), no string
-// interpolation into the template. unstable_cache wrap per CTK-046/126
-// precedent: the searchParams read flips /deals dynamic at runtime; key
-// carries (sort, category), V1 prefix is this function's first cached
-// generation. revalidate 300 matches the page cadence.
+// Wrapper JOIN, not RPC migration, per the CTK-127 rationale: category lives
+// on vendor_listings, not in the RPC projections; INV-05 predicates stay
+// inside the RPC bodies. Bare call (newest, no category) skips the wrapper —
+// each function's own ORDER BY event_at DESC carries the default order;
+// filtered branches reproduce it explicitly (join output ordering isn't
+// guaranteed).
+//
+// sql.unsafe() embeds ONLY module-level constants: `fnCall` is one of the
+// two literal RPC invocations below (window values are exported constants,
+// never user input), and the ORDER BY tail comes from the allowlisted-sort
+// ladder map. Category stays a real bind; sort is validated at the view
+// layer (lib/queries/listing-params.ts allowlist) before it reaches here.
+// Never pass user input through `fnCall`.
+const EVENT_ORDER_LADDER: Record<ListingSort, string> = {
+  'price-asc': 'e.current_price ASC NULLS LAST, e.event_at DESC',
+  'price-desc': 'e.current_price DESC NULLS LAST, e.event_at DESC',
+  newest: 'e.event_at DESC',
+};
+
+async function orderedEventRows(
+  fnCall: string,
+  sort: ListingSort,
+  category: ListingCategory | null,
+): Promise<Record<string, unknown>[]> {
+  const sql = getNeonSql();
+  const categoryParam = category ?? null;
+  if (sort === 'newest' && categoryParam === null) {
+    // Bare default — function-internal ORDER BY event_at DESC.
+    return sql`SELECT * FROM ${sql.unsafe(fnCall)}`;
+  }
+  return sql`
+    SELECT e.*
+    FROM ${sql.unsafe(fnCall)} e
+    JOIN vendor_listings vl ON vl.id = e.id
+    WHERE (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
+    ORDER BY ${sql.unsafe(EVENT_ORDER_LADDER[sort])}
+  `;
+}
+
+// CTK-124: bind swapped to the one-arg union RPC (migration 0033) —
+// get_recent_price_drops(DEALS_WINDOW_DAYS). Scope widens 24h CT-observed
+// drops only → 7d drops ∪ active vendor markdowns, one row per listing
+// (retires the zero-arg function's multi-event-per-listing semantic).
+// Sort/category wrapper via orderedEventRows above (CTK-127 shape, ladder
+// extracted per fold #6). unstable_cache wrap per CTK-046/126 precedent:
+// the searchParams read flips /deals dynamic at runtime; key carries
+// (sort, category); revalidate 300 matches the page cadence.
 export async function getRecentPriceDrops(
   sort: ListingSort = 'newest',
   category: ListingCategory | null = null,
 ): Promise<PriceDropListing[]> {
   return unstable_cache(
     async () => {
-      const sql = getNeonSql();
-      const categoryParam = category ?? null;
-
-      const rows = (await (() => {
-        if (sort === 'price-asc') {
-          return sql`
-            SELECT e.*
-            FROM get_recent_price_drops() e
-            JOIN vendor_listings vl ON vl.id = e.id
-            WHERE (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
-            ORDER BY e.current_price ASC NULLS LAST, e.observed_at DESC
-          `;
-        }
-        if (sort === 'price-desc') {
-          return sql`
-            SELECT e.*
-            FROM get_recent_price_drops() e
-            JOIN vendor_listings vl ON vl.id = e.id
-            WHERE (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
-            ORDER BY e.current_price DESC NULLS LAST, e.observed_at DESC
-          `;
-        }
-        // sort === 'newest'
-        if (categoryParam !== null) {
-          return sql`
-            SELECT e.*
-            FROM get_recent_price_drops() e
-            JOIN vendor_listings vl ON vl.id = e.id
-            WHERE vl.category = ${categoryParam}
-            ORDER BY e.observed_at DESC
-          `;
-        }
-        // Bare default — identical statement to pre-CTK-127.
-        return sql`SELECT * FROM get_recent_price_drops()`;
-      })()) as unknown as RpcPriceDropRow[];
+      const rows = (await orderedEventRows(
+        `get_recent_price_drops(${DEALS_WINDOW_DAYS})`,
+        sort,
+        category,
+      )) as unknown as RpcPriceDropRow[];
 
       return rows.map(rpcRowToPriceDrop);
     },
-    ['getRecentPriceDropsV1', sort, category ?? '_'],
+    [
+      // V2 prefix bump 2026-06-06 (CTK-124) — RPC swapped to the one-arg
+      // union: row shape renames observed_at → event_at, prior_price goes
+      // nullable, scope widens to the 7d union. The Data Cache persists
+      // across deploys per feedback_unstable_cache_shape_change.md — V1
+      // entries would keep serving the old shape/scope for up to 300s.
+      'getRecentPriceDropsV2',
+      sort,
+      category ?? '_',
+    ],
     {
       revalidate: 300,
       tags: [`recent-price-drops-${sort}-${category ?? '_'}`],
@@ -791,54 +830,25 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
   };
 }
 
-// CTK-127: sort + category params — same wrapper-JOIN shape and rationale as
-// getRecentPriceDrops above (category via vendor_listings JOIN, RPC body +
-// INV-05 predicates untouched, ORDER BY branch-per-allowlisted-sort, bare
-// call literal pre-CTK-127). Filtered-newest reproduces the function's own
-// ORDER BY event_at DESC (migration 0028 L253). unstable_cache key carries
-// (sort, category), V1 first cached generation, revalidate 300 per page
-// cadence.
+// CTK-127: sort + category params via the shared orderedEventRows wrapper
+// (ladder extracted at CTK-124 per fold #6 — see the helper's header for the
+// sql.unsafe constants-only invariant). Behavior-neutral for /new: the four
+// statements the helper emits are semantically identical to the per-query
+// branches CTK-127 landed here (filtered-newest's WHERE moves to the
+// constant-folding form; same result set, same order) — no cache-key bump.
+// unstable_cache key carries (sort, category), V1 first cached generation,
+// revalidate 300 per page cadence.
 export async function getRecentArrivals(
   sort: ListingSort = 'newest',
   category: ListingCategory | null = null,
 ): Promise<ArrivalListing[]> {
   return unstable_cache(
     async () => {
-      const sql = getNeonSql();
-      const categoryParam = category ?? null;
-
-      const rows = (await (() => {
-        if (sort === 'price-asc') {
-          return sql`
-            SELECT e.*
-            FROM get_listing_lead_event(NULL, ${ARRIVALS_WINDOW_HOURS}, NULL) e
-            JOIN vendor_listings vl ON vl.id = e.id
-            WHERE (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
-            ORDER BY e.current_price ASC NULLS LAST, e.event_at DESC
-          `;
-        }
-        if (sort === 'price-desc') {
-          return sql`
-            SELECT e.*
-            FROM get_listing_lead_event(NULL, ${ARRIVALS_WINDOW_HOURS}, NULL) e
-            JOIN vendor_listings vl ON vl.id = e.id
-            WHERE (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
-            ORDER BY e.current_price DESC NULLS LAST, e.event_at DESC
-          `;
-        }
-        // sort === 'newest'
-        if (categoryParam !== null) {
-          return sql`
-            SELECT e.*
-            FROM get_listing_lead_event(NULL, ${ARRIVALS_WINDOW_HOURS}, NULL) e
-            JOIN vendor_listings vl ON vl.id = e.id
-            WHERE vl.category = ${categoryParam}
-            ORDER BY e.event_at DESC
-          `;
-        }
-        // Bare default — identical statement to pre-CTK-127.
-        return sql`SELECT * FROM get_listing_lead_event(NULL, ${ARRIVALS_WINDOW_HOURS}, NULL)`;
-      })()) as unknown as RpcArrivalRow[];
+      const rows = (await orderedEventRows(
+        `get_listing_lead_event(NULL, ${ARRIVALS_WINDOW_HOURS}, NULL)`,
+        sort,
+        category,
+      )) as unknown as RpcArrivalRow[];
 
       return rows.map(rpcRowToArrival);
     },
