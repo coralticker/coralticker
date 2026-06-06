@@ -75,12 +75,26 @@ def main() -> int:
             return 1
         print("  signatures ok: zero-arg retired; one-arg union untouched")
 
+        # CTK-124 Session 3b fix: filter PER-SIGNATURE, not by routine_name.
+        # Privileges attach per-signature; while two overloads coexist, a
+        # name-level filter lets either signature's grant satisfy the check
+        # (false positive for the surviving one). routines.specific_name is
+        # '<routine_name>_<pg_proc oid>', so resolving the target overload's
+        # OID pins the check to exactly that signature. This script is the
+        # overload-two-step TEMPLATE — any future same-name signature
+        # migration inherits this shape, not the name-level filter.
         with conn.cursor() as cur:
             cur.execute(
                 """
                 SELECT grantee
                 FROM information_schema.routine_privileges
-                WHERE routine_name = 'get_recent_price_drops'
+                WHERE specific_name = (
+                    SELECT proname || '_' || oid::text
+                    FROM pg_proc
+                    WHERE proname = 'get_recent_price_drops'
+                      AND pronamespace = 'public'::regnamespace
+                      AND pg_get_function_identity_arguments(oid) = 'p_window_days integer'
+                )
                   AND privilege_type = 'EXECUTE'
                 """
             )

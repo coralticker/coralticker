@@ -96,8 +96,10 @@ def main() -> None:
 
             print()
             try:
-                cur.execute("SELECT COUNT(*) AS n FROM get_recent_price_drops()")
-                print(f"  get_recent_price_drops() count: {cur.fetchone()}")
+                # CTK-124 migration 0034 retired the zero-arg signature;
+                # probe the one-arg union (7 = DEALS_WINDOW_DAYS mirror).
+                cur.execute("SELECT COUNT(*) AS n FROM get_recent_price_drops(7)")
+                print(f"  get_recent_price_drops(7) count: {cur.fetchone()}")
             except Exception as exc:
                 print(f"  EXCEPTION: {type(exc).__name__}: {exc}")
 

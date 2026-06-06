@@ -85,21 +85,25 @@ def main() -> int:
         sigs = {r["args"] for r in rows}
         for row in rows:
             print(f"  get_recent_price_drops({row['args']})")
-        if "" not in sigs:
-            print("  MISSING: zero-arg signature gone — 0033 must not touch it (live /deals caller)")
-            return 1
         if "p_window_days integer" not in sigs:
             print("  MISSING: one-arg union signature not created")
             return 1
         one_arg = [r for r in rows if r["args"] == "p_window_days integer"][0]
-        zero_arg = [r for r in rows if r["args"] == ""][0]
         if "event_at" not in one_arg["result"] or "compare_at_price" not in one_arg["result"]:
             print("  MISSING: one-arg result lacks event_at / compare_at_price")
             return 1
-        if "observed_at" not in zero_arg["result"]:
-            print("  CHANGED: zero-arg result no longer projects observed_at — overload isolation broken")
-            return 1
-        print("  signatures ok: one-arg projects event_at; zero-arg untouched")
+        # Zero-arg overload-isolation checks are WINDOW-SCOPED: they gated
+        # the 0033 apply (live /deals still called the zero-arg signature)
+        # and held until migration 0034 retired it. On a post-0034 re-run
+        # the zero-arg is expected absent (CTK-124 Session 3b fold).
+        if "" in sigs:
+            zero_arg = [r for r in rows if r["args"] == ""][0]
+            if "observed_at" not in zero_arg["result"]:
+                print("  CHANGED: zero-arg result no longer projects observed_at — overload isolation broken")
+                return 1
+            print("  signatures ok: one-arg projects event_at; zero-arg untouched (pre-0034 window)")
+        else:
+            print("  signatures ok: one-arg projects event_at; zero-arg absent (expected post-0034)")
 
         print()
         print("=" * 70)
@@ -148,7 +152,9 @@ def main() -> int:
                 (WINDOW_DAYS,),
             )
             auction_rows = cur.fetchone()["c"]
-            cur.execute("SELECT COUNT(*) AS c FROM get_recent_price_drops()")
+            # CTK-124 migration 0034 retired the zero-arg signature; probe
+            # the one-arg union so a historical re-run doesn't crash here.
+            cur.execute("SELECT COUNT(*) AS c FROM get_recent_price_drops(7)")
             zero_arg_count = cur.fetchone()["c"]
 
         print(f"  backfill: {seeded} rows carry markdown_started_at")
@@ -157,7 +163,7 @@ def main() -> int:
               f"{union['null_event_at']} NULL event_at)")
         print(f"  drop arm pre-LIMIT: {drop_arm_prelimit} qualifying event rows")
         print(f"  auction rows in union output: {auction_rows}")
-        print(f"  get_recent_price_drops() zero-arg still serving: {zero_arg_count} rows")
+        print(f"  get_recent_price_drops(7) smoke: {zero_arg_count} rows")
 
         if seeded == 0:
             print("  MISSING: backfill seeded zero rows (probe said 1,785 markdown rows fleet-wide)")

@@ -125,13 +125,15 @@ def main() -> int:
                 """
             )
             event_rows = cur.fetchall()
-            cur.execute("SELECT COUNT(*) AS c FROM get_recent_price_drops()")
+            # CTK-124 migration 0034 retired the zero-arg signature; probe
+            # the one-arg union so a historical re-run doesn't crash here.
+            cur.execute("SELECT COUNT(*) AS c FROM get_recent_price_drops(7)")
             gpd_count = cur.fetchone()["c"]
         total = sum(int(r["c"]) for r in event_rows)
         print(f"  get_listing_lead_event(NULL, 24, NULL) total: {total} rows")
         for r in event_rows:
             print(f"    event={r['event']:<15} {r['c']} rows")
-        print(f"  get_recent_price_drops()              total: {gpd_count} rows (post-widen)")
+        print(f"  get_recent_price_drops(7)             total: {gpd_count} rows (one-arg union post-CTK-124)")
 
     return 0
 

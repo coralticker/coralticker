@@ -33,6 +33,14 @@ const VENDOR_RECENCY_DAYS = 14; // site.md §4.5 — /vendor/[slug] inventory wi
 // the CTK-124 Q-1 one-constant pattern (CTK-127 fold #3). Window drift stays
 // grep-able: query arg and label move together.
 export const ARRIVALS_WINDOW_HOURS = 24;
+// /new page cap (CTK-124 Session 3b, /new fold Jon-ratified) — graduates the
+// Q127-1 park: get_listing_lead_event's row_limit DEFAULT 100 (migration
+// 0030) truncated INSIDE the RPC, before the wrapper's category filter, so
+// filtered /new sampled the global newest-100. The bind now passes row_limit
+// NULL (uncapped — 0030 documents LIMIT NULL ≡ LIMIT ALL) and this cap
+// truncates wrapper-side, after filter/sort. Same relocation pattern as
+// DEALS_PAGE_CAP below.
+export const ARRIVALS_PAGE_CAP = 100;
 // /deals union window (CTK-124 D-1, Jon-ratified 7d) — bound into
 // get_recent_price_drops(p_window_days) below AND the source for
 // app/deals/page.tsx's user-facing window copy (eyebrow middle chunk,
@@ -42,6 +50,15 @@ export const ARRIVALS_WINDOW_HOURS = 24;
 // Typed `number`, not the literal — the page-side singular-guard derivation
 // compares against 1, which TS rejects on a literal-7 type.
 export const DEALS_WINDOW_DAYS: number = 7;
+// /deals page cap (CTK-124 Session 3b) — relocated from the RPC's internal
+// LIMIT 250 (0033) to the view-layer wrapper (migration 0035 removes the
+// SQL LIMIT): the RPC-side cap truncated BEFORE the wrapper applied
+// filter/sort, so price-asc served "cheapest of the newest-250" and
+// category filters sampled the same global slice. Wrapper-side, the cap
+// truncates AFTER filter/sort — the right set every time. Not a render
+// input: the eyebrow count stays drops.length (the 250+ overflow-disclosure
+// canon Q stays parked).
+export const DEALS_PAGE_CAP = 250;
 export const MS_PER_DAY = 86_400_000;
 
 export interface Listing {
@@ -694,25 +711,49 @@ function rpcRowToPriceDrop(row: RpcPriceDropRow): PriceDropListing {
 // sql.unsafe() embeds ONLY module-level constants: `fnCall` is one of the
 // two literal RPC invocations below (window values are exported constants,
 // never user input), and the ORDER BY tail comes from the allowlisted-sort
-// ladder map. Category stays a real bind; sort is validated at the view
-// layer (lib/queries/listing-params.ts allowlist) before it reaches here.
-// Never pass user input through `fnCall`.
+// ladder map. Category and cap stay real binds; sort is validated at the
+// view layer (lib/queries/listing-params.ts allowlist) before it reaches
+// here. Never pass user input through `fnCall`.
+//
+// CTK-124 Session 3b: every ladder tail ends in the unique e.id tiebreak —
+// event_at is massively non-unique (the 0033 cold-start backfill stamped
+// thousands of onsets with one apply-moment timestamp), so without the
+// tiebreak, order within ties was planner-dependent and could reshuffle
+// call-to-call. With it, each tail is a total order, which makes the `cap`
+// truncation below deterministic across revalidations.
 const EVENT_ORDER_LADDER: Record<ListingSort, string> = {
-  'price-asc': 'e.current_price ASC NULLS LAST, e.event_at DESC',
-  'price-desc': 'e.current_price DESC NULLS LAST, e.event_at DESC',
-  newest: 'e.event_at DESC',
+  'price-asc': 'e.current_price ASC NULLS LAST, e.event_at DESC, e.id',
+  'price-desc': 'e.current_price DESC NULLS LAST, e.event_at DESC, e.id',
+  newest: 'e.event_at DESC, e.id',
 };
 
+// `cap` (CTK-124 Session 3b): view-layer row ceiling, applied as SQL LIMIT
+// AFTER the ladder ORDER BY so truncation happens on the filtered/sorted
+// set (migration 0035 removed the drops RPC's internal LIMIT — see
+// DEALS_PAGE_CAP). Omitted cap binds LIMIT NULL ≡ no limit (same SQL-side
+// constant-folding pattern as the category predicate).
 async function orderedEventRows(
   fnCall: string,
   sort: ListingSort,
   category: ListingCategory | null,
+  cap?: number,
 ): Promise<Record<string, unknown>[]> {
   const sql = getNeonSql();
   const categoryParam = category ?? null;
+  const capParam = cap ?? null;
   if (sort === 'newest' && categoryParam === null) {
-    // Bare default — function-internal ORDER BY event_at DESC.
-    return sql`SELECT * FROM ${sql.unsafe(fnCall)}`;
+    if (capParam === null) {
+      // Bare uncapped — function-internal ORDER BY carries the order.
+      return sql`SELECT * FROM ${sql.unsafe(fnCall)}`;
+    }
+    // Capping requires an explicit total order — function-internal order
+    // isn't contractual through an outer LIMIT.
+    return sql`
+      SELECT e.*
+      FROM ${sql.unsafe(fnCall)} e
+      ORDER BY ${sql.unsafe(EVENT_ORDER_LADDER.newest)}
+      LIMIT ${capParam}
+    `;
   }
   return sql`
     SELECT e.*
@@ -720,6 +761,7 @@ async function orderedEventRows(
     JOIN vendor_listings vl ON vl.id = e.id
     WHERE (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
     ORDER BY ${sql.unsafe(EVENT_ORDER_LADDER[sort])}
+    LIMIT ${capParam}
   `;
 }
 
@@ -741,6 +783,7 @@ export async function getRecentPriceDrops(
         `get_recent_price_drops(${DEALS_WINDOW_DAYS})`,
         sort,
         category,
+        DEALS_PAGE_CAP,
       )) as unknown as RpcPriceDropRow[];
 
       return rows.map(rpcRowToPriceDrop);
@@ -751,7 +794,13 @@ export async function getRecentPriceDrops(
       // nullable, scope widens to the 7d union. The Data Cache persists
       // across deploys per feedback_unstable_cache_shape_change.md — V1
       // entries would keep serving the old shape/scope for up to 300s.
-      'getRecentPriceDropsV2',
+      // V3 prefix bump 2026-06-06 (CTK-124 Session 3b) — output set changes
+      // twice over: migration 0035 lands the markdown-arm 5% floor in the
+      // RPC, and the 250 cap relocates RPC→wrapper so truncation happens
+      // after filter/sort (filtered/sorted views admit the full window
+      // instead of sampling the global newest-250). Same persistence
+      // concern as above.
+      'getRecentPriceDropsV3',
       sort,
       category ?? '_',
     ],
@@ -832,12 +881,12 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
 
 // CTK-127: sort + category params via the shared orderedEventRows wrapper
 // (ladder extracted at CTK-124 per fold #6 — see the helper's header for the
-// sql.unsafe constants-only invariant). Behavior-neutral for /new: the four
-// statements the helper emits are semantically identical to the per-query
-// branches CTK-127 landed here (filtered-newest's WHERE moves to the
-// constant-folding form; same result set, same order) — no cache-key bump.
-// unstable_cache key carries (sort, category), V1 first cached generation,
-// revalidate 300 per page cadence.
+// sql.unsafe constants-only invariant). CTK-124 Session 3b /new fold
+// (Jon-ratified, graduates the Q127-1 park): row_limit binds explicit NULL
+// and ARRIVALS_PAGE_CAP caps wrapper-side, so filtered/sorted /new admits
+// the full 24h window instead of sampling the RPC's internal newest-100.
+// unstable_cache key carries (sort, category), V2 generation, revalidate
+// 300 per page cadence.
 export async function getRecentArrivals(
   sort: ListingSort = 'newest',
   category: ListingCategory | null = null,
@@ -845,14 +894,27 @@ export async function getRecentArrivals(
   return unstable_cache(
     async () => {
       const rows = (await orderedEventRows(
-        `get_listing_lead_event(NULL, ${ARRIVALS_WINDOW_HOURS}, NULL)`,
+        // Explicit fourth arg NULL = row_limit uncapped (migration 0030
+        // semantics) — the silent DEFAULT 100 truncated pre-filter; the
+        // wrapper cap below truncates post-filter/sort instead.
+        `get_listing_lead_event(NULL, ${ARRIVALS_WINDOW_HOURS}, NULL, NULL)`,
         sort,
         category,
+        ARRIVALS_PAGE_CAP,
       )) as unknown as RpcArrivalRow[];
 
       return rows.map(rpcRowToArrival);
     },
-    ['getRecentArrivalsV1', sort, category ?? '_'],
+    [
+      // V2 prefix bump 2026-06-06 (CTK-124 Session 3b /new fold) — row_limit
+      // NULL + wrapper cap change the served set on filtered/sorted views
+      // (full-window admission instead of the global newest-100 sample). The
+      // Data Cache persists across deploys per
+      // feedback_unstable_cache_shape_change.md.
+      'getRecentArrivalsV2',
+      sort,
+      category ?? '_',
+    ],
     {
       revalidate: 300,
       tags: [`recent-arrivals-${sort}-${category ?? '_'}`],

@@ -91,10 +91,15 @@ def main() -> int:
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) AS c FROM get_listing_drop_context(NULL, 24)")
             new_count = cur.fetchone()["c"]
-            cur.execute("SELECT COUNT(*) AS c FROM get_recent_price_drops()")
+            # CTK-124 migration 0034 retired the zero-arg signature; probe
+            # the one-arg union so a historical re-run doesn't crash here.
+            # (Note: the get_listing_drop_context probe above predates its
+            # own retirement at 0028 — this script is a point-in-time apply
+            # record, not a live diagnostic.)
+            cur.execute("SELECT COUNT(*) AS c FROM get_recent_price_drops(7)")
             old_count = cur.fetchone()["c"]
         print(f"  get_listing_drop_context(NULL, 24): {new_count} rows")
-        print(f"  get_recent_price_drops():           {old_count} rows  (legacy, unused post-CTK-109 frontend swap)")
+        print(f"  get_recent_price_drops(7):          {old_count} rows  (one-arg union post-CTK-124)")
         if new_count > old_count:
             print(
                 f"  NOTE: new returns more rows than old — unexpected (auction predicate is "
