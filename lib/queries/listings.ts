@@ -167,9 +167,15 @@ export async function getListingDropContext(
 ): Promise<Map<number, { priorPrice: number; observedAt: string; eventAt: string }>> {
   if (listingIds.length === 0) return new Map();
   const sql = getNeonSql();
+  // Explicit row_limit NULL (CTK-124 close-fold rider (a), mirroring the
+  // /new fold): the 0030 DEFAULT 100 was a latent truncation — every
+  // consumer passes <= PAGE_SIZE (50) ids today, so the served set is
+  // unchanged and the wrapping consumers' cache keys deliberately do NOT
+  // bump; the explicit arg just closes the silent-bind hazard before a
+  // consumer grows past 100 ids.
   const rows = (await sql`
     SELECT id, prior_price, event_at
-    FROM get_listing_lead_event(${listingIds}::bigint[], ${windowHours}, ARRAY['price-dropped']::text[])
+    FROM get_listing_lead_event(${listingIds}::bigint[], ${windowHours}, ARRAY['price-dropped']::text[], NULL)
   `) as unknown as { id: number | string; prior_price: number | string; event_at: string }[];
   // CTK-047 close-window: eventAt mirrors observedAt by definition (the CT-
   // observed price-drop event IS the observation). Surfaced explicitly so the
@@ -738,16 +744,22 @@ async function orderedEventRows(
   category: ListingCategory | null,
   cap?: number,
 ): Promise<Record<string, unknown>[]> {
+  if (cap !== undefined && cap < 1) {
+    // cap=0 would bind LIMIT 0 (empty feed served silently) — a caller bug,
+    // not a request shape. Assert loud rather than treating falsy as
+    // uncapped (close-fold /code-review rider (c) — assert-≥1 chosen).
+    throw new Error(`orderedEventRows: cap must be >= 1 (got ${cap})`);
+  }
   const sql = getNeonSql();
   const categoryParam = category ?? null;
   const capParam = cap ?? null;
   if (sort === 'newest' && categoryParam === null) {
-    if (capParam === null) {
-      // Bare uncapped — function-internal ORDER BY carries the order.
-      return sql`SELECT * FROM ${sql.unsafe(fnCall)}`;
-    }
-    // Capping requires an explicit total order — function-internal order
-    // isn't contractual through an outer LIMIT.
+    // Bare branch — no JOIN needed; one template capped or not (LIMIT NULL
+    // ≡ no limit). The wrapper owns the total order on every path: the
+    // arrivals RPC's internal ORDER BY (migration 0030) carries no id
+    // tiebreak, so "function-internal order" was never contractual here
+    // (close-fold rider (b) — the uncapped passthrough was dead code with
+    // a false comment).
     return sql`
       SELECT e.*
       FROM ${sql.unsafe(fnCall)} e
@@ -807,6 +819,36 @@ export async function getRecentPriceDrops(
     {
       revalidate: 300,
       tags: [`recent-price-drops-${sort}-${category ?? '_'}`],
+    },
+  )();
+}
+
+// /deals eyebrow LATEST source (CTK-124 close-fold, /code-review round-2
+// #1, Tier 1B): post-0035 the wrapper cap truncates AFTER the ladder sort,
+// so under price sorts max(rendered.observedAt) reads the capped slice, not
+// the window — the eyebrow could claim "LATEST 2 DAYS AGO" while a drop
+// landed an hour ago. Canon constrains the fix (branding-guide §"Eyebrow
+// shape + slot" filtered-eyebrows lock: no eyebrow change under sort — the
+// chunk can't drop on sorted views), so the true latest comes from a
+// dedicated cap=1 newest-ladder call. Same category arg keeps the filtered
+// eyebrow in-category-honest. Own cache key, same revalidate cadence.
+export async function getLatestPriceDropAt(
+  category: ListingCategory | null = null,
+): Promise<string | null> {
+  return unstable_cache(
+    async () => {
+      const rows = (await orderedEventRows(
+        `get_recent_price_drops(${DEALS_WINDOW_DAYS})`,
+        'newest',
+        category,
+        1,
+      )) as unknown as RpcPriceDropRow[];
+      return rows[0]?.event_at ?? null;
+    },
+    ['getLatestPriceDropAtV1', category ?? '_'],
+    {
+      revalidate: 300,
+      tags: [`latest-price-drop-${category ?? '_'}`],
     },
   )();
 }

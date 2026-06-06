@@ -17,6 +17,7 @@ import {
 } from '@/lib/queries/listing-params';
 import {
   DEALS_WINDOW_DAYS,
+  getLatestPriceDropAt,
   getRecentPriceDrops,
   type ListingCategory,
   type ListingSort,
@@ -58,6 +59,12 @@ const dropsCached = cache(
     getRecentPriceDrops(sort, category),
 );
 
+// Keyed per-request dedup for the eyebrow's LATEST source — category only
+// (sort deliberately absent: the value is sort-invariant by construction).
+const latestDropCached = cache((category: ListingCategory | null) =>
+  getLatestPriceDropAt(category),
+);
+
 function priceDropToProps(d: PriceDropListing) {
   // CTK-047 Session 5 / CTK-124 — <ListingCard> derives the lead from listing
   // fields; no explicit event prop needed. Drop-arm rows: priorPrice non-null
@@ -74,7 +81,10 @@ async function Eyebrow({
   sort: ListingSort;
   category: ListingCategory | null;
 }) {
-  const drops = await dropsCached(sort, category);
+  const [drops, latestEventAt] = await Promise.all([
+    dropsCached(sort, category),
+    latestDropCached(category),
+  ]);
 
   if (drops.length === 0) {
     // Bare zero — eyebrow suppressed; the downtime fallback owns the surface.
@@ -93,10 +103,17 @@ async function Eyebrow({
     );
   }
 
-  // LATEST = max(observedAt), not index 0 — price-sorted renders break the
-  // recency-order assumption (/review-plan pin; shared helper per fold #1).
-  // observedAt is the union event_at (drop time or markdown onset).
-  const latestObservedAt = latestTimestamp(drops, (d) => d.observedAt);
+  // LATEST reads the dedicated cap=1 newest-ladder fetch, NOT the rendered
+  // set (close-fold /code-review #1): post-0035 the wrapper cap truncates
+  // after the ladder sort, so under price sorts max(rendered.observedAt)
+  // reads the capped slice, not the window. Canon holds the chunk on every
+  // sort (branding-guide §"Eyebrow shape + slot": no eyebrow change under
+  // sort); the category arg keeps filtered eyebrows in-category-honest.
+  // Rendered-set fallback covers the fetch-race edge only (drops non-empty
+  // here, so a null latest means the window emptied between the two
+  // cached reads).
+  const latestObservedAt =
+    latestEventAt ?? latestTimestamp(drops, (d) => d.observedAt);
   const latestRelative = formatRelativeTime(latestObservedAt, new Date()).toUpperCase();
   const countNoun = drops.length === 1 ? 'PRICE DROP' : 'PRICE DROPS';
   // Filtered eyebrows qualify the count chunk — the filtered page covers the

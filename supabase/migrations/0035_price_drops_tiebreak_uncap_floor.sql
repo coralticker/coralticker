@@ -34,17 +34,21 @@
 --
 --   (c) Markdown arm gains the 5% floor: compare_at_price >=
 --       current_price * 1.05, INCLUSIVE >=, not strict > — mirroring the
---       card gate at components/listing-card.tsx:12 exactly
---       (compareAtPrice >= currentPrice * 1.05). The point is
+--       SEMANTIC of the card gate at components/listing-card.tsx:71-72,
+--       whose executable form is the epsilon rewrite
+--       (compareAt - current) >= current * 0.05 - 1e-9 (commit 95898fb:
+--       the naive *1.05 float form dropped ~29% of integer-dollar clean
+--       5% markdowns to IEEE754 representation noise). The point is
 --       count == render: every row the RPC counts into the /deals
 --       eyebrow renders a price-treatment card, so sub-5% token
 --       markdowns can no longer inflate the count with bare-price rows.
---       SQL-side this needs no IEEE754 workaround: compare_at_price and
---       current_price are numeric, and numeric * numeric-literal
+--       SQL-side the naive form IS the correct mirror — compare_at_price
+--       and current_price are numeric, numeric * numeric-literal
 --       arithmetic is exact, so an exactly-5% row admits
---       deterministically (the JS gate computes in floats; divergence is
---       possible only at the exact boundary and only by float noise —
---       accepted, not worked around).
+--       deterministically; do NOT port the JS epsilon here (the epsilon
+--       exists to undo float noise SQL doesn't have). Divergence vs the
+--       JS gate is possible only at the exact boundary, only by the JS
+--       epsilon's 1e-9 slack — accepted, not worked around.
 --       Probe 2026-06-06: 0 of 1,814 in-window markdown rows fall below
 --       the floor today — the change is a structural pin on the
 --       count == render invariant, not a live-data cut.

@@ -1,17 +1,24 @@
 """scrapers/tests/test_price_drops_rpc_floor.py — CTK-124 Session 3b pins.
 
-Three pins on the migration-0035 get_recent_price_drops(integer) body:
+Four pins on the migration-0035 get_recent_price_drops(integer) body:
 
   1. Floor admits the EXACTLY-5% boundary row (compare_at = current *
-     1.05, inclusive >=) — mirrors the card gate at
-     components/listing-card.tsx:12; count == render is the invariant.
-     SQL numeric arithmetic is exact, so the boundary admits
-     deterministically (no IEEE754 noise SQL-side).
+     1.05, inclusive >=) — mirrors the SEMANTIC of the card gate at
+     components/listing-card.tsx:71-72, whose executable form is the
+     epsilon rewrite (compareAt - current) >= current * 0.05 - 1e-9
+     (95898fb; naive *1.05 float math dropped ~29% of integer-dollar 5%
+     markdowns). count == render is the invariant. SQL numeric
+     arithmetic is exact, so the naive form is the correct mirror here —
+     the boundary admits deterministically, no epsilon needed.
   2. Floor rejects the 4.9% row (compare_at = current * 1.049).
   3. ORDER BY tiebreak determinism — two consecutive calls return the
      identical id sequence (event_at DESC, listing_id is a total order;
      the 0033 seed cohort shares one timestamp, so event_at alone was
      planner-dependent).
+  4. Tied-onset relative order — two seeded rows sharing one onset must
+     render lower-listing_id first. Pin 3 alone can pass on a planner
+     that happens to be stable; this one fails the moment the tiebreak
+     is removed (close-fold /code-review rider (e)).
 
 Requires migration 0035 applied (floor + tiebreak live in the function
 body) — run AFTER scripts/apply_migration_0035.py.
@@ -49,6 +56,8 @@ except ImportError:
 TEST_VENDOR_SLUG = "_ctk124_test"
 URL_EXACT_5PCT = "https://example.test/p/floor-pin-exact-5pct"
 URL_SUB_5PCT = "https://example.test/p/floor-pin-sub-5pct"
+URL_TIE_A = "https://example.test/p/tie-pin-a"
+URL_TIE_B = "https://example.test/p/tie-pin-b"
 WINDOW_DAYS = 7
 
 
@@ -89,17 +98,24 @@ def _wipe_listings(conn, vendor_id: int) -> None:
 
 
 def _seed_markdown_row(conn, vendor_id: int, product_url: str, *,
-                       current: Decimal, compare_at: Decimal) -> int:
-    """INSERT an in-stock row with an in-window onset; returns id."""
+                       current: Decimal, compare_at: Decimal,
+                       onset=None) -> int:
+    """INSERT an in-stock row with an in-window onset; returns id.
+
+    onset: explicit timestamp for the tie pin (the autocommit connection
+    gives each INSERT its own transaction, so now() differs per call —
+    a shared tie timestamp must be passed in). None = now() - 1h.
+    """
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO vendor_listings "
             "(vendor_id, product_url, raw_title, normalized_title, "
             "current_price, currency, in_stock, compare_at_price, markdown_started_at) "
-            "VALUES (%s, %s, %s, %s, %s, 'USD', true, %s, now() - interval '1 hour') "
+            "VALUES (%s, %s, %s, %s, %s, 'USD', true, %s, "
+            "COALESCE(%s, now() - interval '1 hour')) "
             "RETURNING id",
             (vendor_id, product_url, "Floor Pin Coral", "floor pin coral",
-             current, compare_at),
+             current, compare_at, onset),
         )
         return cur.fetchone()["id"]
 
@@ -122,7 +138,8 @@ def test_floor_admits_exact_5pct_row(conn, vendor):
                              current=Decimal("100.00"), compare_at=Decimal("105.00"))
     assert lid in _rpc_ids(conn), (
         "exactly-5% markdown row must ADMIT (floor is inclusive >=, "
-        "mirroring components/listing-card.tsx:12)"
+        "mirroring the components/listing-card.tsx:71-72 epsilon gate's "
+        "semantic — SQL numeric is exact, no epsilon needed)"
     )
 
 
@@ -153,6 +170,30 @@ def test_order_is_deterministic_across_calls(conn, vendor):
     )
 
 
+@mark_requires_db
+def test_tied_onset_orders_by_listing_id(conn, vendor):
+    """Pin 4 — seed two rows sharing ONE onset timestamp (the seed-cohort
+    tie shape); the lower listing_id must render first per ORDER BY
+    r.event_at DESC, r.listing_id. Pin 3 can pass on a coincidentally
+    stable planner — this pin fails the moment the tiebreak is removed."""
+    _wipe_listings(conn, vendor["id"])
+    with conn.cursor() as cur:
+        cur.execute("SELECT now() - interval '1 hour' AS ts")
+        tie_ts = cur.fetchone()["ts"]
+    id_a = _seed_markdown_row(conn, vendor["id"], URL_TIE_A,
+                              current=Decimal("100.00"),
+                              compare_at=Decimal("150.00"), onset=tie_ts)
+    id_b = _seed_markdown_row(conn, vendor["id"], URL_TIE_B,
+                              current=Decimal("100.00"),
+                              compare_at=Decimal("150.00"), onset=tie_ts)
+    ids = _rpc_ids(conn)
+    assert id_a in ids and id_b in ids, "both tie rows must be in the output"
+    lo, hi = sorted((id_a, id_b))
+    assert ids.index(lo) < ids.index(hi), (
+        "tied-onset rows must order by listing_id ascending — tiebreak missing"
+    )
+
+
 def main() -> int:
     with db.get_conn() as conn:
         vendor = _setup_test_vendor(conn)
@@ -162,6 +203,7 @@ def main() -> int:
             test_floor_admits_exact_5pct_row,
             test_floor_rejects_sub_5pct_row,
             test_order_is_deterministic_across_calls,
+            test_tied_onset_orders_by_listing_id,
         ]
         failures = []
         for fn in tests:
