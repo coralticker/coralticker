@@ -94,6 +94,12 @@ def fetch_existing_listings(conn: psycopg.Connection, vendor_id: int) -> dict[st
     which existing rows have image_url IS NULL for catch-up after a prior
     partial-mirror run).
 
+    CTK-124 F8: compare_at_price added to the SELECT so persist_phase_a can
+    detect the DB-observed NULL <-> non-NULL transition and write/clear
+    vendor_listings.markdown_started_at (migration 0033) on both the UPSERT
+    and unchanged-touch paths. The transition test is presence-based against
+    THIS db-side value vs. the parsed item's — not against the prior item.
+
     CTK-033 + CTK-034 invariants ported to psycopg:
     Chunk via LIMIT 1000 OFFSET N loop with ORDER BY id (primary-key index,
     immune to driver-internal scan-state non-determinism). Loop terminates on
@@ -117,7 +123,7 @@ def fetch_existing_listings(conn: psycopg.Connection, vendor_id: int) -> dict[st
         offset = iteration * page_size
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, product_url, current_price, in_stock, image_url "
+                "SELECT id, product_url, current_price, in_stock, image_url, compare_at_price "
                 "FROM vendor_listings "
                 "WHERE vendor_id = %s "
                 "ORDER BY id "

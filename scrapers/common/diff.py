@@ -22,6 +22,38 @@ log = logging.getLogger(__name__)
 
 Decision = Literal["new", "price_changed", "restocked", "oos", "unchanged"]
 
+MarkdownAction = Literal["set", "clear", "keep"]
+
+
+def _markdown_transition(existing_compare_at, item_compare_at) -> MarkdownAction:
+    """CTK-124 F8 — classify the markdown_started_at write for one row.
+
+    Presence-based episode semantics against the DB-side value
+    (fetch_existing_listings now returns compare_at_price) vs. the parsed
+    item's value:
+
+      NULL -> non-NULL  => "set"   (episode onset; write now())
+      non-NULL -> NULL  => "clear" (vendor pulled the slash; write NULL)
+      otherwise         => "keep"  (no episode boundary — mid-episode value
+                                    drift does NOT reset the onset, and
+                                    never-marked rows stay NULL)
+
+    NEW rows pass existing_compare_at=None: markdown at first sight is a
+    NULL -> non-NULL transition by construction, so onset = now per the
+    plan's cold-start posture. The trigger is compare_at_price PRESENCE,
+    not the compare_at > current inequality — the reader-side RPC
+    (migration 0033 arm 2) applies the inequality; capture just attests
+    when the episode began. Decision #7 holds: no price_history write for
+    markdown events; this column is the only persistence.
+    """
+    had = existing_compare_at is not None
+    has = item_compare_at is not None
+    if has and not had:
+        return "set"
+    if had and not has:
+        return "clear"
+    return "keep"
+
 
 @dataclass
 class ItemDecision:
@@ -269,9 +301,21 @@ def persist_phase_a(
             # compare_at_price on every unchanged row even when it hasn't
             # changed — acceptable at current scale (~350-3000 rows/vendor/
             # scrape × daily cron); revisit if write-side cost surfaces.
+            #
+            # CTK-124 F8: markdown_action rides the same payload so the
+            # chunked UPDATE can write/clear markdown_started_at on episode
+            # boundaries. The unchanged path is the DOMINANT capture path —
+            # a row whose only change is compare_at_price appearing/vanishing
+            # classifies as 'unchanged' (price + stock identical), exactly
+            # the Wave-2 blind-spot class per
+            # feedback_capture_path_unchanged_blind_spot.
+            existing = existing_by_url.get(product_url) or {}
             touch_payloads.append({
                 "id": d.existing_id,
                 "compare_at_price": _decimal_to_str(item.get("compare_at_price")),
+                "markdown_action": _markdown_transition(
+                    existing.get("compare_at_price"), item.get("compare_at_price")
+                ),
             })
             continue
 
@@ -323,6 +367,27 @@ def persist_phase_a(
             row["image_url"] = hotlink_url
         if d.decision == "price_changed":
             row["last_price_changed_at"] = now
+
+        # CTK-124 F8 — markdown_started_at on the UPSERT path (new /
+        # price_changed / restocked / oos). "set" writes now(); "clear"
+        # writes an explicit NULL; "keep" OMITS the key so the absent-
+        # column = keep-existing contract in _upsert_listing_row preserves
+        # the live onset (mid-episode value drift never resets it). NEW
+        # rows have no existing entry, so markdown-at-first-sight resolves
+        # to "set" through the same helper. The cohort-OOS synthetic branch
+        # above deliberately skips this wiring: those rows are ABSENT from
+        # the scrape, so there is no compare_at_price observation to attest
+        # — onset stays untouched and the reader's in_stock predicate
+        # (INV-05) keeps them off /deals anyway.
+        existing = existing_by_url.get(product_url)
+        md_action = _markdown_transition(
+            existing.get("compare_at_price") if existing else None,
+            item.get("compare_at_price"),
+        )
+        if md_action == "set":
+            row["markdown_started_at"] = now
+        elif md_action == "clear":
+            row["markdown_started_at"] = None
 
         # CTK-025: write the four matcher fields when run.py attached a
         # match_result. Always-explicit on 'new' rows (run.py invokes the
@@ -388,19 +453,31 @@ def persist_phase_a(
         # Single chunked UPDATE per 1000-row batch; chunk-size matches the
         # pre-fix shape (PostgREST URL-length workaround inheritance, no SQL
         # constraint).
+        # CTK-124 F8: markdown_started_at joins the touch UPDATE as a three-
+        # state CASE on the per-row markdown_action ('set' -> now, 'clear' ->
+        # NULL, 'keep' -> existing value). One statement, one chunk loop —
+        # the action discriminator rides a third UNNEST array (text[]) so the
+        # keep case can preserve the column without a separate UPDATE shape
+        # per action. Explicit ::timestamptz on the set-branch param keeps
+        # CASE type inference off the text literal.
         if touch_payloads:
             with conn.cursor() as cur:
                 for chunk in _chunks(touch_payloads, 1000):
                     ids = [p["id"] for p in chunk]
                     compare_ats = [p["compare_at_price"] for p in chunk]
+                    md_actions = [p["markdown_action"] for p in chunk]
                     cur.execute(
                         "UPDATE vendor_listings AS vl "
                         "SET last_seen_at = %s, "
-                        "    compare_at_price = data.compare_at_price "
-                        "FROM (SELECT * FROM UNNEST(%s::bigint[], %s::numeric[])) "
-                        "  AS data(id, compare_at_price) "
+                        "    compare_at_price = data.compare_at_price, "
+                        "    markdown_started_at = CASE data.markdown_action "
+                        "      WHEN 'set' THEN %s::timestamptz "
+                        "      WHEN 'clear' THEN NULL "
+                        "      ELSE vl.markdown_started_at END "
+                        "FROM (SELECT * FROM UNNEST(%s::bigint[], %s::numeric[], %s::text[])) "
+                        "  AS data(id, compare_at_price, markdown_action) "
                         "WHERE vl.id = data.id",
-                        (now, ids, compare_ats),
+                        (now, now, ids, compare_ats, md_actions),
                     )
 
         # CTK-094 cohort-OOS chunked UPDATE — flip in_stock=false ONLY on the
@@ -555,6 +632,7 @@ _UPSERT_ALLOWED_COLS = frozenset({
     "normalized_title",
     "current_price",
     "compare_at_price",  # CTK-100 Wave-2 F6 — flips the Wave-1 dark column on. Sits adjacent to current_price (semantic sibling). Both nullable numeric(10,2); _decimal_to_str returns None cleanly for None input.
+    "markdown_started_at",  # CTK-124 F8 — episode-onset attestation (migration 0033). Present only on 'set' (now) / 'clear' (None) rows; omitted on 'keep' so the absent-column contract preserves the live onset.
     "currency",
     "in_stock",
     "category",
