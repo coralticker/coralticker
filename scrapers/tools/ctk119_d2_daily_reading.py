@@ -40,7 +40,7 @@ import re
 import sys
 
 from scrapers.common import db
-from scrapers.common.parse_shopify import _should_keep
+from scrapers.common.parse_shopify import _coerce_bool, _should_keep
 from scrapers.common.run import _load_yaml
 from scrapers.tools.ctk119_d1_two_lens_audit import PROMO_ENTRIES, _fetch_feed
 
@@ -132,6 +132,9 @@ def main() -> int:
           f"{len(DAY1_POST_SWEEP_HANDLES)} post-sweep = {len(day1_handles)} handles")
 
     cfg = _load_yaml("wwc")
+    # Mirrors fetch_and_parse's read; WWC carries no in_stock_only today but
+    # the probe stays faithful if that changes (/code-review fold #7).
+    in_stock_only = _coerce_bool(cfg.get("in_stock_only", False))
     feed = _trim(_fetch_feed(cfg))
     today = datetime.date.today().isoformat()
     print(f"feed pull complete — {len(feed)} products ({today})")
@@ -169,10 +172,15 @@ def main() -> int:
         # Intake-eligibility under the CURRENT filter: would this row enter?
         # Real tags, not [] — wwc.yaml carries a tag_denylist axis, so empty
         # tags would over-report INTAKE-ELIGIBLE (lead-backend fix 2026-06-05).
+        # in_stock_only rides through too, with a one-variant synthesis off
+        # the trimmed `available` bool so the availability gate is evaluable
+        # — symmetric twin of the tags fix (/code-review fold #7, 2026-06-06).
         eligible = _should_keep(
             {"title": p["title"], "product_type": p["product_type"],
-             "tags": p["tags"], "handle": p["handle"]},
+             "tags": p["tags"], "handle": p["handle"],
+             "variants": [{"available": p["available"]}]},
             cfg["category_filter"],
+            in_stock_only,
         )
         flag = "  <- INTAKE-ELIGIBLE (reactive-add candidate)" if eligible else ""
         if eligible:

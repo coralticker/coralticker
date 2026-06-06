@@ -103,21 +103,23 @@ category_filter:
     # CTK-119 D-1 (2026-06-04): promo/POS/BOGO tail of the available-with-
     # dead-link class — 7 rows feed-published with HEAD-404 retail routes
     # (full evidence: CTK-119 head-sweep-2026-06-04.txt). Exact-compound
-    # entries, zero false-kill by construction; family patterns (BOGO / POS /
-    # Special / Build A) stay unlocked pending the D-2 multi-day rotation
-    # sample per the rotating-bucket rule.
+    # entries, zero false-kill by construction; 6 remain after the May $25
+    # entry (id=15782) folded into the 'Build A' family entry below
+    # (/code-review fold #5, 2026-06-06 — shadowed by the family substring,
+    # behavior-neutral per the two-lens audit). Family patterns dispositioned
+    # at D-2 close; see the Build A entry.
     - Acro Frag POS                   # id=15744
     - Special Sale - Frag             # id=15770
     - BOGO Beginner SPS Frag          # id=15771
     - $10 GSP Frag                    # id=15772
     - Favia/Favites BOGO              # id=15781
-    - May $25 Build A Monti Pack      # id=15782
     - Rainbow Hammer January Special  # id=15800
     # CTK-119 D-2 (2026-06-06): 'Build A' family lock off the 3-day rotation
     # sample + two-lens substring audit — feed (days 2-3) and DB ILIKE both
     # hit exactly the two class rows (15782 bridged; 15783 dormant May $49
     # sibling, HEAD-404, in_stock=false). Subsumes the May $25 exact entry
-    # above and the id=15783 reactive-add candidate. Other family patterns
+    # (id=15782, removed at fold #5) and the id=15783 reactive-add
+    # candidate. Other family patterns
     # dispositioned same sample: Special REJECTED (3 real-coral title
     # families carry it); $N / BOGO / POS not locked (zero non-class
     # recurrence; reactive exact-title fallback per plan review-fold #3).

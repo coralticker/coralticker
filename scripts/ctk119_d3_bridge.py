@@ -8,9 +8,11 @@ the flip, and the post-bridge survival scrape is the verify).
 
 IN-list is re-derived at execution time (the 2026-06-04 sweep list will have
 churned): vendor_id=2 + in_stock=true + (raw_title anchored-ILIKE 'WS - %'
-OR substring-ILIKE one of the 7 promo exact-compound entries — the SQL
-mirror of the wwc.yaml denylist semantics). Promo entries carry $ and / but
-no LIKE wildcards (%/_); escape before reuse if that changes.
+OR substring-ILIKE one of the PROMO_ENTRIES below — a HAND-MAINTAINED mirror
+of the wwc.yaml promo title_denylist semantics, not derived from the YAML;
+keep it in step on any entry change (/code-review fold #1, 2026-06-06).
+Entries carry $ and / but no LIKE wildcards (%/_); escape before reuse if
+that changes.
 
 Safety rails, in order:
   1. HEAD spot-check (every Nth row, ~10 total, 2s polite pacing) — each
@@ -52,15 +54,17 @@ HEAD_SPOT_CHECKS = 10
 HEAD_DELAY_SEC = 2.0
 HEAD_UA = "Mozilla/5.0 (CoralTicker CTK-119 route-liveness spot-check)"
 
-# Mirrors wwc.yaml title_denylist CTK-119 promo-tail entries (substring
-# semantics -> %...% ILIKE). The prefix entry mirrors ANCHORED (no leading %).
+# HAND-MAINTAINED mirror of wwc.yaml title_denylist CTK-119 promo entries
+# (substring semantics -> %...% ILIKE): 6 exact-compound + the 'Build A'
+# family entry (D-2 lock 2026-06-06; subsumes the former May $25 exact
+# entry). The prefix entry mirrors ANCHORED (no leading %).
 PROMO_ENTRIES = [
     "Acro Frag POS",
     "Special Sale - Frag",
     "BOGO Beginner SPS Frag",
     "$10 GSP Frag",
     "Favia/Favites BOGO",
-    "May $25 Build A Monti Pack",
+    "Build A",
     "Rainbow Hammer January Special",
 ]
 

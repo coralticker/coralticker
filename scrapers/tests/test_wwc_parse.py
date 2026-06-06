@@ -49,13 +49,14 @@ WWC_CATEGORY_FILTER = {
     # PT rotated in a Dry-Goods-tagged hot sauce (id=15725).
     "tag_denylist": ["Dry Goods"],
     # CTK-107 D-2-quater fleet chaeto/macroalgae (4) + CTK-119 D-1 promo/POS/
-    # BOGO dead-route tail (7, exact-compound, ids 15744-15800) + CTK-119 D-2
-    # 'Build A' family lock (1, 2026-06-06 — subsumes the May $25 exact entry
-    # + id=15783).
+    # BOGO dead-route tail (6 exact-compound after /code-review fold #5
+    # removed the shadowed May $25 entry, 2026-06-06) + CTK-119 D-2 'Build A'
+    # family lock (1, 2026-06-06 — subsumes the May $25 exact entry +
+    # id=15783).
     "title_denylist": [
         "Chaeto", "Cheato", "Macroalgae", "Macro Algae",
         "Acro Frag POS", "Special Sale - Frag", "BOGO Beginner SPS Frag",
-        "$10 GSP Frag", "Favia/Favites BOGO", "May $25 Build A Monti Pack",
+        "$10 GSP Frag", "Favia/Favites BOGO",
         "Rainbow Hammer January Special", "Build A",
     ],
     # CTK-119 D-1 anchored wholesale/live-sale channel-prefix axis.
@@ -311,14 +312,16 @@ def test_filter_keeps_word_final_ws_collision_class(products):
 
 # CTK-119 Test 20: promo tail exact-compound entries reject, one per entry
 def test_filter_rejects_promo_tail_exact_titles(products):
-    """CTK-119 D-1 — each of the 7 promo/POS/BOGO dead-route titles rejects
+    """CTK-119 D-1 — each of the 6 promo/POS/BOGO dead-route titles rejects
     via its own exact-compound title_denylist entry. One synthetic per entry
     (CTK-104 reef-safety family shape) so a YAML/mirror drop of any single
     entry breaks this test. PT held at allowlisted 'Frag' to isolate the
-    title axis."""
+    title axis. The 7th dead-route title (May $25 Build A Monti Pack) moved
+    to test 24 when fold #5 removed its shadowed exact entry — it rejects
+    via the Build A family entry now."""
     for title in (
         "Acro Frag POS", "Special Sale - Frag", "BOGO Beginner SPS Frag",
-        "$10 GSP Frag", "Favia/Favites BOGO", "May $25 Build A Monti Pack",
+        "$10 GSP Frag", "Favia/Favites BOGO",
         "Rainbow Hammer January Special",
     ):
         product = {
@@ -335,7 +338,7 @@ def test_filter_rejects_promo_tail_exact_titles(products):
 # CTK-119 Test 21: coral false-kill guard across the real-shape fixture surface
 def test_filter_keeps_corals_post_ctk119(products):
     """CTK-119 D-1 false-kill guard — the 3 real-shape coral fixtures pass the
-    full post-CTK-119 mirror (12 title entries + prefix axis). Pins the new
+    full post-CTK-119 mirror (11 title entries + prefix axis). Pins the new
     entries against the coral surface the same way CTK-104's guard pinned the
     reef-safety family on TSA."""
     for title in (
@@ -390,8 +393,11 @@ def test_filter_rejects_build_a_family(products):
     each hit exactly the two class rows, 15782/15783). Family semantics: future
     month/price rotations of the pack promo reject without per-SKU reactive
     adds. Accepted residual: substring also matches word-final '...build a'
-    shapes ('Rebuild Acro...') — zero instances feed + DB at lock time."""
+    shapes ('Rebuild Acro...') — zero instances feed + DB at lock time.
+    Carries the May $25 title since fold #5 removed its shadowed exact entry
+    (behavior-neutral pin: family entry owns the reject now)."""
     for title in (
+        "May $25 Build A Monti Pack",     # id=15782, bridged; ex-exact-entry
         "May $49 Build A Zoa Pack",       # id=15783, the dormant class sibling
         "June $30 Build A Acro Pack",     # synthetic next-month rotation
         "build a reef pack",              # lowercase drift
