@@ -8,6 +8,7 @@ import { Footer } from '@/components/footer';
 import { RelativeTimeProvider } from '@/components/ui/relative-time';
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://coralticker.com'),
   title: 'CoralTicker',
   description: 'Drop alerts and price tracking for reef hobbyists.',
 };
