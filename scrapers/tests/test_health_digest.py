@@ -128,6 +128,35 @@ def test_saturate_state_renders_broken_detection_wording():
     assert any("broken-detection candidate" in line for line in lines)
 
 
+def test_saturate_exact_line_and_streak_7_8_boundary():
+    # /code-review fold (CTK-097 S4): the saturate branch S4 reworded
+    # ([PINGED]/"fired" -> [PING-DUE]/"threshold crossed") was only substring-
+    # pinned, and the streak >= days + 5 cutover had no boundary test. Lock
+    # both: streak 7 keeps the NORMAL wording, streak 8 is the FIRST saturate
+    # ("broken-detection") line — guarding the cutover against an off-by-one —
+    # and pin the saturate line exactly so a wrong path/streak/threshold-slot
+    # interpolation can't slip past the substring check above.
+    normal = render_vendor_lines("aquasd", window(7), classify(window(7)), DEFAULT_THRESHOLDS)
+    assert any(
+        line == (
+            "  [PING-DUE] /montipora/: 0x7 scrapes — real-time ping threshold crossed "
+            "2026-05-31 10:11 UTC; poller best-effort, that slot may have been dropped"
+        )
+        for line in normal
+    )
+    assert all("broken-detection candidate" not in line for line in normal)
+
+    saturate = render_vendor_lines("aquasd", window(8), classify(window(8)), DEFAULT_THRESHOLDS)
+    assert any(
+        line == (
+            "  [PING-DUE] /montipora/: 0x8 scrapes — broken-detection candidate; "
+            "real-time ping threshold crossed 2026-05-30 10:11 UTC; poller best-effort, "
+            "that slot may have been dropped"
+        )
+        for line in saturate
+    )
+
+
 def test_trend_marker_only_past_50pct_deviation():
     # /acropora/ sags 355 -> 120 (-66% vs median 355): trend line renders.
     # /euphyllia/ 87 -> 60 (-31%): no trend line.
@@ -188,6 +217,7 @@ def main() -> None:
         test_pinged_line_does_not_assert_a_ping_fired,
         test_pinged_streak_5_threshold_slot_points_at_completing_run,
         test_saturate_state_renders_broken_detection_wording,
+        test_saturate_exact_line_and_streak_7_8_boundary,
         test_trend_marker_only_past_50pct_deviation,
         test_inactive_vendor_renders_inactive_line,
         test_no_runs_renders_no_runs_line,
