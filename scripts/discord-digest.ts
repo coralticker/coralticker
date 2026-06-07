@@ -129,7 +129,8 @@ export function buildFields(row: DigestRow): DataRowField[] {
   // back-in-stock rows get the 'Back' label so the restock reads on the
   // line without a lead sentence (vendor is the group header here, so the
   // web card's "back in stock at {vendor}." lead has no slot).
-  // Label choice is a /brand-manager review item before first real post.
+  // Label ratified by /brand-manager 2026-06-06 — canon on lead-less
+  // channel compositions only (branding-guide.md em-dash field vocabulary).
   fields.push({
     label: row.event === 'back-in-stock' ? 'Back' : 'Listed',
     value: {

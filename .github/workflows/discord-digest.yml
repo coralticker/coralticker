@@ -1,17 +1,15 @@
 name: discord-digest
 
+# CTK-011 — daily drop digest to the public Discord #drops channel.
+#
+# Trigger is Vercel cron, not GH schedule (CTK-011 cron-reliability
+# amendment 2026-06-07): the first two GH scheduled fires landed +2h49m and
+# +1h33m late (best-effort cron; open-items.md "Discord-digest cron-delay
+# watch", escalation fired 2026-06-06). Vercel cron hits
+# app/api/cron/discord-digest/route.ts daily at 13:00 UTC, which dispatches
+# this workflow via the GitHub API. Single-trigger ownership: do NOT re-add
+# a schedule block here — two triggers means double-posting to #drops.
 on:
-  schedule:
-    # CTK-011 — daily drop digest to the public Discord #drops channel.
-    #
-    # 21 13 * * * UTC = 9:21am ET (EDT) per /reef-lead post-time call
-    # 2026-06-04: morning closes a complete vendor drop day (afternoon +
-    # evening drops land in one post) and opens the full order-cutoff
-    # window for same-day action. Off-minute :21 per .claude/open-items.md
-    # top-of-hour degradation discipline; minute pool verified free
-    # 2026-06-04 (hourly :07/:11/:19/:29/:37/:41/:43/:53/:57; no hour-13
-    # daily occupants).
-    - cron: '21 13 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
