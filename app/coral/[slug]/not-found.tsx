@@ -12,6 +12,10 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 
+// 404 copy duplicated at ../page.tsx generateMetadata null-branch — edit both
+// or neither. This export is the authority (paints the rendered head; the
+// null-branch is RSC-flight-only, verified next@15.5.18); if ever deleting
+// one, keep this one.
 export const metadata: Metadata = {
   title: 'Coral not in seed list', // suffix via root title.template
   description:

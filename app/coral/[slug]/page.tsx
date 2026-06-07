@@ -49,6 +49,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { slug } = await params;
   const coral = await getNamedCoralBySlug(slug);
   if (!coral) {
+    // 404 copy duplicated at ./not-found.tsx metadata export — edit both or
+    // neither. This null-branch is RSC-flight-only (verified next@15.5.18);
+    // not-found.tsx paints the rendered head and is the keeper if one ever goes.
     return {
       title: 'Coral not in seed list', // suffix via root title.template
       description:

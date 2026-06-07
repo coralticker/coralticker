@@ -69,6 +69,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { slug } = await params;
   const vendor = await getVendorBySlug(slug);
   if (!vendor) {
+    // 404 copy duplicated at ./not-found.tsx metadata export — edit both or
+    // neither. This null-branch is RSC-flight-only (verified next@15.5.18);
+    // not-found.tsx paints the rendered head and is the keeper if one ever goes.
     return {
       title: 'Vendor not found', // suffix via root title.template
       description: "That vendor isn't on CoralTicker yet.",
