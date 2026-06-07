@@ -24,7 +24,8 @@ from scrapers.common.parse_shopify import _should_keep
 # BC YAML shape at CTK-096 ship: large taxonomic product_type_allowlist (~70
 # entries; we only use a subset relevant to test pivot — empty PT bucket where
 # the merch leaks live, plus a coral PT for the keep cases). tag_denylist
-# empty. title_denylist holds the 5 walk-grounded entries per CTK-096 D-1.
+# empty. title_denylist holds the 5 walk-grounded entries per CTK-096 D-1
+# plus the 2 CTK-132 gag-listing exact-compounds (2026-06-07).
 BC_FILTER = {
     "product_type_allowlist": [
         "", "Acropora", "Acropora sp.", "Acropora Tenuis", "Montipora",
@@ -36,6 +37,8 @@ BC_FILTER = {
         " Print",
         "shipping",
         "Shirt",
+        "Fairy Food",
+        "In a pigs eye",
     ],
 }
 
@@ -97,6 +100,15 @@ def test_bc_drops_shipping():
         assert _should_keep(_p(title), BC_FILTER) is False, title
 
 
+def test_bc_drops_gag_listings():
+    """CTK-132 gag-listing class: both 2026-06-07 walk members drop. The
+    pigs-eye entry omits the trailing `!` (substring catches the punctuated
+    live title); Fairy Food drops even from its allowlisted coral PT bucket —
+    title_denylist is AND-semantics, not PT-scoped."""
+    assert _should_keep(_p("In a pigs eye!"), BC_FILTER) is False
+    assert _should_keep(_p("Fairy Food", product_type="Acropora sp."), BC_FILTER) is False
+
+
 # --- Keep: FP-discipline controls + baseline coral ---
 
 def test_bc_keeps_hypothetical_imprint_coral():
@@ -123,6 +135,21 @@ def test_bc_keeps_empty_pt_real_coral():
     assert _should_keep(p, BC_FILTER) is True
 
 
+def test_bc_keeps_fairy_compound_corals():
+    """CTK-132 FP-discipline control: the gag entry is the full compound
+    `Fairy Food` precisely because bare `Fairy` collides with ~50 real coral
+    rows fleet-wide (Fairy Dust / Fairy Tales / Fairy Farts families per the
+    2026-06-07 DB-wide ILIKE scan). Pins the reason the entry must never be
+    shortened."""
+    for title in [
+        "Fairy Dust Favia",
+        "JF Fairy Tale Zoanthids",
+        "Fairy Farts",
+    ]:
+        p = _p(title, product_type="Acropora sp.")
+        assert _should_keep(p, BC_FILTER) is True, title
+
+
 def main() -> int:
     tests = [
         test_bc_drops_tee_shirt,
@@ -131,9 +158,11 @@ def main() -> int:
         test_bc_drops_gift_card,
         test_bc_drops_delivery_fee,
         test_bc_drops_shipping,
+        test_bc_drops_gag_listings,
         test_bc_keeps_hypothetical_imprint_coral,
         test_bc_keeps_regular_acropora,
         test_bc_keeps_empty_pt_real_coral,
+        test_bc_keeps_fairy_compound_corals,
     ]
     failed = 0
     for t in tests:

@@ -251,3 +251,15 @@ category_filter:
     - Cheato                # POTO-style misspelling forward-binding (CTK-107 D-2-quater 2026-06-02)
     - Macroalgae            # generic macroalgae catch (CTK-107 D-2-quater 2026-06-02)
     - Macro Algae           # space-separated variant catch (CTK-107 D-2-quater 2026-06-02)
+    # CTK-132 (2026-06-07): BC gag-listing class — joke products priced $1M/$2M
+    # compare-at that qualify through the CTK-124 markdown arm (compare_at >
+    # current, in-stock, non-auction) and anchor /deals price-desc. Recurrence
+    # check 2026-06-07 full-feed walk (499 products): exactly 2 class members,
+    # no shared title substring, so two exact-compound entries (a title family
+    # isn't expressible; the shared signal is the absurd price, which is not a
+    # title_denylist axis — a price-ceiling axis stays unbuilt until a third
+    # member recurs). Full compounds deliberate: bare "Fairy" collides with
+    # ~50 real coral rows fleet-wide (Fairy Dust / Fairy Tales / Fairy Farts);
+    # both entries verified 1-hit-exact live + DB-wide ILIKE 2026-06-07.
+    - Fairy Food            # gag listing $1,000,000 / compare-at $2M, PT='Acropora sp.' (OOS at entry-add; defensive against an availability flip)
+    - In a pigs eye         # gag listing $999,999 / compare-at $2M, PT='' (the live /deals price-desc anchor; DB id 67583 bridged OOS per CTK-119 shape)
