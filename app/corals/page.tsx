@@ -33,12 +33,14 @@ import { CORAL_RECENCY_DAYS } from '@/lib/queries/listings';
 export const revalidate = 600;
 
 export const metadata: Metadata = {
-  title: 'Corals — CoralTicker',
+  title: 'Corals', // suffix via root title.template
   description:
     'Named corals recently listed across the vendors CoralTicker tracks. Direct links to availability.',
   alternates: {
     canonical: '/corals',
   },
+  openGraph: { url: '/corals', siteName: 'CoralTicker', type: 'website', locale: 'en_US' },
+  twitter: { card: 'summary' },
 };
 
 const SKELETON_ROW_COUNT = 6;

@@ -20,7 +20,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Vendor not found — CoralTicker',
+  title: 'Vendor not found', // suffix via root title.template
   description: "That vendor isn't on CoralTicker yet.",
 };
 

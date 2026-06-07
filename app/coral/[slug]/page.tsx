@@ -50,19 +50,26 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const coral = await getNamedCoralBySlug(slug);
   if (!coral) {
     return {
-      title: 'Coral not in seed list — CoralTicker',
+      title: 'Coral not in seed list', // suffix via root title.template
       description:
         "This coral isn't in the seed list yet. I'm working through the long tail.",
     };
   }
   return {
-    title: `${coral.canonical_name} — current vendor availability — CoralTicker`,
+    title: `${coral.canonical_name} — current vendor availability`, // suffix via root title.template
     description: `Current vendor availability and pricing for ${coral.canonical_name}. Drop alerts across reef coral vendors.`,
     // Canonical = bare route per the /vendor/[slug] precedent — the
     // ?include-oos=1 toggle variant resolves to the bare-route SERP card.
     alternates: {
       canonical: `/coral/${slug}`,
     },
+    openGraph: {
+      url: `/coral/${slug}`,
+      siteName: 'CoralTicker',
+      type: 'website',
+      locale: 'en_US',
+    },
+    twitter: { card: 'summary' },
   };
 }
 

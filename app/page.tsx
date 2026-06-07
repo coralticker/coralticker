@@ -24,9 +24,17 @@ import { getRecentDrops } from '@/lib/queries/listings';
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: 'CoralTicker — every drop, one feed',
+  // absolute: opts out of the root title.template — the homepage keeps its
+  // full tagline title rather than "CoralTicker — every drop, one feed —
+  // CoralTicker".
+  title: { absolute: 'CoralTicker — every drop, one feed' },
   description:
     "Drop alerts and price tracking for reef hobbyists. Never miss the piece you've been hunting. One feed, every vendor.",
+  alternates: { canonical: '/' },
+  // og:title/og:description inherit from title/description; twitter:* falls
+  // back to openGraph. Text-only card v1 — no og:image per Jon's CTK-078 call.
+  openGraph: { url: '/', siteName: 'CoralTicker', type: 'website', locale: 'en_US' },
+  twitter: { card: 'summary' },
 };
 
 const DOWNTIME_FALLBACK =

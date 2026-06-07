@@ -69,10 +69,9 @@ export async function generateMetadata({
   const sp = await searchParams;
   const q = parseSearchQuery(sp.q);
   return {
+    // suffix via root title.template
     title:
-      q === null
-        ? 'Search — CoralTicker'
-        : `Results for "${clampEcho(sp.q)}" — CoralTicker`,
+      q === null ? 'Search' : `Results for "${clampEcho(sp.q)}"`,
     robots: { index: false, follow: true },
   };
 }

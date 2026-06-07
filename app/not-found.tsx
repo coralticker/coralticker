@@ -17,7 +17,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Page not found — CoralTicker',
+  title: 'Page not found', // suffix via root title.template
   description:
     "I don't have anything at that address — probably a mistyped or stale link.",
 };

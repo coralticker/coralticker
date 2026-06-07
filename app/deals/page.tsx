@@ -30,9 +30,12 @@ import {
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: 'Coral price drops — CoralTicker',
+  title: 'Coral price drops', // suffix via root title.template
   description:
     'Price drops across reef coral vendors. One feed, every vendor.',
+  alternates: { canonical: '/deals' },
+  openGraph: { url: '/deals', siteName: 'CoralTicker', type: 'website', locale: 'en_US' },
+  twitter: { card: 'summary' },
 };
 
 interface PageProps {

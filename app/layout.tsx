@@ -9,7 +9,7 @@ import { RelativeTimeProvider } from '@/components/ui/relative-time';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://coralticker.com'),
-  title: 'CoralTicker',
+  title: { template: '%s — CoralTicker', default: 'CoralTicker' },
   description: 'Drop alerts and price tracking for reef hobbyists.',
 };
 

@@ -15,12 +15,14 @@ import { getAllActiveVendors } from '@/lib/queries/vendors';
 export const revalidate = 600;
 
 export const metadata: Metadata = {
-  title: 'Vendors — CoralTicker',
+  title: 'Vendors', // suffix via root title.template
   description:
     'Every coral vendor on CoralTicker. Direct links to current inventory at each vendor.',
   alternates: {
     canonical: '/vendors',
   },
+  openGraph: { url: '/vendors', siteName: 'CoralTicker', type: 'website', locale: 'en_US' },
+  twitter: { card: 'summary' },
 };
 
 const SKELETON_ROW_COUNT = 6;

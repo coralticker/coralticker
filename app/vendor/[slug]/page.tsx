@@ -70,7 +70,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const vendor = await getVendorBySlug(slug);
   if (!vendor) {
     return {
-      title: 'Vendor not found — CoralTicker',
+      title: 'Vendor not found', // suffix via root title.template
       description: "That vendor isn't on CoralTicker yet.",
     };
   }
@@ -79,11 +79,18 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   // body via React 19 link hoisting (Next.js Metadata API has no first-class
   // prev/next slot).
   return {
-    title: `${vendor.display_name} — coral inventory — CoralTicker`,
+    title: `${vendor.display_name} — coral inventory`, // suffix via root title.template
     description: `Current coral inventory at ${vendor.display_name} — listing count, pricing, recency. Cross-vendor drop alerts.`,
     alternates: {
       canonical: `/vendor/${slug}`,
     },
+    openGraph: {
+      url: `/vendor/${slug}`,
+      siteName: 'CoralTicker',
+      type: 'website',
+      locale: 'en_US',
+    },
+    twitter: { card: 'summary' },
   };
 }
 

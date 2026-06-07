@@ -16,8 +16,11 @@ import { SocialLinks } from './_components/social-links';
 // register across all surfaces' meta. Personal-voice work lives at the
 // page body below, not at the SERP card.
 export const metadata: Metadata = {
-  title: 'About — CoralTicker',
+  title: 'About', // suffix via root title.template
   description: 'Who runs CoralTicker, why, and what it is.',
+  alternates: { canonical: '/about' },
+  openGraph: { url: '/about', siteName: 'CoralTicker', type: 'website', locale: 'en_US' },
+  twitter: { card: 'summary' },
 };
 
 export default function About() {

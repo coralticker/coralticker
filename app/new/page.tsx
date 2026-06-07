@@ -29,9 +29,12 @@ import {
 export const revalidate = 300;
 
 export const metadata: Metadata = {
-  title: 'New coral arrivals — CoralTicker',
+  title: 'New coral arrivals', // suffix via root title.template
   description:
     'New coral arrivals across reef vendors — just-listed and back-in-stock. One feed, every vendor.',
+  alternates: { canonical: '/new' },
+  openGraph: { url: '/new', siteName: 'CoralTicker', type: 'website', locale: 'en_US' },
+  twitter: { card: 'summary' },
 };
 
 interface PageProps {

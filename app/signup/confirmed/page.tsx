@@ -21,7 +21,7 @@ import type { Metadata } from 'next';
 // no wording to tune. Sitemap exclusion handled at CTK-017 (app/sitemap.ts)
 // per site.md §6.3 line 1779.
 export const metadata: Metadata = {
-  title: 'Confirmed — CoralTicker',
+  title: 'Confirmed', // suffix via root title.template
   description: '',
   robots: { index: false, follow: true },
 };

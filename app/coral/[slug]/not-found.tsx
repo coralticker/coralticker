@@ -13,7 +13,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Coral not in seed list — CoralTicker',
+  title: 'Coral not in seed list', // suffix via root title.template
   description:
     "This coral isn't in the seed list yet. I'm working through the long tail.",
 };
