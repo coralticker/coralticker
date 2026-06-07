@@ -13,17 +13,20 @@ additively as new builders under their own CTK without restructuring.
 
 The cohort section is the guaranteed-delivery counterpart to the hourly
 real-time ping (scrapers/common/cohort_signal.py): everything below the
-ping thresholds surfaces here, and anything that DID ping is cross-
-referenced with a [PINGED] marker + fire slot rather than omitted, so the
-digest reads truthfully as a standalone "is the world okay" surface
-(plan §Implementation plan #8 no-double-alert mechanism).
+ping thresholds surfaces here, and anything at or past the real-time ping
+threshold is flagged with a [PING-DUE] marker rather than omitted. The
+digest CANNOT confirm a ping actually fired — the hourly poller is best-
+effort (GH Actions silently drops cron slots) and no ping-state table
+exists (D-5) — so it flags the threshold crossing, not a fired ping.
+Omitting the line would make the digest lie as a standalone "is the world
+okay" surface (plan §Implementation plan #8 no-double-alert mechanism).
 
 Per-vendor lines, per plan §7 (counts are PRE-overlap-dedup raw card
 counts per migration 0024 — rendered as "cards", never "listings"):
 
   per-category cohort (aquasd, run 731):
     15 healthy | 1 sparse (/cynarinas/=1) | 5 curator-empty | 0 WARN
-    [PINGED] /montipora/: 0x3 scrapes — real-time ping fired 2026-06-04 10:11 UTC
+    [PING-DUE] /montipora/: 0x3 scrapes — real-time ping threshold crossed 2026-06-04 10:11 UTC; poller best-effort, that slot may have been dropped
   cohort-OOS last 24h: aquasd 12, poto 4, tidal-gardens 0
 
 A vendor with vendors.active=false renders an [INACTIVE] line instead of
@@ -67,7 +70,9 @@ TREND_DEVIATION = 0.5
 
 def slot_for(started_at: datetime) -> datetime:
     """The nominal poller slot whose window (slot-1h, slot] contains
-    started_at — i.e. the slot in which the real-time ping for a run fired.
+    started_at — i.e. the slot the real-time poller WOULD fire a ping in for
+    this run. Not proof it did: GH Actions drops slots and the digest has no
+    ping-state table (D-5), so callers must not assert a ping actually fired.
     """
     slot = started_at.replace(minute=SLOT_MINUTE, second=0, microsecond=0)
     if slot < started_at:
@@ -79,10 +84,12 @@ def classify_for_digest(runs: list[dict], thresholds: dict, expected_min: int) -
     """Bucket every path in the window for digest rendering.
 
     Returns {"healthy": [...], "sparse": [(path, count)], "curator_empty":
-    [...], "warn": [(path, streak)], "pinged": [(path, streak, fire_slot)],
-    "trend": [(path, current, median)]} — pinged includes saturate-state
-    paths (streak >= three_days_running + 5), which render the broken-
-    detection wording.
+    [...], "warn": [(path, streak)], "pinged": [(path, streak,
+    threshold_slot)], "trend": [(path, current, median)]} — the "pinged"
+    bucket holds paths at or past the real-time ping threshold (it does NOT
+    assert a ping fired; see render_vendor_lines / slot_for). It includes
+    saturate-state paths (streak >= three_days_running + 5), which render
+    the broken-detection wording.
     """
     days = thresholds["three_days_running"]
     buckets: dict = {"healthy": [], "sparse": [], "curator_empty": [], "warn": [], "pinged": [], "trend": []}
@@ -99,10 +106,12 @@ def classify_for_digest(runs: list[dict], thresholds: dict, expected_min: int) -
             continue
         streak = zero_streak(history)
         if streak >= days:
-            # The run that completed the streak (fired the ping) sits at
-            # index streak - days in the newest-first window.
-            fire_slot = slot_for(runs[streak - days]["started_at"])
-            buckets["pinged"].append((path, streak, fire_slot))
+            # The run that pushed the streak to the real-time ping threshold
+            # sits at index streak - days in the newest-first window. This is
+            # the slot the threshold was crossed in — NOT proof a ping fired
+            # (poller is best-effort, GH drops slots; no ping-state table, D-5).
+            threshold_slot = slot_for(runs[streak - days]["started_at"])
+            buckets["pinged"].append((path, streak, threshold_slot))
             continue
         if streak >= 1:
             buckets["warn"].append((path, streak))
@@ -143,16 +152,23 @@ def render_vendor_lines(slug: str, runs: list[dict], buckets: dict, thresholds: 
     ]
     for path, streak in buckets["warn"]:
         lines.append(f"  [WARN] {path}: 0 cards, {streak} scrape(s) running (pings at {days})")
-    for path, streak, fire_slot in buckets["pinged"]:
+    for path, streak, threshold_slot in buckets["pinged"]:
+        # [PING-DUE], not [PINGED]: the digest knows the streak crossed the
+        # real-time ping threshold, NOT that a ping fired. The poller is
+        # best-effort (GH drops cron slots) and there's no ping-state table
+        # (D-5), so asserting "fired" would lie whenever the slot was dropped
+        # — and that false "already alerted" read is exactly what makes an
+        # operator dismiss a condition they were never pinged about.
         if streak >= days + 5:
             lines.append(
-                f"  [PINGED] {path}: 0x{streak} scrapes — broken-detection candidate, "
-                f"first ping fired {fire_slot:%Y-%m-%d %H:%M} UTC"
+                f"  [PING-DUE] {path}: 0x{streak} scrapes — broken-detection candidate; "
+                f"real-time ping threshold crossed {threshold_slot:%Y-%m-%d %H:%M} UTC; "
+                "poller best-effort, that slot may have been dropped"
             )
         else:
             lines.append(
-                f"  [PINGED] {path}: 0x{streak} scrapes — real-time ping fired "
-                f"{fire_slot:%Y-%m-%d %H:%M} UTC"
+                f"  [PING-DUE] {path}: 0x{streak} scrapes — real-time ping threshold crossed "
+                f"{threshold_slot:%Y-%m-%d %H:%M} UTC; poller best-effort, that slot may have been dropped"
             )
     for path, current, median in buckets["trend"]:
         pct = round((current - median) / median * 100)

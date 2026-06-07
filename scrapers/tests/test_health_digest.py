@@ -80,27 +80,46 @@ def test_below_threshold_streak_renders_warn_line():
     assert any(line.startswith("  [WARN] /montipora/: 0 cards, 2 scrape(s) running") for line in lines)
 
 
-def test_pinged_cross_reference_with_fire_slot():
-    runs = window(3)  # fired at streak 3 — newest run 2026-06-04 09:51 -> slot 10:11
+def test_pinged_cross_reference_with_threshold_slot():
+    runs = window(3)  # threshold crossed at streak 3 — newest run 2026-06-04 09:51 -> slot 10:11
     buckets = classify(runs)
     assert len(buckets["pinged"]) == 1
-    path, streak, fire_slot = buckets["pinged"][0]
+    path, streak, threshold_slot = buckets["pinged"][0]
     assert (path, streak) == ("/montipora/", 3)
-    assert fire_slot == datetime(2026, 6, 4, 10, 11, tzinfo=UTC)
+    assert threshold_slot == datetime(2026, 6, 4, 10, 11, tzinfo=UTC)
     lines = render_vendor_lines("aquasd", runs, buckets, DEFAULT_THRESHOLDS)
     assert any(
-        line == "  [PINGED] /montipora/: 0x3 scrapes — real-time ping fired 2026-06-04 10:11 UTC"
+        line == (
+            "  [PING-DUE] /montipora/: 0x3 scrapes — real-time ping threshold crossed "
+            "2026-06-04 10:11 UTC; poller best-effort, that slot may have been dropped"
+        )
         for line in lines
     )
 
 
-def test_pinged_streak_5_fire_slot_points_at_completing_run():
-    # Streak 5: the ping fired two runs ago (streak hit 3 on 2026-06-02 09:51).
+def test_pinged_line_does_not_assert_a_ping_fired():
+    # The defect that reopened the verify window: the digest computes the
+    # slot from streak arithmetic alone and has no ping-state table (D-5),
+    # so it must never claim a ping "fired" — GH drops poller slots, and a
+    # false "already alerted" read makes the operator dismiss the condition.
+    for n in (3, 8):  # normal and saturate (broken-detection) wordings
+        runs = window(n)
+        lines = render_vendor_lines("aquasd", runs, classify(runs), DEFAULT_THRESHOLDS)
+        pinged = [ln for ln in lines if "[PING-DUE]" in ln]
+        assert len(pinged) == 1
+        line = pinged[0]
+        assert "fired" not in line  # no fired-ping assertion, either wording
+        assert "[PINGED]" not in line  # the past-tense marker is gone
+        assert "best-effort" in line and "may have been dropped" in line
+
+
+def test_pinged_streak_5_threshold_slot_points_at_completing_run():
+    # Streak 5: the threshold was crossed two runs ago (streak hit 3 on 2026-06-02 09:51).
     runs = window(5)
     buckets = classify(runs)
-    _, streak, fire_slot = buckets["pinged"][0]
+    _, streak, threshold_slot = buckets["pinged"][0]
     assert streak == 5
-    assert fire_slot == datetime(2026, 6, 2, 10, 11, tzinfo=UTC)
+    assert threshold_slot == datetime(2026, 6, 2, 10, 11, tzinfo=UTC)
 
 
 def test_saturate_state_renders_broken_detection_wording():
@@ -165,8 +184,9 @@ def main() -> None:
         test_curator_empty_labeled_not_warned,
         test_sparse_not_warned,
         test_below_threshold_streak_renders_warn_line,
-        test_pinged_cross_reference_with_fire_slot,
-        test_pinged_streak_5_fire_slot_points_at_completing_run,
+        test_pinged_cross_reference_with_threshold_slot,
+        test_pinged_line_does_not_assert_a_ping_fired,
+        test_pinged_streak_5_threshold_slot_points_at_completing_run,
         test_saturate_state_renders_broken_detection_wording,
         test_trend_marker_only_past_50pct_deviation,
         test_inactive_vendor_renders_inactive_line,
