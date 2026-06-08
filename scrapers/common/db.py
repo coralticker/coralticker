@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 
 import psycopg
@@ -56,6 +57,16 @@ log = logging.getLogger(__name__)
 # a connect-error message. CTK-118 Fix #1.
 _CONNINFO_PLACEHOLDER = "<redacted:NEON_DATABASE_URL>"
 
+# conninfo keys whose values are NOT sensitive — kept verbatim so the scrubbed
+# message stays useful for debugging. Everything else parsed out of the
+# conninfo is redacted (denylist-by-default / allowlist-the-safe). Erring
+# toward redaction is deliberate (over-redact-safe per CTK-118 plan §Fix #1):
+# a missed sensitive key leaks, a wrongly-redacted safe key is only cosmetic.
+# CTK-118 /code-review F1.
+_NONSENSITIVE_CONNINFO_KEYS = frozenset(
+    {"sslmode", "port", "connect_timeout", "application_name", "channel_binding"}
+)
+
 
 def _scrub_conninfo(msg: str, conninfo: str) -> str:
     """Redact NEON_DATABASE_URL detail from a psycopg connect-error message
@@ -69,6 +80,14 @@ def _scrub_conninfo(msg: str, conninfo: str) -> str:
     `.replace(conninfo, ...)` has the same blind spot. Scrub by component:
     parse the conninfo offline and redact each sensitive *value* wherever it
     appears in the message, not just the literal URL.
+
+    Redaction is denylist-by-default: every value parsed from the conninfo is
+    redacted EXCEPT the small _NONSENSITIVE_CONNINFO_KEYS allowlist. A prior
+    host/user/password-only allowlist (CTK-118 /code-review F1) leaked the Neon
+    endpoint id, which the non-SNI/pooler URL carries as `options=endpoint=ep-x`
+    — full-host redaction never matches the bare `ep-x` inside `options`, and
+    dbname/port survived too. The `options` value is decomposed so the bare
+    endpoint id is redacted, not just the whole `endpoint=ep-x` token.
 
     Fully defensive — this runs inside an except block, so it must never
     raise (a scrub that throws would replace a leak with a crash that masks
@@ -87,10 +106,23 @@ def _scrub_conninfo(msg: str, conninfo: str) -> str:
         #    URL, so the components leak even when the literal URL does not.
         #    conninfo_to_dict is offline (no connection attempt).
         parts = conninfo_to_dict(conninfo)
-        for key in ("password", "host", "user"):
-            value = parts.get(key)
-            if value:
-                scrubbed = scrubbed.replace(str(value), _CONNINFO_PLACEHOLDER)
+        tokens: set[str] = set()
+        for key, value in parts.items():
+            if not value or key in _NONSENSITIVE_CONNINFO_KEYS:
+                continue
+            value = str(value)
+            tokens.add(value)
+            # `options` is compound (e.g. "endpoint=ep-x" / "-c endpoint=ep-x").
+            # Redacting the whole value misses a bare `ep-x` echoed elsewhere,
+            # so pull the endpoint id out as its own token.
+            if key == "options":
+                m = re.search(r"endpoint=([^\s&]+)", value)
+                if m:
+                    tokens.add(m.group(1))
+        # Redact longest-first so a short token can't fragment a longer one
+        # before it is matched.
+        for token in sorted(tokens, key=len, reverse=True):
+            scrubbed = scrubbed.replace(token, _CONNINFO_PLACEHOLDER)
         return scrubbed
     except Exception:  # noqa: BLE001 — scrub must never raise out of except
         return "conninfo unparseable; value redacted"

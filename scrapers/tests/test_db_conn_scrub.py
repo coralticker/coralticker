@@ -26,9 +26,13 @@ Coverage:
 
 from __future__ import annotations
 
+import os
 import sys
+from unittest import mock
 
-from scrapers.common.db import _CONNINFO_PLACEHOLDER, _scrub_conninfo
+import psycopg
+
+from scrapers.common.db import _CONNINFO_PLACEHOLDER, _scrub_conninfo, get_conn
 
 # Synthetic conninfo — looks like a real Neon URL but is fabricated for the
 # test. Components are distinctive so a survival check is unambiguous.
@@ -96,6 +100,57 @@ def test_unparseable_never_raises():
     assert isinstance(out, str), f"scrub must return a string; got: {out!r}"
 
 
+def test_options_endpoint_id_redacted():
+    """CTK-118 /code-review F1: the non-SNI/pooler URL carries the Neon
+    endpoint id as options=endpoint=ep-x. psycopg can echo the *bare* endpoint
+    id, which whole-host (or whole-options-value) redaction misses. The scrub
+    must redact the bare endpoint id, not just the `endpoint=ep-x` token."""
+    endpoint = "ep-test-endpoint-xyz-12345"
+    conninfo = (
+        f"postgresql://{USER}:{PASSWORD}@pooler.us-east-2.aws.neon.tech/neondb"
+        f"?options=endpoint%3D{endpoint}&sslmode=require"
+    )
+    # psycopg echoes the bare endpoint id, not the whole "endpoint=ep-x" token.
+    msg = f'connection failed for endpoint "{endpoint}": timeout expired'
+    out = _scrub_conninfo(msg, conninfo)
+    assert endpoint not in out, f"bare endpoint id survived scrub: {out!r}"
+    assert _CONNINFO_PLACEHOLDER in out, f"no redaction marker; got: {out!r}"
+
+
+def test_reraise_preserves_type_and_scrubs():
+    """CTK-118 /code-review F3: pin the get_conn() re-raise path. For each of
+    the two caught types, a connect that raises with a sensitive message must
+    re-raise (a) the SAME type, (b) a scrubbed message, (c) with `from None`
+    (no __cause__, context suppressed) so the un-scrubbed original cannot reach
+    a printed traceback. Locks the docstring's "callers' except OperationalError
+    routing is unchanged" hook + the two-type except tuple."""
+    raised_msg = (
+        f'FATAL: password authentication failed for user "{USER}" '
+        f"(host={HOST} user={USER} password={PASSWORD} dbname=neondb)"
+    )
+    for exc_type in (psycopg.OperationalError, psycopg.ProgrammingError):
+        with mock.patch.dict(os.environ, {"NEON_DATABASE_URL": CONNINFO}):
+            with mock.patch("psycopg.connect", side_effect=exc_type(raised_msg)):
+                raised = None
+                try:
+                    get_conn()
+                except Exception as e:  # noqa: BLE001 — capture for assertions
+                    raised = e
+        assert raised is not None, f"get_conn must re-raise on {exc_type.__name__}"
+        assert type(raised) is exc_type, (
+            f"re-raise must preserve type; expected {exc_type.__name__}, "
+            f"got {type(raised).__name__}"
+        )
+        for tok in SENSITIVE_TOKENS:
+            assert tok not in str(raised), (
+                f"sensitive token {tok!r} survived re-raise: {raised}"
+            )
+        assert raised.__cause__ is None, "`from None` must clear __cause__"
+        assert raised.__suppress_context__ is True, (
+            "`from None` must suppress the chained context"
+        )
+
+
 # --- Test runner ----------------------------------------------------------
 TESTS = [
     test_literal_url_redacted,
@@ -103,6 +158,8 @@ TESTS = [
     test_password_alone_redacted,
     test_unparseable_conninfo_falls_back,
     test_unparseable_never_raises,
+    test_options_endpoint_id_redacted,
+    test_reraise_preserves_type_and_scrubs,
 ]
 
 
