@@ -161,6 +161,17 @@ def _resolve_convergence_k(config: dict) -> int:
     hygiene bundle (open-items L36) — not widened here."""
     override = config.get("cohort_convergence_k") or None
     if override is not None:
+        # CTK-137 /code-review F1: reject bool and float before coercing. bool
+        # subclasses int, so int(True)=1 would silently pick the most-aggressive
+        # K=1; int(2.5)=2 would silently truncate. Both must route 'config' per
+        # the SC. bool is checked first (it would pass the int isinstance);
+        # floats / lists / etc. fail the (int, str) clause. A str non-numeric
+        # still falls through to the int() ValueError below.
+        if isinstance(override, bool) or not isinstance(override, (int, str)):
+            raise ConfigError(
+                f"cohort_convergence_k must be an integer in (0, 100); "
+                f"got {override!r}"
+            )
         try:
             k = int(override)
         except (TypeError, ValueError):

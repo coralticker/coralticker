@@ -140,6 +140,30 @@ def test_k_non_numeric_routes_config_error():
     assert raised, "non-numeric cohort_convergence_k must raise ConfigError (not ValueError)"
 
 
+def test_k_bool_raises_not_silent_k1():
+    """CTK-137 /code-review F1: `cohort_convergence_k: true` must raise, NOT
+    silently become K=1 (int(True)=1, the most-aggressive setting that defeats
+    multi-run stability). bool subclasses int, so it has to be rejected before
+    the int() coerce."""
+    raised = False
+    try:
+        _resolve_convergence_k({"cohort_convergence_k": True})
+    except ConfigError:
+        raised = True
+    assert raised, "bool cohort_convergence_k must raise ConfigError, not collapse to K=1"
+
+
+def test_k_float_raises_not_silent_truncation():
+    """CTK-137 /code-review F1: `cohort_convergence_k: 2.5` must raise, NOT
+    silently truncate to int(2.5)=2."""
+    raised = False
+    try:
+        _resolve_convergence_k({"cohort_convergence_k": 2.5})
+    except ConfigError:
+        raised = True
+    assert raised, "float cohort_convergence_k must raise ConfigError, not truncate"
+
+
 # ---------------------------------------------------------------------------
 # The 8 verify-pass scenarios — _flip_cap_converged (both directions)
 # ---------------------------------------------------------------------------
@@ -242,6 +266,8 @@ if __name__ == "__main__":
         test_k_blank_collapses_to_default,
         test_k_out_of_range_raises_config_error,
         test_k_non_numeric_routes_config_error,
+        test_k_bool_raises_not_silent_k1,
+        test_k_float_raises_not_silent_truncation,
         test_1_converge_on_stable_shift,
         test_2_k_boundary_off_by_one,
         test_3_no_converge_on_unstable_set,
