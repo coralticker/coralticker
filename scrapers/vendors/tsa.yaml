@@ -142,6 +142,7 @@ category_filter:
     - Predator            # reef-safety rating family — fish gate per CTK-104 D-1 structural discriminator (2026-06-01)
     - Reef Safe           # reef-safety rating family — fish gate per CTK-104 D-1 structural discriminator (2026-06-01)
     - Reef Safe Caution   # reef-safety rating family — fish gate per CTK-104 D-1 structural discriminator (2026-06-01)
+    - Reef Safe with Caution # reef-safety full-phrase variant — distinct phrase, not a spacing variant of "Reef Safe Caution"; explicit entry so membership stays exact-match (CTK-117 Arm 2 / folds CTK-104 #5). Punctuation/whitespace variants (Reef-Safe, trailing-space) handled by _normalize_tag, not this entry.
     - Refugiums           # bio-media umbrella future-proof, 6 items (CTK-041 2026-05-21)
     - Tang                # fish, 33 items in Livestock (CTK-037 2026-05-10)
     - Tilefish            # fish (Purple Tilefish; defensive plural-tag-form coverage; CTK-095 Axis 2 2026-05-30)

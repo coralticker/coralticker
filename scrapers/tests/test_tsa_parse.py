@@ -55,20 +55,22 @@ IMAGE_STRATEGY = "mirror"
 # by allowlist default.
 TSA_CATEGORY_FILTER = {
     "product_type_allowlist": ["", "Coral-POS", "Livestock"],
-    # Mirrors the production scrapers/vendors/tsa.yaml 29-entry tag_denylist:
-    # 6 reef-safety tag family (CTK-104 D-1 structural fish gate) + 3 equipment
-    # tags (CTK-104 D-2 jellyfish-aquarium plug for the blank-PT allowlist
-    # entry) + 12 per-genus fish (D-1A belt-and-suspenders) + 8 invert / bio-
-    # media (CTK-041 + CTK-095 + Biomedia per CTK-107 D-2-tris; the Biomedia
-    # entry was missing from this mirror until the CTK-112 review-fold).
-    # Sorted alphabetically to match YAML.
+    # Mirrors the production scrapers/vendors/tsa.yaml 30-entry tag_denylist:
+    # 7 reef-safety tag family (CTK-104 D-1 structural fish gate + CTK-117 Arm 2
+    # "Reef Safe with Caution" full-phrase variant) + 3 equipment tags (CTK-104
+    # D-2 jellyfish-aquarium plug for the blank-PT allowlist entry) + 12 per-
+    # genus fish (D-1A belt-and-suspenders) + 8 invert / bio-media (CTK-041 +
+    # CTK-095 + Biomedia per CTK-107 D-2-tris; the Biomedia entry was missing
+    # from this mirror until the CTK-112 review-fold). Sorted alphabetically to
+    # match YAML.
     "tag_denylist": [
         "Algae Eater", "All-in-One Aquariums", "Angelfish", "Aquariums",
         "Beginner Fish", "Biomedia", "Clam", "Clownfish", "EXPERT ONLY",
         "Filefish", "Goby", "Hawkfish", "Invert", "Jellyfish Art",
         "Live Rock", "Macroalgae", "Mangrove", "Nano Fish", "Non Reef Safe",
         "Not Reef Safe", "Predator", "Reef Safe", "Reef Safe Caution",
-        "Refugiums", "Tang", "Tilefish", "Wrasse", "Wrasses", "WYSIWYG Fish",
+        "Reef Safe with Caution", "Refugiums", "Tang", "Tilefish", "Wrasse",
+        "Wrasses", "WYSIWYG Fish",
     ],
     # Mirrors scrapers/vendors/tsa.yaml title_denylist. The prior mirror omitted
     # this axis entirely (stale vs. CTK-107's title-axis additions); brought to
@@ -479,6 +481,50 @@ def test_filter_keeps_coral_without_reef_safety_tag(products):
         )
 
 
+# ─── CTK-117 Arm 2: reef-safety label-shape variants reject (folds CTK-104 #5) ─
+def test_filter_rejects_reef_safety_label_variants(products):
+    """CTK-117 Arm 2 (folds CTK-104 close /code-review #5) — `_should_keep`'s
+    tag_denylist membership previously did exact lowercased match, so reef-safety
+    label-shape drift slipped through: `Reef-Safe` (hyphen), trailing/leading
+    whitespace, and the distinct full phrase `Reef Safe with Caution`. The first
+    two are now folded by _normalize_tag (hyphen->space + whitespace-collapse,
+    both sides); the full phrase rides an explicit YAML denylist entry. Each
+    variant must reject on its own under the Livestock allowlist."""
+    for rs_variant in ("Reef-Safe", "Reef Safe ", " Reef Safe", "REEF SAFE",
+                       "Reef  Safe", "Non-Reef Safe", "Reef Safe with Caution"):
+        product = {
+            "title": f"Fictitious Test Fish ({rs_variant})",
+            "product_type": "Livestock",
+            "tags": [rs_variant],
+            "variants": [{"available": True}],
+        }
+        assert _should_keep(product, TSA_CATEGORY_FILTER) is False, (
+            f"reef-safety label variant {rs_variant!r} should reject; product passed"
+        )
+
+
+# ─── CTK-117 Arm 2 false-kill guard: normalization must not over-match coral ──
+def test_normalize_tag_does_not_over_match_coral_tags(products):
+    """CTK-117 Arm 2 false-kill guard — the hyphen->space + whitespace-collapse
+    normalization is symmetric, so it must not collapse a distinct coral tag onto
+    a denylisted reef-safety entry. A coral row whose only tags are reef-name
+    tags ("WYSIWYG", "SPS") carrying hyphens/spacing must still pass — the fold
+    widens matching only for true label-shape variants of denylisted entries,
+    not for unrelated tags that happen to share tokens after normalization."""
+    for coral_tag in ("Reef-Builder", "Safe Harbor", "Cautionary Tale",
+                      "Reef Tank Safe Coral"):
+        product = {
+            "title": f"Fictitious Coral ({coral_tag})",
+            "product_type": "Livestock",
+            "tags": [coral_tag],
+            "variants": [{"available": True}],
+        }
+        assert _should_keep(product, TSA_CATEGORY_FILTER) is True, (
+            f"coral-shaped tag {coral_tag!r} false-killed by _normalize_tag over-match; "
+            f"normalization must match only true denylist-entry variants"
+        )
+
+
 # ─── CTK-104 D-2: equipment tag rejects jellyfish-aquarium leak under blank-PT ─
 def test_filter_rejects_equipment_tag_under_blank_pt(products):
     """CTK-104 D-2 (2026-06-01) — the blank-product_type allowlist entry was
@@ -596,6 +642,8 @@ def main() -> int:
         test_filter_rejects_livestock_algae_eater,
         test_filter_rejects_reef_safety_tag_family,
         test_filter_keeps_coral_without_reef_safety_tag,
+        test_filter_rejects_reef_safety_label_variants,
+        test_normalize_tag_does_not_over_match_coral_tags,
         test_filter_rejects_equipment_tag_under_blank_pt,
         test_filter_rejects_late_fees_store_credit_sku,
         test_filter_keeps_coral_with_fee_substring,

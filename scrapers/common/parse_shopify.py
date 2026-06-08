@@ -294,6 +294,28 @@ def fetch_and_parse(config: dict) -> ParseResult:
     )
 
 
+def _normalize_tag(value: str) -> str:
+    """CTK-117 Arm 2 — tolerant tag normalization for tag_denylist membership.
+    Folds the label-shape variants TSA emits on the reef-safety rating family
+    that exact lowercased membership missed (CTK-104 close /code-review #5):
+    hyphen-vs-space (`Reef-Safe` vs `Reef Safe`), leading/trailing whitespace,
+    and internal whitespace runs. Applied to BOTH sides of the membership test
+    so a vendor tag-shape drift (`Reef-Safe`) matches a `Reef Safe` denylist
+    entry — symmetric, so every pre-existing exact match still matches (same
+    transform both sides; no entry that matched before stops matching).
+
+    Scope note: full-phrase variants that are NOT punctuation/whitespace-
+    equivalent (e.g. `Reef Safe with Caution` — a distinct phrase, not a
+    spacing variant of `Reef Safe`) are out of this fold's reach by design;
+    they are covered by an explicit YAML denylist entry so membership stays
+    exact-match and no substring/prefix matching is introduced (substring
+    matching on the denylist would collide fleet-wide). Applied to the
+    tag_denylist axis only — tag_allowlist keeps the CTK-096 D-2 lowercase
+    membership untouched (normalizing the allowlist would only widen it, and
+    it's out of this ticket's scope)."""
+    return " ".join(value.lower().replace("-", " ").split())
+
+
 def _should_keep(product: dict, category_filter: dict | None, in_stock_only: bool = False) -> bool:
     """CTK-037 category-filter gate. Returns True if product passes; False if
     rejected by the availability gate, the allowlist, the tag-denylist, or the
@@ -394,8 +416,14 @@ def _should_keep(product: dict, category_filter: dict | None, in_stock_only: boo
         if not any(t.lower() in tag_allowlist_lc for t in tags):
             return False
     if tag_denylist:
-        tag_denylist_lc = {e.lower() for e in tag_denylist}
-        if any(t.lower() in tag_denylist_lc for t in tags):
+        # CTK-117 Arm 2: normalize both sides via _normalize_tag (hyphen->space
+        # + whitespace-collapse + lower) so reef-safety label-shape variants
+        # (`Reef-Safe`, trailing whitespace) match their canonical denylist
+        # entry. Symmetric — supersedes the CTK-096 D-2 lowercase-only
+        # membership without dropping any prior match. Full-phrase variants
+        # (`Reef Safe with Caution`) ride explicit YAML entries, not this fold.
+        tag_denylist_norm = {_normalize_tag(e) for e in tag_denylist}
+        if any(_normalize_tag(t) in tag_denylist_norm for t in tags):
             return False
     # CTK-096 D-1: 5th axis. Case-insensitive substring against raw_title.
     if title_denylist:
