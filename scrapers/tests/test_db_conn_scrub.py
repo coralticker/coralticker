@@ -28,9 +28,11 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 from unittest import mock
 
 import psycopg
+import yaml
 
 from scrapers.common.db import _CONNINFO_PLACEHOLDER, _scrub_conninfo, get_conn
 
@@ -151,6 +153,37 @@ def test_reraise_preserves_type_and_scrubs():
         )
 
 
+def test_preflight_action_manifest_has_no_template_expression():
+    """CTK-118 /code-review fold (live Tier 1A regression, 2026-06-08): GitHub
+    evaluates ${{ }} template expressions in EVERY action-manifest field,
+    including `description`, at load time — and the `secrets` context is not
+    valid in an action manifest. A `secrets.NEON_DATABASE_URL` example snippet
+    in the description raised TemplateValidationException, so the action never
+    loaded and all 14 workflows silently skipped their work (fail-safe, but a
+    fleet-wide scrape outage). The no-DB suite can't see manifest validity —
+    only a real dispatch enforces it — so pin the exact class here: no metadata
+    field of the manifest may carry a ${{ }} expression.
+
+    The legal place for the expression is the calling workflow's env: block
+    (workflow context), which this guard does not touch."""
+    action_path = (
+        Path(__file__).resolve().parents[2]
+        / ".github"
+        / "actions"
+        / "preflight-neon-secret"
+        / "action.yml"
+    )
+    assert action_path.exists(), f"preflight action manifest missing: {action_path}"
+    manifest = yaml.safe_load(action_path.read_text(encoding="utf-8"))
+    for field in ("name", "description"):
+        value = manifest.get(field, "")
+        assert "${{" not in str(value), (
+            f"action manifest `{field}` must not contain a ${{{{ }}}} expression "
+            f"(GitHub evaluates it at load time; `secrets` is invalid there): "
+            f"{value!r}"
+        )
+
+
 # --- Test runner ----------------------------------------------------------
 TESTS = [
     test_literal_url_redacted,
@@ -160,6 +193,7 @@ TESTS = [
     test_unparseable_never_raises,
     test_options_endpoint_id_redacted,
     test_reraise_preserves_type_and_scrubs,
+    test_preflight_action_manifest_has_no_template_expression,
 ]
 
 

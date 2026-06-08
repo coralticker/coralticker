@@ -1,27 +1,31 @@
 name: preflight-neon-secret
+# IMPORTANT: no template expressions (the two-brace moustache syntax) anywhere
+# in this manifest's metadata fields. GitHub evaluates expressions in EVERY
+# action-manifest field, including description, at load time — and the secrets
+# context is not valid in an action manifest. An example snippet containing a
+# secrets expression here raises TemplateValidationException and the action
+# never loads, silently skipping every workflow that uses it (CTK-118 live
+# Tier 1A regression, 2026-06-08). Describe usage in prose with a placeholder
+# instead. The expression in the calling workflow's env: block is fine — that
+# is workflow context, where secrets is valid.
 description: >-
   Fail-closed offline shape-check of NEON_DATABASE_URL before any step that
   could echo it on connect (CTK-118 Fix #2). Asserts non-empty, postgresql://
   prefix, and psycopg.conninfo offline-parseability. Never connects to the
-  database; never echoes the secret value — only a failure reason. Pass the
-  secret in via the calling step's env block:
-
-    - uses: ./.github/actions/preflight-neon-secret
-      env:
-        NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
-
-  Run BEFORE the first step that opens a DB connection. A malformed rotated
-  secret fails here as "malformed" instead of reaching a psycopg.connect that
-  could leak a transformed conninfo into a public log (the 06-04 incident).
-  The step is additive and fail-safe: worst case is a loud false-malformed
-  that blocks one run, never a silent corruption.
-
-  Self-sufficient across heterogeneous workflows. The 13 Python scraper /
-  digest workflows already install psycopg via requirements.txt, so the
-  detect step short-circuits and the check runs immediately. The one Node
-  consumer (discord-digest) has no Python toolchain, so the action sets up
-  Python + psycopg only when the detect step finds it missing. This keeps a
-  single identical `uses:` block valid on all 14 consumers.
+  database; never echoes the secret value — only a failure reason. Usage: add
+  this action as a step and pass the NEON_DATABASE_URL secret via the calling
+  step's env block (env: NEON_DATABASE_URL set to the secrets.NEON_DATABASE_URL
+  workflow expression). Run BEFORE the first step that opens a DB connection. A
+  malformed rotated secret fails here as "malformed" instead of reaching a
+  psycopg.connect that could leak a transformed conninfo into a public log (the
+  06-04 incident). The step is additive and fail-safe: worst case is a loud
+  false-malformed that blocks one run, never a silent corruption. Self-sufficient
+  across heterogeneous workflows. The 13 Python scraper / digest workflows
+  already install psycopg via requirements.txt, so the detect step short-circuits
+  and the check runs immediately. The one Node consumer (discord-digest) has no
+  Python toolchain, so the action sets up Python + psycopg only when the detect
+  step finds it missing. This keeps a single identical step valid on all 14
+  consumers.
 runs:
   using: composite
   steps:
