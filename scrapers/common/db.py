@@ -356,6 +356,35 @@ def get_7d_median_pages_fetched(conn: psycopg.Connection, vendor_id: int) -> flo
     return (values[n // 2 - 1] + values[n // 2]) / 2.0
 
 
+def get_recent_cohort_absent_hashes(
+    conn: psycopg.Connection, vendor_id: int, run_id: int, limit: int
+) -> list[str | None]:
+    """CTK-137 T-3 — the last `limit` (= K-1) runs' cohort_absent_set_hash for
+    this vendor, newest first, EXCLUDING the in-flight run_id (its own hash
+    isn't written until finish_scraper_run, so it must not be in the lookback).
+
+    Used by the stateful-convergence K-stable check: convergence fires only
+    when these K-1 prior hashes ALL equal the current run's computed hash.
+    Returns each row's hash as-is (str or None) — a NULL (failed/blocked fetch
+    that never computed a cohort absent-set, or a pre-CTK-137 row) is returned
+    as None so the caller's equality test breaks the stable chain on it.
+
+    Fewer than `limit` rows when history is short (new vendor / few runs); the
+    caller treats short history as 'not yet K-stable' and does not converge.
+    No-op-safe at limit<=0 (K=1 → limit 0): returns []."""
+    if limit <= 0:
+        return []
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT cohort_absent_set_hash FROM scraper_runs "
+            "WHERE vendor_id = %s AND id <> %s "
+            "ORDER BY started_at DESC "
+            "LIMIT %s",
+            (vendor_id, run_id, limit),
+        )
+        return [r["cohort_absent_set_hash"] for r in cur.fetchall()]
+
+
 def start_scraper_run(conn: psycopg.Connection, vendor_id: int, git_sha: str) -> int:
     """Insert a scraper_runs row at stage 1 with status='running'. Returns
     the bigserial id used by price_history.scraper_run_id and by the post-step
@@ -381,6 +410,8 @@ def finish_scraper_run(
     http_status_last: int | None,
     per_category_counts: dict | None = None,
     pages_fetched: int | None = None,
+    cohort_absent_set_hash: str | None = None,
+    cohort_absent_count: int | None = None,
 ) -> None:
     """Stage 7 (Log) — finalize the row. Called from run.py finally-block so
     every code path that opens a run also closes it.
@@ -389,6 +420,12 @@ def finish_scraper_run(
     category_cohort_signal:true in YAML; populated by parse_bigcommerce on
     AquaSD) + pages_fetched (default None on pre-CTK-094 / failure-before-
     fetch paths; populated by all three parsers when fetch ran at all).
+
+    CTK-137 extensions: cohort_absent_set_hash (sha256 of the sorted
+    product_url set in the run's cohort-OOS absent-set; NULL when no cohort
+    decisions were computed) + cohort_absent_count (len of that set at gate
+    time). Both feed the stateful-convergence K-stable check via
+    get_recent_cohort_absent_hashes. Written on every run.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -398,7 +435,8 @@ def finish_scraper_run(
             "listings_restocked = %s, listings_oos = %s, "
             "error_class = %s, error_message = %s, "
             "http_status_last = %s, html_hash = %s, "
-            "per_category_counts = %s::jsonb, pages_fetched = %s "
+            "per_category_counts = %s::jsonb, pages_fetched = %s, "
+            "cohort_absent_set_hash = %s, cohort_absent_count = %s "
             "WHERE id = %s",
             (
                 status,
@@ -414,6 +452,8 @@ def finish_scraper_run(
                 html_hash,
                 json.dumps(per_category_counts or {}),
                 pages_fetched,
+                cohort_absent_set_hash,
+                cohort_absent_count,
                 run_id,
             ),
         )

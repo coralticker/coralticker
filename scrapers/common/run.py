@@ -28,6 +28,7 @@ still-`running` rows on hard-kill timeout per arch §2.4.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import logging
 import os
 import sys
@@ -114,6 +115,122 @@ def _flip_cap_tripped(cohort_flip_count: int, flip_cap: int) -> bool:
     the cap persists; cap+1 trips. Named (not inline `>`) so the boundary
     semantic is unit-pinned in test_cohort_guard.py."""
     return cohort_flip_count > flip_cap
+
+
+# CTK-137 T-4 — within-page-truncation floor for convergence. listings_seen
+# must be >= SEEN_FLOOR x the 7d-median to auto-converge. completeness_degraded
+# watches PAGE count (a full page count can still hide a within-page item
+# truncation); this item-count floor catches a large within-page drop the page
+# gate misses. Convergence-only precondition — does NOT feed CTK-120's primary
+# drop gate. Internal constant, not a YAML knob in v1 (promote to a per-vendor
+# knob if a vendor's settled-shift cadence needs it).
+SEEN_FLOOR = 0.8
+
+
+def _cohort_absent_set_hash(cohort_oos_decisions: list) -> str | None:
+    """CTK-137 T-2 — fingerprint the cohort-OOS absent-set: sha256 of the
+    sorted product_url set. Returns None when there are no cohort decisions
+    (nothing to track; the convergence check treats NULL history as 'no stable
+    run'). Keyed on absent-set MEMBERSHIP, never on html_hash (the Shopify
+    schema sentinel is item-count-invariant — PE's stayed byte-identical
+    through a real 159-item delist; that is the load-bearing reason this is a
+    membership hash, per the PE triage 2026-06-08)."""
+    if not cohort_oos_decisions:
+        return None
+    joined = ",".join(sorted(d.item["product_url"] for d in cohort_oos_decisions))
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()
+
+
+def _resolve_convergence_k(config: dict) -> int:
+    """CTK-137 D-3 — resolve the K-stable convergence threshold. Fleet default
+    3; per-vendor YAML override via `cohort_convergence_k`. Coalesce-then-range
+    mirrors canary_floor / cohort_flip_cap (run.py Stage 5.6 / D-2): blank /
+    null / 0 collapses to the default. K=3 is conservative-by-design because
+    convergence WRITES (a false-converge persists wrong data) and removes the
+    human from the loop — three identical absent-sets is materially stronger
+    'settled real state' evidence than two, and the cost is only a few extra
+    loud-alarming trip-cycles before auto-recovery (an operator can still flush
+    early). A high-volatility vendor may override to 2. ConfigError routes to
+    error_class='config' via the run() handler.
+
+    Non-numeric override: unlike the bare int() in canary_floor / cohort_flip_cap
+    (the CTK-120 /code-review #3 gap, where a non-numeric YAML hits ValueError ->
+    error_class='other'), this knob wraps the parse so a typo like
+    `cohort_convergence_k: three` routes 'config' per the CTK-137 success
+    criterion. The retrofit of the two older knobs stays on the CTK-120 run.py
+    hygiene bundle (open-items L36) — not widened here."""
+    override = config.get("cohort_convergence_k") or None
+    if override is not None:
+        try:
+            k = int(override)
+        except (TypeError, ValueError):
+            raise ConfigError(
+                f"cohort_convergence_k must be an integer in (0, 100); "
+                f"got {override!r}"
+            ) from None
+        if not 0 < k < 100:
+            raise ConfigError(
+                f"cohort_convergence_k must be in (0, 100); got {k}"
+            )
+        return k
+    return 3
+
+
+def _flip_cap_converged(
+    current_hash: str | None,
+    recent_absent_hashes: list,
+    convergence_k: int,
+    *,
+    seen_not_degraded: bool,
+    canary_tripped: bool,
+    matcher_error_count: int,
+    cohort_unsafe_partial: bool,
+    completeness_degraded: bool,
+    flip_cap_tripped: bool,
+) -> bool:
+    """CTK-137 D-2/D-3 — True when a flip-cap trip should auto-converge
+    (persist the over-cap flips instead of dropping them). Pure: the K-1 prior
+    hashes are supplied by the caller (db.get_recent_cohort_absent_hashes), so
+    the whole convergence decision is unit-testable without a DB.
+
+    Fires only when ALL hold (D-2):
+      1. flip_cap is the SOLE drop reason — no canary trip, no matcher
+         exceptions, no cohort_unsafe_partial, no completeness_degraded. A real
+         partial-fetch / canary signal is never overridden by convergence.
+      2. seen_not_degraded — the within-page-truncation floor (D-2 #2 / T-4).
+      3. K-stable absent-set — the current hash is non-NULL AND the
+         immediately-preceding K-1 runs each carry that same hash. Short
+         history (<K-1 rows) or any NULL/differing hash breaks the chain (a
+         clean/converged run between trips hashes its empty/changed set
+         differently and correctly resets stability).
+
+    Scope (D-1): the absent-set must be IDENTICAL across K runs, so an active
+    rolling sell-down (set grows each run -> different hash) never converges
+    mid-sale; convergence fires only once the shift SETTLES. The operator
+    one-shot flush stays the fast-path for an active multi-hour sale. What this
+    removes is the INDEFINITE orphaned self-lock: a settled shift the operator
+    never noticed now self-recovers K runs after settling.
+
+    Residual (bounded, accepted): a small, pathologically-stable within-page
+    truncation below SEEN_FLOOR's reach, identical across K runs with both
+    existing discriminators clear, is indistinguishable from a real shift by
+    counts/sets alone -> convergence would apply false-OOS flips. The harm is
+    the SAME bounded self-healing 1B class CTK-120 already accepts (next full
+    fetch resurfaces the rows as restocked, one cycle then heals), and it is
+    strictly better than the status quo's unbounded overstated-available lock.
+    """
+    if not flip_cap_tripped:
+        return False
+    if canary_tripped or matcher_error_count > 0 or cohort_unsafe_partial or completeness_degraded:
+        return False
+    if not seen_not_degraded:
+        return False
+    if current_hash is None:
+        return False
+    needed = convergence_k - 1
+    if len(recent_absent_hashes) < needed:
+        return False
+    return all(h == current_hash for h in recent_absent_hashes[:needed])
 
 
 def _apply_cohort_gate(
@@ -508,6 +625,57 @@ def run(slug: str) -> int:
         prev_in_stock = sum(1 for row in existing_by_url.values() if row.get("in_stock"))
         flip_cap = _resolve_flip_cap(config, prev_in_stock)
         flip_cap_tripped = _flip_cap_tripped(len(cohort_oos_decisions), flip_cap)
+
+        # CTK-137 — stateful convergence (self-lock escape). Fingerprint this
+        # run's cohort absent-set; after K consecutive runs observe the SAME
+        # fingerprint with every partial-fetch discriminator clear, auto-persist
+        # the over-cap flips so a settled real shift self-recovers without an
+        # operator one-shot flush. The cap stays first-line; convergence is the
+        # escape valve only after K-stable. Additive to CTK-120: it suppresses
+        # ONLY the flip_cap trip arm (via flip_cap_drop below) — completeness /
+        # canary / matcher arms are untouched, and a converged run is a normal
+        # status='success' (no new status, no reopening the CTK-120 surface).
+        # _resolve_convergence_k runs every run so a config typo trips loud
+        # even on a non-flip-cap run. The DB lookback only runs on a trip.
+        cohort_absent_set_hash = _cohort_absent_set_hash(cohort_oos_decisions)
+        cohort_absent_count = len(cohort_oos_decisions)
+        convergence_k = _resolve_convergence_k(config)
+        flip_cap_converged = False
+        if flip_cap_tripped:
+            # seen_not_degraded (D-2 #2 / T-4): item-count floor vs the 7d
+            # median. median_7d<=0 (no baseline) -> cannot confirm not-degraded
+            # -> do NOT converge (conservative: convergence writes data, so a
+            # missing baseline leaves the cap locked and the operator flush as
+            # the path). PE 2026-06-08: seen=4589 vs ~4748 median = 0.97 -> in
+            # band -> a real settled shift is correctly allowed to converge.
+            seen_not_degraded = median_7d > 0 and counters.seen >= SEEN_FLOOR * median_7d
+            recent_absent_hashes = db.get_recent_cohort_absent_hashes(
+                conn, vendor_row["id"], run_id, convergence_k - 1
+            )
+            flip_cap_converged = _flip_cap_converged(
+                cohort_absent_set_hash,
+                recent_absent_hashes,
+                convergence_k,
+                seen_not_degraded=seen_not_degraded,
+                canary_tripped=canary_tripped,
+                matcher_error_count=matcher_error_count,
+                cohort_unsafe_partial=cohort_unsafe_partial,
+                completeness_degraded=completeness_degraded,
+                flip_cap_tripped=flip_cap_tripped,
+            )
+        # Single suppression signal fed to BOTH the cohort gate and the
+        # status/error block: a converged trip drops out of both.
+        flip_cap_drop = flip_cap_tripped and not flip_cap_converged
+        if flip_cap_converged:
+            # D-6: converged run is status='success'; loud greppable recovery
+            # line (won't fire the if: failure() Slack alert, correct — this is
+            # recovery, not a failure). Runs 1..K-1 kept tripping loud as today.
+            log.warning(
+                "cohort guard: converged after K=%d stable runs: %d cohort-OOS "
+                "persisted (vendor=%s)",
+                convergence_k, len(cohort_oos_decisions), vendor_row["slug"],
+            )
+
         # D-3 — guard-trip observability. Stable greppable substrings (the
         # 'cohort guard:' family; the ratchet-critical 'silent canary
         # tripped:' contract is untouched — these clauses ride the same
@@ -529,7 +697,7 @@ def run(slug: str) -> int:
                     f"{error_message}; {guard_msg}" if error_message else guard_msg
                 )
                 error_class = error_class or "other"
-            if flip_cap_tripped:
+            if flip_cap_drop:
                 cohort_guard_tripped = True
                 guard_msg = (
                     f"cohort guard: flip cap tripped: cohort_flips={len(cohort_oos_decisions)} > "
@@ -558,7 +726,7 @@ def run(slug: str) -> int:
             matcher_error_count=matcher_error_count,
             cohort_unsafe_partial=cohort_unsafe_partial,
             completeness_degraded=completeness_degraded,
-            flip_cap_tripped=flip_cap_tripped,
+            flip_cap_tripped=flip_cap_drop,  # CTK-137: converged trip is not a drop
         )
         if cohort_safe and cohort_oos_decisions:
             log.info(
@@ -664,6 +832,8 @@ def run(slug: str) -> int:
             counters, html_hash, http_status_last,
             per_category_counts=per_category_counts,
             pages_fetched=pages_fetched,
+            cohort_absent_set_hash=cohort_absent_set_hash,
+            cohort_absent_count=cohort_absent_count,
         )
         status_finalized = True
         log.info("scraper_runs.id=%d finalized status=%s before Phase B", run_id, status)
