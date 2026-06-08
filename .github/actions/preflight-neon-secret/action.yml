@@ -1,0 +1,82 @@
+name: preflight-neon-secret
+description: >-
+  Fail-closed offline shape-check of NEON_DATABASE_URL before any step that
+  could echo it on connect (CTK-118 Fix #2). Asserts non-empty, postgresql://
+  prefix, and psycopg.conninfo offline-parseability. Never connects to the
+  database; never echoes the secret value — only a failure reason. Pass the
+  secret in via the calling step's env block:
+
+    - uses: ./.github/actions/preflight-neon-secret
+      env:
+        NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+  Run BEFORE the first step that opens a DB connection. A malformed rotated
+  secret fails here as "malformed" instead of reaching a psycopg.connect that
+  could leak a transformed conninfo into a public log (the 06-04 incident).
+  The step is additive and fail-safe: worst case is a loud false-malformed
+  that blocks one run, never a silent corruption.
+
+  Self-sufficient across heterogeneous workflows. The 13 Python scraper /
+  digest workflows already install psycopg via requirements.txt, so the
+  detect step short-circuits and the check runs immediately. The one Node
+  consumer (discord-digest) has no Python toolchain, so the action sets up
+  Python + psycopg only when the detect step finds it missing. This keeps a
+  single identical `uses:` block valid on all 14 consumers.
+runs:
+  using: composite
+  steps:
+    - name: Detect psycopg availability
+      id: detect
+      shell: bash
+      run: |
+        if python3 -c "import psycopg" 2>/dev/null; then
+          echo "have=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "have=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Set up Python (only when psycopg is missing)
+      if: steps.detect.outputs.have == 'false'
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+
+    - name: Install psycopg for offline parse (only when missing)
+      if: steps.detect.outputs.have == 'false'
+      shell: bash
+      run: pip install --quiet --disable-pip-version-check "psycopg[binary]"
+
+    - name: Offline shape-check NEON_DATABASE_URL
+      shell: bash
+      run: |
+        python3 - <<'PY'
+        import os
+        import sys
+
+        from psycopg.conninfo import conninfo_to_dict
+
+        # Read from env, never echo the value — only the failure reason.
+        value = os.environ.get("NEON_DATABASE_URL", "")
+
+        if not value:
+            print("NEON_DATABASE_URL malformed: unset or empty", file=sys.stderr)
+            sys.exit(1)
+
+        if not value.startswith(("postgresql://", "postgres://")):
+            print(
+                "NEON_DATABASE_URL malformed: missing postgresql:// prefix",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        try:
+            conninfo_to_dict(value)  # offline parse only; no connection attempt
+        except Exception:
+            print(
+                "NEON_DATABASE_URL malformed: conninfo unparseable",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        print("NEON_DATABASE_URL preflight ok (offline shape-check passed)")
+        PY

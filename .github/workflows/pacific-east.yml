@@ -34,6 +34,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r scrapers/requirements.txt
 
+      - name: Preflight NEON_DATABASE_URL
+        uses: ./.github/actions/preflight-neon-secret
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
       - name: Run Pacific East scraper
         id: scrape
         env:

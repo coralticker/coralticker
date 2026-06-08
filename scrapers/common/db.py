@@ -39,6 +39,7 @@ from datetime import datetime, timedelta, timezone
 
 import psycopg
 from dotenv import load_dotenv
+from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
 
 from scrapers.common.diff import Counters
@@ -51,6 +52,49 @@ load_dotenv()
 
 log = logging.getLogger(__name__)
 
+# Placeholder substituted for any NEON_DATABASE_URL component that surfaces in
+# a connect-error message. CTK-118 Fix #1.
+_CONNINFO_PLACEHOLDER = "<redacted:NEON_DATABASE_URL>"
+
+
+def _scrub_conninfo(msg: str, conninfo: str) -> str:
+    """Redact NEON_DATABASE_URL detail from a psycopg connect-error message
+    (CTK-118 Fix #1).
+
+    The 06-04 incident: a malformed rotated secret reached psycopg.connect,
+    which raised with a *transformed* form of the conninfo (URL reformatted
+    into `host=... user=... password=...`). GitHub Actions secret masking
+    matches on the literal secret value and missed the transformed substring,
+    so connection detail printed in a public Actions log. A literal
+    `.replace(conninfo, ...)` has the same blind spot. Scrub by component:
+    parse the conninfo offline and redact each sensitive *value* wherever it
+    appears in the message, not just the literal URL.
+
+    Fully defensive — this runs inside an except block, so it must never
+    raise (a scrub that throws would replace a leak with a crash that masks
+    the original error). conninfo_to_dict itself raises ProgrammingError on a
+    malformed conninfo (the F2 case), so on any failure we discard the whole
+    message and return a static redacted line — we cannot trust which spans
+    of an unparseable message are sensitive.
+    """
+    try:
+        scrubbed = msg
+        # 1. Whole-string redaction of the literal conninfo if it survived
+        #    verbatim in the message.
+        if conninfo and conninfo in scrubbed:
+            scrubbed = scrubbed.replace(conninfo, _CONNINFO_PLACEHOLDER)
+        # 2. Component redaction — psycopg's transformed echo reformats the
+        #    URL, so the components leak even when the literal URL does not.
+        #    conninfo_to_dict is offline (no connection attempt).
+        parts = conninfo_to_dict(conninfo)
+        for key in ("password", "host", "user"):
+            value = parts.get(key)
+            if value:
+                scrubbed = scrubbed.replace(str(value), _CONNINFO_PLACEHOLDER)
+        return scrubbed
+    except Exception:  # noqa: BLE001 — scrub must never raise out of except
+        return "conninfo unparseable; value redacted"
+
 
 def get_conn() -> psycopg.Connection:
     """Open a Neon Postgres connection. autocommit=True + dict_row factory
@@ -62,9 +106,22 @@ def get_conn() -> psycopg.Connection:
     the tests close inside their own teardown. Phase B's fail-soft loop
     catches per-row exceptions without rolling anything back because
     autocommit committed each row independently.
+
+    CTK-118 Fix #1: connect errors are scrubbed before re-raise.
+    OperationalError / ProgrammingError carry connection-detail / conninfo
+    text in their message; psycopg's echo is value-derived, not literal, so
+    GH Actions masking can miss it. We re-raise the SAME exception type with a
+    component-redacted message so callers' `except OperationalError` /
+    loud-failure routing is unchanged. `from None` suppresses the chained
+    original — its message would re-leak the un-scrubbed text into the
+    traceback. (KeyError on an unset NEON_DATABASE_URL is left to propagate:
+    it names only the missing variable, never a value, and is fail-closed.)
     """
     conninfo = os.environ["NEON_DATABASE_URL"]
-    return psycopg.connect(conninfo, autocommit=True, row_factory=dict_row)
+    try:
+        return psycopg.connect(conninfo, autocommit=True, row_factory=dict_row)
+    except (psycopg.OperationalError, psycopg.ProgrammingError) as e:
+        raise type(e)(_scrub_conninfo(str(e), conninfo)) from None
 
 
 def fetch_vendor(conn: psycopg.Connection, slug: str) -> dict:

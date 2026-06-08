@@ -46,6 +46,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --prod --frozen-lockfile
 
+      - name: Preflight NEON_DATABASE_URL
+        uses: ./.github/actions/preflight-neon-secret
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
       - name: Post daily digest
         env:
           NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
