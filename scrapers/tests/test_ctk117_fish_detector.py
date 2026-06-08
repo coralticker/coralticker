@@ -52,6 +52,23 @@ def test_flags_widened_genus_nouns():
         assert term in terms, f"{title!r} must flag on {term!r}; got {terms}"
 
 
+def test_flags_one_word_fish_compounds():
+    """CTK-117 /code-review fold (Finding 2) — single-word -fish compounds. The
+    grouped boundary regex won't fire a base term inside a compound, so each
+    compound is its own term. "Copperband Butterflyfish" is the directive's
+    named anchor; the rest are grounded in TSA's tag_denylist."""
+    cases = {
+        "Copperband Butterflyfish": "butterflyfish",
+        "Arc Eye Hawkfish": "hawkfish",
+        "Flame Angelfish": "angelfish",
+        "Purple Tilefish": "tilefish",
+        "Aiptasia Eating Filefish": "filefish",
+    }
+    for title, term in cases.items():
+        terms = detect_fish_terms(title)
+        assert term in terms, f"{title!r} must flag on {term!r}; got {terms}"
+
+
 def test_flags_existing_prod_terms():
     """The existing production fish terms still flag — and middle-of-alternation
     terms (wrasse / tang / goby / clownfish) now carry boundaries that the
@@ -104,6 +121,7 @@ def test_empty_and_none_safe():
 TESTS = [
     test_flags_clownfish_38474_class,
     test_flags_widened_genus_nouns,
+    test_flags_one_word_fish_compounds,
     test_flags_existing_prod_terms,
     test_boundary_no_substring_falsefire,
     test_clean_coral_title_no_flag,

@@ -347,6 +347,99 @@ def test_filtered_urls_excludes_sold_out_includes_category_rejected():
     )
 
 
+# CTK-117 /code-review fold (Finding 1) — pytest-only caplog test. Pins that the
+# call-site attribution counter uses the SAME normalized tag_denylist matching
+# as the _should_keep gate. A Livestock product tagged `Reef-Safe` (hyphen
+# variant) whose title ALSO hits title_denylist is dropped by the tag_denylist
+# gate (normalized: `reef-safe` -> `reef safe`); the drop must attribute to
+# category-filter, not title-denylist. Pre-fold the attribution branch matched
+# exact-lowercase, so `reef-safe` missed the set and the title-hit elif fired —
+# re-opening the CTK-096 F5 mis-attribution for label-shape variants. Not in the
+# script-mode main() runner (caplog is pytest-only), consistent with the other
+# caplog tests in this file.
+def test_tag_denylist_variant_attributes_to_category_not_title():
+    import logging
+
+    fixture = {
+        "products": [
+            {
+                "id": 1,
+                "handle": "reef-safe-fish-late-fees",
+                "title": "Some Reef Fish Late Fees Special",  # hits title_denylist 'Late Fees'
+                "product_type": "Livestock",                  # in allowlist
+                "tags": ["Reef-Safe"],                        # hyphen variant -> normalizes to 'reef safe'
+                "variants": [{"sku": "RS-1", "available": True, "price": "10.00"}],
+                "images": [],
+            },
+            {
+                "id": 2,
+                "handle": "kept-coral",
+                "title": "Buyable coral in allowlist bucket",
+                "product_type": "Livestock",
+                "tags": [],
+                "variants": [{"sku": "K-1", "available": True, "price": "100.00"}],
+                "images": [],
+            },
+        ]
+    }
+
+    original_fetch = parse_shopify.http.fetch
+    pages_served = {1: False}
+
+    def stub_fetch(url, request_delay_sec=2.0):
+        if "page=1" in url and not pages_served[1]:
+            pages_served[1] = True
+            return FetchResult(
+                body=json.dumps(fixture).encode("utf-8"),
+                status_code=200, error_class=None, error_message=None,
+            )
+        return FetchResult(
+            body=json.dumps({"products": []}).encode("utf-8"),
+            status_code=200, error_class=None, error_message=None,
+        )
+
+    parse_shopify.http.fetch = stub_fetch
+    try:
+        config = {
+            "base_url": "https://example-vendor.com",
+            "products_path": "/products.json",
+            "page_size": 250,
+            "max_pages": 3,
+            "request_delay_sec": 0,
+            "image_strategy": "mirror",
+            "category_filter": {
+                "product_type_allowlist": ["Livestock"],
+                "tag_denylist": ["Reef Safe"],   # canonical entry; tag is 'Reef-Safe'
+                "title_denylist": ["Late Fees"],
+            },
+        }
+        import logging as _logging
+        logger = _logging.getLogger("scrapers.common.parse_shopify")
+        records: list[str] = []
+        handler = _logging.Handler()
+        handler.emit = lambda r: records.append(r.getMessage())  # type: ignore[assignment]
+        prev_level = logger.level
+        logger.setLevel(_logging.INFO)
+        logger.addHandler(handler)
+        try:
+            parse_shopify.fetch_and_parse(config)
+        finally:
+            logger.removeHandler(handler)
+            logger.setLevel(prev_level)
+    finally:
+        parse_shopify.http.fetch = original_fetch
+
+    filter_line = next((m for m in records if m.startswith("filter:")), "")
+    assert "category-filter 1" in filter_line, (
+        f"hyphen-variant tag_denylist drop must attribute to category-filter; "
+        f"got log line: {filter_line!r}"
+    )
+    assert "title-denylist 0" in filter_line, (
+        f"hyphen-variant tag_denylist drop must NOT attribute to title-denylist "
+        f"(CTK-096 F5 re-closure); got log line: {filter_line!r}"
+    )
+
+
 def main() -> int:
     products = _load_fixture()
     tests = [
@@ -369,15 +462,21 @@ def main() -> int:
             failed += 1
             print(f"FAIL  {t.__name__}")
             traceback.print_exc()
-    # CTK-094 Session 5 fold #6 — no-args test driving fetch_and_parse end-to-end.
-    try:
-        test_filtered_urls_excludes_sold_out_includes_category_rejected()
-        print(f"PASS  test_filtered_urls_excludes_sold_out_includes_category_rejected")
-    except Exception:
-        failed += 1
-        print(f"FAIL  test_filtered_urls_excludes_sold_out_includes_category_rejected")
-        traceback.print_exc()
-    total = len(tests) + 1
+    # No-args tests driving fetch_and_parse end-to-end (CTK-094 fold #6 +
+    # CTK-117 fold Finding 1 attribution).
+    noargs = [
+        test_filtered_urls_excludes_sold_out_includes_category_rejected,
+        test_tag_denylist_variant_attributes_to_category_not_title,
+    ]
+    for t in noargs:
+        try:
+            t()
+            print(f"PASS  {t.__name__}")
+        except Exception:
+            failed += 1
+            print(f"FAIL  {t.__name__}")
+            traceback.print_exc()
+    total = len(tests) + len(noargs)
     print(f"\n{total - failed}/{total} passed")
     return 1 if failed else 0
 

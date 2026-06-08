@@ -65,6 +65,13 @@ TSA_SLUG = "tsa"
 _FISH_TERMS = (
     "fish", "wrasse", "tang", "goby", "clownfish", "blenny",   # existing prod terms
     "anthias", "puffer", "butterfly", "foxface", "basslet",    # CTK-117 TSA genus widening
+    # CTK-117 /code-review fold (Finding 2): single-word -fish compounds. The
+    # grouped \b(?:...)\b won't match a base term inside a compound (`butterfly`
+    # does not fire on "Butterflyfish"; there is no word boundary before the
+    # trailing "fish"), so each compound TSA tags as its own fish family needs
+    # an explicit term. Grounded in TSA's tag_denylist (Angelfish / Hawkfish /
+    # Tilefish / Filefish) plus the Butterflyfish form.
+    "butterflyfish", "hawkfish", "angelfish", "tilefish", "filefish",
 )
 _FISH_RE = re.compile(r"\b(?:" + "|".join(_FISH_TERMS) + r")\b", re.IGNORECASE)
 
@@ -86,7 +93,7 @@ def main() -> int:
         with db.get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT vl.id, vl.raw_title, vl.category, v.slug, v.display_name "
+                    "SELECT vl.id, vl.raw_title, vl.category, v.slug "
                     "FROM vendor_listings vl "
                     "JOIN vendors v ON v.id = vl.vendor_id "
                     "WHERE vl.in_stock = true "

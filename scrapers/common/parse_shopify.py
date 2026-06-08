@@ -145,15 +145,23 @@ def fetch_and_parse(config: dict) -> ParseResult:
     title_denylist_prefix_lower = tuple(
         e.lower() for e in ((category_filter or {}).get("title_denylist_prefix") or [])
     )
-    # CTK-096 close-fold F5 2026-06-01: hoist tag_denylist as a lowercased set
-    # at fetch_and_parse scope too — needed at the call-site attribution to
-    # detect the dual-hit case (tag_denylist + title_denylist both match the
-    # same product, intentional UC belt-and-suspenders overlap on Dalua /
-    # Illumagic / Panta Rhei per unique_corals.yaml). Pre-fold the attribution
-    # branch checked title_denylist first and over-counted skipped_title_denylist
-    # by ~70 rows per UC scrape — see F5 disposition below.
-    tag_denylist_lower = {
-        e.lower() for e in ((category_filter or {}).get("tag_denylist") or [])
+    # CTK-096 close-fold F5 2026-06-01: hoist tag_denylist at fetch_and_parse
+    # scope — needed at the call-site attribution to detect the dual-hit case
+    # (tag_denylist + title_denylist both match the same product, intentional UC
+    # belt-and-suspenders overlap on Dalua / Illumagic / Panta Rhei per
+    # unique_corals.yaml). Pre-fold the attribution branch checked title_denylist
+    # first and over-counted skipped_title_denylist by ~70 rows per UC scrape —
+    # see F5 disposition below.
+    #
+    # CTK-117 /code-review fold: hoist the NORMALIZED set (was lowercased-only).
+    # Once _should_keep's gate moved to _normalize_tag matching (Arm 2), a
+    # lowercased-only attribution set re-opened F5 for hyphen/whitespace tag
+    # variants (gate rejects `Reef-Safe`, counter missed it → mis-attributes to
+    # title-denylist). Shared by both the gate (passed into _should_keep below)
+    # and the attribution branch so the two use identical matching, normalized
+    # once per parse instead of per product.
+    tag_denylist_norm = {
+        _normalize_tag(e) for e in ((category_filter or {}).get("tag_denylist") or [])
     }
 
     for page in range(1, max_pages + 1):
@@ -197,7 +205,7 @@ def fetch_and_parse(config: dict) -> ParseResult:
         # accumulated across pages and logged at parse-end below. Permissive
         # default — config without category_filter block bypasses the gate.
         for p in products:
-            if not _should_keep(p, category_filter, in_stock_only):
+            if not _should_keep(p, category_filter, in_stock_only, tag_denylist_norm):
                 # CTK-088 fold #4: attribute the drop. An unavailable item is
                 # short-circuited by the availability gate FIRST, so under
                 # in_stock_only any sold-out row is an availability drop; a
@@ -236,9 +244,10 @@ def fetch_and_parse(config: dict) -> ParseResult:
                     # residue is small; if a future audit shows the residue
                     # matters, evolve _should_keep to return a tagged-reason
                     # enum (altitude-correct fix).
-                    tags_lower = [(t or "").lower() for t in (p.get("tags") or [])]
-                    tag_denylist_hit = bool(tag_denylist_lower) and any(
-                        t in tag_denylist_lower for t in tags_lower
+                    # CTK-117 fold: normalized matching, identical to the gate's
+                    # _should_keep tag_denylist check (and the same hoisted set).
+                    tag_denylist_hit = bool(tag_denylist_norm) and any(
+                        _normalize_tag(t) in tag_denylist_norm for t in (p.get("tags") or [])
                     )
                     if tag_denylist_hit:
                         skipped_category += 1
@@ -312,11 +321,18 @@ def _normalize_tag(value: str) -> str:
     matching on the denylist would collide fleet-wide). Applied to the
     tag_denylist axis only — tag_allowlist keeps the CTK-096 D-2 lowercase
     membership untouched (normalizing the allowlist would only widen it, and
-    it's out of this ticket's scope)."""
-    return " ".join(value.lower().replace("-", " ").split())
+    it's out of this ticket's scope). None-safe (None tag collapses to "")
+    so both the gate and the call-site attribution can drop their prior
+    `(t or "")` guards."""
+    return " ".join((value or "").lower().replace("-", " ").split())
 
 
-def _should_keep(product: dict, category_filter: dict | None, in_stock_only: bool = False) -> bool:
+def _should_keep(
+    product: dict,
+    category_filter: dict | None,
+    in_stock_only: bool = False,
+    tag_denylist_norm: set[str] | None = None,
+) -> bool:
     """CTK-037 category-filter gate. Returns True if product passes; False if
     rejected by the availability gate, the allowlist, the tag-denylist, or the
     title-denylist. None or empty dict category_filter = no category gate
@@ -376,7 +392,12 @@ def _should_keep(product: dict, category_filter: dict | None, in_stock_only: boo
         return True
     allowlist = category_filter.get("product_type_allowlist") or []
     tag_allowlist = category_filter.get("tag_allowlist") or []
-    tag_denylist = category_filter.get("tag_denylist") or []
+    # CTK-117 fold: accept the parse-scope hoisted normalized set when the
+    # caller passes one (fetch_and_parse — normalized once per parse, identical
+    # to the attribution counter); build it per-call for standalone callers
+    # (tests, ctk119 audit tool) that pass nothing.
+    if tag_denylist_norm is None:
+        tag_denylist_norm = {_normalize_tag(e) for e in (category_filter.get("tag_denylist") or [])}
     title_denylist = category_filter.get("title_denylist") or []
     title_denylist_prefix = category_filter.get("title_denylist_prefix") or []  # CTK-119: anchored variant
     product_type = product.get("product_type") or ""  # CTK-037 Session 5.5: normalize None/absent to "" so allowlist entry "" matches both shapes
@@ -415,14 +436,14 @@ def _should_keep(product: dict, category_filter: dict | None, in_stock_only: boo
         tag_allowlist_lc = {e.lower() for e in tag_allowlist}
         if not any(t.lower() in tag_allowlist_lc for t in tags):
             return False
-    if tag_denylist:
+    if tag_denylist_norm:
         # CTK-117 Arm 2: normalize both sides via _normalize_tag (hyphen->space
         # + whitespace-collapse + lower) so reef-safety label-shape variants
         # (`Reef-Safe`, trailing whitespace) match their canonical denylist
         # entry. Symmetric — supersedes the CTK-096 D-2 lowercase-only
         # membership without dropping any prior match. Full-phrase variants
         # (`Reef Safe with Caution`) ride explicit YAML entries, not this fold.
-        tag_denylist_norm = {_normalize_tag(e) for e in tag_denylist}
+        # The denylist side is pre-normalized (passed in or built above).
         if any(_normalize_tag(t) in tag_denylist_norm for t in tags):
             return False
     # CTK-096 D-1: 5th axis. Case-insensitive substring against raw_title.
