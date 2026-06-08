@@ -56,18 +56,6 @@ originator_prefix: null
 # cadence; cohort-OOS pass fires on next scheduled scrape.
 cohort_oos_at_persist: true
 
-# cohort_flip_cap: 2000 — ONE-SHOT OVERRIDE, REMOVE SAME-DAY (wwc a0c1e13 /
-# POTO bb70361/59c532c precedent: zero standing overrides fleet-wide). Real PE
-# catalog shift 2026-06-08: 159 previously-in-stock products genuinely delisted
-# from pacificeastaquaculture.com/products.json (live walk 4781 = 4589 kept +
-# 192 filtered; source-confirmed, not a fetch/parse artifact). The default cap
-# max(50, 0.25*497)=124 correctly blocked the 159 OOS flips (159 > 124);
-# scraper_runs 1244 + 1245 both deterministic at 4589 kept / 159 would-flip,
-# zero collateral churn (new/price/restock all 0). This cap lets the legit 159
-# flips land in one clean run (in_stock 497 -> ~338), then is removed same-day.
-# NOT a standing cap re-tune; the CTK-120 guard logic is untouched.
-cohort_flip_cap: 2000
-
 # CTK-037 category-filter: coral + anemones + clams (per D1 lean (a) locked
 # 2026-05-10 by Jon — keep named-anemone + named-clam seed-list coverage
 # intact; ECC Sherman/Rainbow BTA + ORA Maxima Clam Ultra Gold all match here).
