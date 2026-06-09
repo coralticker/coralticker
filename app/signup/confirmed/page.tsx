@@ -15,6 +15,7 @@
 // Metadata vocabulary per site.md §6.1 / architecture-v1.md §6.1.
 
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 // Metadata wording verbatim from site.md §6.1 line 1711. Description is
 // empty because robots: noindex means the surface never appears in SERP —
@@ -34,6 +35,13 @@ export default function SignupConfirmed() {
       </h1>
       <p className="text-base leading-relaxed">
         I&apos;ll send new arrivals as they list.
+      </p>
+      <p className="text-base leading-relaxed mt-4">
+        Until then,{' '}
+        <Link href="/new" className="underline underline-offset-[3px] decoration-1">
+          see what&apos;s already listed
+        </Link>
+        .
       </p>
     </main>
   );

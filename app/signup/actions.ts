@@ -16,8 +16,12 @@
 // SQLSTATE as `err.code === '23505'` the same way supabase-js did. Folding
 // to ON CONFLICT DO UPDATE is out of scope this cut (recoverable later).
 
+import { after } from 'next/server';
 import { getNeonSql } from '@/lib/db/neon';
 import { isEmailSignupSource } from '@/types/email-signups';
+import { generate } from '@/lib/email/token';
+import { sendEmail } from '@/lib/email/send';
+import { confirmEmail } from '@/lib/email/templates/confirm-email';
 
 export type SignupActionResult =
   | { ok: true; alreadySubscribed: boolean }
@@ -26,6 +30,16 @@ export type SignupActionResult =
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const VALIDATION_ERROR = "That doesn't look like an email address.";
 const DB_ERROR = "Something's off. Try again in a moment.";
+
+// Best-effort confirm send (D-3), shared by the fresh-INSERT and re-subscribe
+// paths. sendEmail is self-catching and never throws — a Resend failure logs +
+// alerts the operator channel internally but never fails the capture. Deferred
+// via after() at the call sites so it runs post-response, off the Tier-1B
+// signup hot path; {sent} is ignored either way (capture is the contract).
+async function sendConfirm(email: string, token: string): Promise<void> {
+  const { subject, html } = confirmEmail(token);
+  await sendEmail({ to: email, subject, html });
+}
 
 export async function signupAction(
   _prevState: SignupActionResult | null,
@@ -48,14 +62,22 @@ export async function signupAction(
 
   const sql = getNeonSql();
 
-  // Statement 1: INSERT. Returns from the catch block on unique_violation;
-  // any other error bubbles up to the outer catch as a generic DB_ERROR.
+  // Statement 1: INSERT. App-mints the per-row token (CTK-016 D-1), overriding
+  // the 0037 gen_random_uuid()::text default (the default is RETAINED as the
+  // live-path safety net — never dropped). RETURNING token reads back what
+  // actually landed. On unique_violation (23505) the row already exists; fall
+  // through to the re-subscribe SELECT/UPDATE. Only DB work lives in this try —
+  // the confirm-email send happens after it resolves so a (self-catching) send
+  // can never be mistaken for a DB error.
+  const token = generate();
+  let insertedToken: string | null = null;
   try {
-    await sql`
-      INSERT INTO email_signups (email, source)
-      VALUES (${email}, ${rawSource})
-    `;
-    return { ok: true, alreadySubscribed: false };
+    const rows = (await sql`
+      INSERT INTO email_signups (email, source, token)
+      VALUES (${email}, ${rawSource}, ${token})
+      RETURNING token
+    `) as unknown as { token: string }[];
+    insertedToken = rows[0]?.token ?? token;
   } catch (err: unknown) {
     // 23505 = Postgres unique_violation. The lower(email) functional index
     // backstops duplicate signups; existing row tells us active vs. unsubscribed.
@@ -63,6 +85,15 @@ export async function signupAction(
     if (code !== '23505') {
       return { ok: false, error: DB_ERROR };
     }
+  }
+
+  if (insertedToken !== null) {
+    // Fresh signup: fire the confirm send post-response (after()) so the user
+    // doesn't wait on the Resend round-trip. const-capture keeps the non-null
+    // narrowing inside the deferred closure.
+    const tokenToSend = insertedToken;
+    after(() => sendConfirm(email, tokenToSend));
+    return { ok: true, alreadySubscribed: false };
   }
 
   // Statement 2: SELECT existing row to branch on subscription status.
@@ -88,15 +119,27 @@ export async function signupAction(
   }
 
   // Statement 3: re-subscribe — clear unsubscribed_at + bump subscribed_at.
+  // RETURNING token REUSES the row's existing token — do NOT re-mint: re-minting
+  // would invalidate any confirm/unsubscribe link already sitting in this
+  // person's inbox. Send happens after the DB try resolves (DB-only try).
+  let resubToken: string | undefined;
   try {
-    await sql`
+    const rows = (await sql`
       UPDATE email_signups
       SET unsubscribed_at = NULL,
           subscribed_at = ${new Date().toISOString()}
       WHERE id = ${existing.id}
-    `;
+      RETURNING token
+    `) as unknown as { token: string }[];
+    resubToken = rows[0]?.token;
   } catch {
     return { ok: false, error: DB_ERROR };
+  }
+
+  if (resubToken) {
+    // Same post-response best-effort send as the fresh-INSERT path.
+    const tokenToSend = resubToken;
+    after(() => sendConfirm(email, tokenToSend));
   }
 
   return { ok: true, alreadySubscribed: false };
