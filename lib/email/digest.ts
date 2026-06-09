@@ -32,17 +32,22 @@
 // first-ship side-by-side smoke (INV-01 check-cadence 2) is the backstop until
 // then. See plan.md Risks.
 //
-// SCAFFOLD IS NOT THIS FILE: the surrounding HTML email document (doctype,
-// table layout for mail-client compat, hero lockup, footer chrome, Hunter-
-// waitlist CTA seed) is a /brand-manager copy/layout artifact + /lead-frontend
-// co-sign, pending into CTK-136/. This file builds the FIELD-LEVEL render (the
-// listing lines) + the CAN-SPAM footer; wrapInterimDoc() below is an explicitly
-// interim, un-branded document wrapper so the send pipe is end-to-end testable
-// now. It is REPLACED by the real scaffold before first ship.
+// SCAFFOLD (landed CTK-136, co-signed against CTK-136/email-scaffold-spec.md):
+// wrapDigestDoc() below is the real branded HTML email document — table layout
+// for mail-client compat, a wordmark-alone masthead (spec §3 weigh-in resolved
+// 2026-06-09: tagline dropped on the daily surface per Jon + /reef-lead), a 600px
+// centered column, styled vendor-group headers + listing lines (§4), and the
+// CAN-SPAM-complete, product-voice footer (§5). Brand tokens (INK, FOREST,
+// PAGE_BG, the SANS stack, wordmark sizing) mirror lib/email/templates/
+// confirm-email.ts so the two emails read as one brand. The FIELD-LEVEL render
+// (buildFields/buildLine — the `**name** — Price. … — Listed. …` content) is
+// INV-01-locked and untouched; the scaffold owns only the surrounding chrome
+// (document, masthead, header/line styling, footer). Both Jon weigh-ins are now
+// resolved: PAGE_BG = white (§6) and wordmark-alone masthead (§3).
 //
 // Testability: the pure builders (buildFields, buildLine, groupByVendor,
 // buildListingsHtml, buildFooter, listUnsubscribeHeaders, buildSubject,
-// wrapInterimDoc) import clean with no env. The DB fetches and the Resend send
+// wrapDigestDoc) import clean with no env. The DB fetches and the Resend send
 // use a dynamic import for lib/db/neon.ts (module-scope env throw) and call-time
 // getResend(), so they never run under `node --test`. Mirrors the Discord
 // script's dynamic-import-for-db pattern.
@@ -72,16 +77,42 @@ export interface Recipient {
 // Resend batch endpoint caps at 100 messages per call.
 const BATCH_SIZE = 100;
 
-// Brand forest accent (tailwind.config.ts forest #1B5E20), mirrored for the
-// now-value bold-forest field render (decision #75). The full brand token set
-// is the deferred scaffold's concern; this is the one field-level token.
+// Brand tokens, mirrored verbatim from lib/email/templates/confirm-email.ts (the
+// Jon-ratified 2026-06-09 precedent) so the two emails render as one brand.
+// FOREST stays the field-level now-value accent (decision #75); the rest are the
+// scaffold's masthead + chrome tokens.
+const INK = '#1A1A1A';
 const FOREST = '#1B5E20';
+// branding-guide §"Served-neutral re-spec": #E5E7EB is the single hairline /
+// under-rule / border tone (the vendor-header rule + footer top-border).
+const LINE = '#E5E7EB';
+// confirm-email shipped white; §"Color system" canon is cream #F5F1EA. Built to
+// the spec §6 lean (white — cross-email consistency + inbox-render reliability);
+// OPEN Jon weigh-in (guide-amendment class — do not silently lock cream here).
+const PAGE_BG = '#FFFFFF';
 
-// CAN-SPAM requires a physical postal address on every commercial send. This is
-// JON-SIDE INPUT before first send (plan.md success criterion + Dependencies) —
-// the loud placeholder makes a premature ship impossible to miss in the body.
-const POSTAL_ADDRESS_PLACEHOLDER =
-  '[POSTAL ADDRESS REQUIRED — Jon-side input before first send, CTK-136 CAN-SPAM footer]';
+// IBM Plex Sans isn't installed in inboxes; degrade to the closest system stack
+// rather than ship a stripped @font-face (verbatim from confirm-email.ts).
+const SANS =
+  "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
+
+const WORDMARK_PX = 32;
+
+// MASTHEAD — wordmark alone, no tagline. The daily digest is a utility, not a
+// welcome moment: a slogan seen every morning goes to wallpaper and drifts toward
+// the hype register the brand avoids, so the nameplate carries the brand presence
+// and the tagline is dropped here (Jon + /reef-lead, 2026-06-09 — exercising the
+// spec §3 wordmark-alone weigh-in; supersedes the confirm-email full-lockup reuse
+// on THIS surface only; the confirm email keeps its tagline as a first-impression
+// asset). /brand-manager folds spec §3 to match. Left-aligned, same WORDMARK_PX as
+// the confirm email so the nameplate is pixel-identical across both emails.
+const MASTHEAD = `<div style="font-family:${SANS};font-size:${WORDMARK_PX}px;line-height:1;color:${INK};">` +
+  `<span style="font-weight:700;">coral</span><span style="font-weight:400;">ticker</span><span style="font-weight:700;color:${FOREST};">.</span>` +
+  `</div>`;
+
+// CAN-SPAM requires a physical postal address on every commercial send. Jon's
+// registered mailbox, landed 2026-06-09 — the first-ship CAN-SPAM gate clears.
+const POSTAL_ADDRESS = 'PO Box 115, 221 Najoles Road, Millersville, MD 21108';
 
 // RPC precedence ranks, mirrored for within-vendor display order only — the
 // lead-event CHOICE per listing already happened in the RPC.
@@ -121,8 +152,9 @@ function asNumber(value: number | string | null): number | null {
 // 'invalidated' branch is intentionally absent — the RPC filters in_stock =
 // true on all arms, so no OOS row can reach this adapter. HTML styling (semantic
 // <del> on the was-value, bold-forest <strong> on the now-value) lands here at
-// field construction; formatValue()'s channel-neutral "was X, now Y" then
-// carries it through the shared primitive.
+// field construction; formatValue()'s channel-neutral adjacency shape (struck
+// old + new, no connective words — card-parity, 2026-06-09) then carries it
+// through the shared primitive.
 export function buildFields(row: DigestRow): DataRowField[] {
   const fields: DataRowField[] = [];
   const currentPrice = asNumber(row.current_price);
@@ -212,32 +244,58 @@ export function groupByVendor(rows: DigestRow[]): VendorGroup[] {
 // The listings content block — the recipient-INDEPENDENT body, rendered once.
 // Unlike the Discord embed (4096-char cap, N=3 per-vendor cap), email has no
 // length ceiling, so every line renders: vendor header + one line per listing.
-// Markup is intentionally minimal/semantic — the field-level brand render (bold
-// name, struck/forest prices) lives in the lines; the surrounding layout chrome
-// is the deferred /brand-manager + /lead-frontend scaffold's concern.
+// Chrome styling per spec §4: the vendor <h2> is a content section header
+// (sentence-case SANS, bold vendor name + regular-weight `— N drops` count, ink,
+// 1px #E5E7EB under-rule) — NOT mono-uppercase chrome. The listing <p> lines are
+// SANS/ink; the field-level brand render (bold name, em-dash, struck/forest
+// prices) flows untouched through buildLine() -> formatDataRow() per INV-01.
+// Inline styles only — email clients strip <head><style>. Values render SANS
+// (not MONO): formatDataRow() emits one channel-neutral string and re-segmenting
+// it to inject MONO would re-format, violating the wrap-don't-reformat lock
+// (INV-01) — flagged to /brand-manager at co-sign.
 export function buildListingsHtml(rows: DigestRow[], now: Date): string {
   const groups = groupByVendor(rows);
   return groups
     .map((group) => {
       const n = group.rows.length;
-      const header = `<h2>${htmlEscape(group.vendor)} — ${n} drop${n === 1 ? '' : 's'}</h2>`;
+      const header =
+        `<h2 style="margin:0 0 12px;padding:0 0 8px;border-bottom:1px solid ${LINE};` +
+        `font-family:${SANS};font-size:18px;line-height:1.3;font-weight:400;color:${INK};">` +
+        `<span style="font-weight:700;">${htmlEscape(group.vendor)}</span> — ${n} drop${n === 1 ? '' : 's'}` +
+        `</h2>`;
       const lines = group.rows
-        .map((row) => `<p>${buildLine(row, now)}</p>`)
+        .map(
+          (row) =>
+            `<p style="margin:0 0 10px;font-family:${SANS};font-size:15px;line-height:1.5;color:${INK};">${buildLine(row, now)}</p>`,
+        )
         .join('\n');
-      return `${header}\n${lines}`;
+      return `<div style="margin-bottom:28px;">${header}\n${lines}</div>`;
     })
     .join('\n');
 }
 
-// CAN-SPAM footer: a working per-recipient unsubscribe link + the physical
-// postal address. This is the ONLY per-recipient element of the body (Q-5 shape
-// — render the listings once, vary only the footer link per recipient). Richer
-// footer copy ("you're getting this because…") is the deferred scaffold's lane.
+// CAN-SPAM footer (spec §5): product-voice, FULL-INK (not de-emphasized — the
+// CTK-129 sweep retired the low-emphasis register and legally-required text must
+// stay legible). Subjectless "why you're getting this" sentence (no "I"/"Jon"/
+// "we" — branding-guide §"Surface boundary" names email digests in the no-`I`
+// list; §1), the working per-recipient one-click unsubscribe link (the ONLY
+// per-recipient element, Q-5 shape), the physical postal address (CAN-SPAM,
+// landed 2026-06-09), and the standing "Not affiliated with vendors." disclaimer.
+// `Last scrape: {timestamp}` is dropped — the subject date + per-line relative
+// times already carry freshness. Links render neutral ink + underline per
+// §"Color system" (color carries no affordance). The Hunter-waitlist CTA slot is
+// reserved but ships no copy at v1 (no public paid-tier name, no destination).
 export function buildFooter(token: string): string {
-  return [
-    `<p><a href="${unsubscribeUrl(token)}">Unsubscribe</a></p>`,
-    `<p>${POSTAL_ADDRESS_PLACEHOLDER}</p>`,
-  ].join('\n');
+  const base = `font-family:${SANS};font-size:13px;line-height:1.6;color:${INK};`;
+  return (
+    `<div style="border-top:1px solid ${LINE};margin-top:8px;padding-top:24px;${base}">` +
+    `<p style="margin:0 0 12px;${base}">You confirmed your email for daily coral drops at coralticker.com.</p>` +
+    `<p style="margin:0 0 12px;${base}"><a href="${unsubscribeUrl(token)}" style="color:${INK};text-decoration:underline;">Unsubscribe.</a></p>` +
+    `<p style="margin:0 0 12px;${base}">${POSTAL_ADDRESS}</p>` +
+    `<!-- Hunter-waitlist CTA slot reserved (CTK-136 plan objective); no copy at v1 — no public paid-tier name (branding-guide §L120) and no waitlist destination built yet. -->` +
+    `<p style="margin:0;${base}">Not affiliated with vendors.</p>` +
+    `</div>`
+  );
 }
 
 // RFC 8058 bulk-sender one-click headers (Q-4, locked). List-Unsubscribe carries
@@ -262,18 +320,44 @@ export function buildSubject(now: Date): string {
   return `CoralTicker — daily drops ${date}`;
 }
 
-// INTERIM, UN-BRANDED document wrapper — REPLACED by the /brand-manager +
-// /lead-frontend HTML email scaffold (hero lockup, table layout, chrome, Hunter
-// CTA seed) before first ship. It exists only so the send pipe is end-to-end
-// exercisable this session (the dry-run path logs a real, valid HTML document).
-// Do NOT treat this as the digest's visual design.
-export function wrapInterimDoc(contentHtml: string): string {
+// The branded digest document (spec §3-§6): white body, a centered 600px column
+// holding the hero-lockup masthead, the listings body (rendered once), and the
+// per-recipient CAN-SPAM footer. Table layout + inline styles only — the only
+// shape email clients render reliably. Mirrors confirm-email.ts's outer/inner
+// table structure verbatim so the two emails share one frame.
+export function wrapDigestDoc(listingsHtml: string, footerHtml: string, subject: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-<body>
-<!-- INTERIM scaffold (CTK-136) — replaced by /brand-manager + /lead-frontend before first ship -->
-${contentHtml}
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>${htmlEscape(subject)}</title>
+</head>
+<body style="margin:0;padding:0;background:${PAGE_BG};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background:${PAGE_BG};">
+    <tr>
+      <td align="center" style="padding:40px 20px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;width:600px;max-width:100%;">
+          <tr>
+            <td style="padding-bottom:36px;">
+              ${MASTHEAD}
+            </td>
+          </tr>
+          <tr>
+            <td>
+              ${listingsHtml}
+            </td>
+          </tr>
+          <tr>
+            <td>
+              ${footerHtml}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>`;
 }
@@ -379,7 +463,7 @@ export async function runEmailDigest(now: Date): Promise<DigestResult> {
       from: FROM,
       to: r.email,
       subject,
-      html: wrapInterimDoc(`${listingsHtml}\n${buildFooter(r.token)}`),
+      html: wrapDigestDoc(listingsHtml, buildFooter(r.token), subject),
       headers: listUnsubscribeHeaders(r.token),
     }));
     // Resend returns API errors in-band (does not throw); funnel to a throw so

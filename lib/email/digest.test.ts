@@ -20,6 +20,7 @@ import {
   groupByVendor,
   htmlEscape,
   listUnsubscribeHeaders,
+  wrapDigestDoc,
   type DigestRow,
 } from './digest.ts';
 
@@ -54,7 +55,7 @@ test('price-dropped line: was-value in <del>, now-value bold-forest', () => {
   );
   assert.equal(
     line,
-    '<strong>Test Coral</strong> — Price. was <del>$400.00</del>, now <strong style="color:#1B5E20;font-weight:700;">$50.00</strong> — Listed. 3 hours ago',
+    '<strong>Test Coral</strong> — Price. <del>$400.00</del> <strong style="color:#1B5E20;font-weight:700;">$50.00</strong> — Listed. 3 hours ago',
   );
 });
 
@@ -136,25 +137,54 @@ test('listings html: vendor header (pluralized) + one <p> line per listing, no c
     row({ id, raw_title: `Coral ${id}`, event_at: `2026-06-09T0${id}:00:00Z` }),
   );
   const html = buildListingsHtml(rows, NOW);
-  assert.match(html, /<h2>WWC — 5 drops<\/h2>/);
+  // Vendor name bold, `— N drops` count regular weight, on one styled <h2> (§4).
+  assert.match(html, /<span style="font-weight:700;">WWC<\/span> — 5 drops/);
   // Email has no per-vendor cap (unlike the Discord N=3) — all 5 lines render.
-  assert.equal((html.match(/<p>/g) ?? []).length, 5);
+  assert.equal((html.match(/<p style=/g) ?? []).length, 5);
   assert.ok(!html.includes('more at'));
 });
 
 test('single-drop vendor header is singular', () => {
-  assert.match(buildListingsHtml([row({})], NOW), /<h2>WWC — 1 drop<\/h2>/);
+  assert.match(buildListingsHtml([row({})], NOW), /<span style="font-weight:700;">WWC<\/span> — 1 drop/);
 });
 
 test('empty rows produce empty listings html (caller skips the send)', () => {
   assert.equal(buildListingsHtml([], NOW), '');
 });
 
-test('footer carries per-recipient unsubscribe link + postal-address placeholder', () => {
+test('footer: subjectless why-line + per-recipient one-click unsub + postal address + disclaimer', () => {
   const footer = buildFooter('tok_abc-123');
-  assert.match(footer, /<a href="https:\/\/coralticker\.com\/unsubscribe\?t=tok_abc-123">Unsubscribe<\/a>/);
-  // The loud placeholder is the first-ship gate — it must be impossible to miss.
-  assert.match(footer, /POSTAL ADDRESS REQUIRED/);
+  // Subjectless product-voice why-line (§1 / §5 — no first person).
+  assert.match(footer, /You confirmed your email for daily coral drops at coralticker\.com\./);
+  assert.match(footer, /href="https:\/\/coralticker\.com\/unsubscribe\?t=tok_abc-123"/);
+  assert.match(footer, /Unsubscribe\.<\/a>/);
+  // CAN-SPAM physical postal address (landed 2026-06-09 — first-ship gate clears).
+  assert.match(footer, /PO Box 115, 221 Najoles Road, Millersville, MD 21108/);
+  assert.match(footer, /Not affiliated with vendors\./);
+  // `Last scrape` is dropped from the email footer (§5).
+  assert.ok(!/Last scrape/i.test(footer));
+});
+
+test('footer voice: no first-person on the email-digest surface (§1 surface boundary)', () => {
+  const footer = buildFooter('tok_abc-123');
+  assert.ok(!/\bI\b/.test(footer), 'no bare "I"');
+  assert.ok(!/\bwe\b/i.test(footer), 'no "we"');
+  assert.ok(!/\bJon\b/i.test(footer), 'no "Jon"');
+});
+
+test('wrapDigestDoc: branded document — wordmark-alone masthead, white bg, subject title', () => {
+  const doc = wrapDigestDoc(
+    buildListingsHtml([row({})], NOW),
+    buildFooter('tok_abc-123'),
+    buildSubject(NOW),
+  );
+  // Wordmark nameplate — coral(bold) + ticker(regular) + forest dot.
+  assert.match(doc, /<span style="font-weight:700;">coral<\/span><span style="font-weight:400;">ticker<\/span>/);
+  // Tagline dropped on the daily surface (§3 resolved 2026-06-09).
+  assert.ok(!/Never miss the drop/.test(doc), 'no tagline on the daily digest masthead');
+  // White page bg (spec §6) and the ET-anchored subject in <title>.
+  assert.match(doc, /background:#FFFFFF/);
+  assert.match(doc, /<title>CoralTicker — daily drops 2026-06-09<\/title>/);
 });
 
 test('List-Unsubscribe headers: angle-bracketed target + one-click post', () => {

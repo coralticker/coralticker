@@ -33,13 +33,18 @@ function formatValue(value: DataRowField['value'], now: Date): string {
       // U+0336) can re-process at the adapter layer.
       return value.value;
     case 'price-drop-new':
-      return `was ${value.oldValue}, now ${value.newValue}`;
+      // No connective words: the struck old value + the emphasized new value
+      // already carry "old -> new" (branding-guide.md §"State markers": "the eye
+      // reads the state without copy"). Adjacency-with-a-space mirrors the web
+      // <DataRow> card (components/ui/data-row.tsx — <del>old</del>{' '}<new>), so
+      // email / Discord / push render card-identical. (Was `was X, now Y` until
+      // 2026-06-09 — dropped per Jon; /brand-manager folds the canon line.)
+      return `${value.oldValue} ${value.newValue}`;
     case 'vendor-markdown':
-      // Shared string with price-drop-new per /brand-manager Lock 1
-      // (CTK-100 brand-manager-session-2026-06-01). Reefer-facing semantic
-      // is identical at the field level; INV-01 channel-adapters inherit
-      // one rendering shape for both value-kinds.
-      return `was ${value.oldValue}, now ${value.newValue}`;
+      // Shared shape with price-drop-new per /brand-manager Lock 1 (CTK-100):
+      // reefer-facing semantic is identical at the field level, so INV-01
+      // channel-adapters inherit one rendering shape for both value-kinds.
+      return `${value.oldValue} ${value.newValue}`;
     case 'italic':
       // DOM-only emphasis (<em>). Non-DOM channels carry the bare text;
       // channel-adapters wanting italic in-channel (markdown asterisks for

@@ -47,7 +47,7 @@ test('price-dropped line: was-value struck, new value bare', () => {
     row({ event: 'price-dropped', prior_price: '400.00', current_price: '50.00' }),
     NOW,
   );
-  assert.equal(line, '**Test Coral** — Price. was ~~$400.00~~, now $50.00 — Listed. 3 hours ago');
+  assert.equal(line, '**Test Coral** — Price. ~~$400.00~~ $50.00 — Listed. 3 hours ago');
 });
 
 test('vendor-markdown at >=5%: was-value struck', () => {

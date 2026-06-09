@@ -90,7 +90,8 @@ function asNumber(value: number | string | null): number | null {
 // 'invalidated' branch is intentionally absent — the RPC filters
 // in_stock = true on all arms, so no OOS row can reach this adapter.
 // Discord styling (~~ on the was-value) lands here at field construction;
-// formatValue()'s channel-neutral "was X, now Y" then carries it.
+// formatValue()'s channel-neutral adjacency shape (struck old + new, no words —
+// card-parity, 2026-06-09) then carries it.
 export function buildFields(row: DigestRow): DataRowField[] {
   const fields: DataRowField[] = [];
   const currentPrice = asNumber(row.current_price);
