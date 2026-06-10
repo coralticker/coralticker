@@ -7,6 +7,10 @@
 // /brand-manager Session 7 pre-session sweep.
 //
 // Metadata vocabulary per site.md §6.1 / architecture-v1.md §6.1.
+//
+// CTK-136 round-3-final price-methodology disclosure (Surface 2): the "One more
+// thing, on prices…" paragraph wired below per the directive lock 2026-06-10
+// (copy/round-3/price-methodology-final.md). Static <p>, no data.
 
 import type { Metadata } from 'next';
 import { SocialLinks } from './_components/social-links';
@@ -46,6 +50,14 @@ export default function About() {
         <p>
           CoralTicker doesn&apos;t sell coral. The links go to the vendor&apos;s own
           site — that&apos;s where the listing lives.
+        </p>
+        <p>
+          One more thing, on prices. A crossed-out &quot;before&quot; here is one of
+          two things: a price I recorded earlier while tracking the vendor, or the
+          vendor&apos;s own regular price, shown as I found it. The two don&apos;t
+          always line up — so where I&apos;ve tracked a listing myself, that&apos;s
+          the number I show. It&apos;s just what I&apos;ve recorded — and a new
+          listing won&apos;t have much of a history with me yet.
         </p>
         <p>
           If you&apos;ve got feedback, an alert idea, or a vendor I should add,

@@ -13,6 +13,10 @@
 // voice-correct + page-correct for direct visits.
 //
 // Metadata vocabulary per site.md §6.1 / architecture-v1.md §6.1.
+//
+// CTK-136 round-3-final price-methodology disclosure (Surface 1): the "I track
+// what each vendor charges over time…" line wired below per the directive lock
+// 2026-06-10 (copy/round-3/price-methodology-final.md). Static <p>, no data.
 
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -35,6 +39,10 @@ export default function SignupConfirmed() {
       </h1>
       <p className="text-base leading-relaxed">
         I&apos;ll send new arrivals as they list.
+      </p>
+      <p className="text-base leading-relaxed mt-4">
+        I track what each vendor charges over time — so you can see how a price
+        has moved, not just today&apos;s number.
       </p>
       <p className="text-base leading-relaxed mt-4">
         Until then,{' '}
