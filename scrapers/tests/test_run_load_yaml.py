@@ -16,14 +16,15 @@ Coverage:
   test_missing_file_raises_config_error       CTK-093 Q3 — bare error condition
   test_empty_file_returns_empty_dict          yaml.safe_load(...) or {} fallback
   test_present_file_returns_parsed_dict       happy path
-  test_blank_entry_on_denylist_axis_raises    CTK-102 F1 — '' / whitespace entry
+  test_blank_entry_on_denylist_axis_raises    CTK-102 F1 — '' / normalize-blank
+  test_comparator_padding_rules               CTK-102 /code-review F2-F4 fold
   test_scalar_axis_raises                     CTK-102 F3 — scalar char-iterate
   test_non_string_entry_raises                CTK-102 F4 — AttributeError class
   test_product_type_allowlist_blank_entry_allowed  CTK-102 — live-fleet exemption
   test_category_filter_non_mapping_raises     CTK-102 — block-level shape
-  test_top_level_non_mapping_raises           CTK-102 — file-level shape
-  test_valid_multi_axis_passes_through        CTK-102 — pass-through case
-  test_all_live_vendor_yamls_load_clean       CTK-102 SC-3 — no-op on fleet
+  test_top_level_non_mapping_raises           CTK-102 — file-level shape + falsy
+  test_valid_multi_axis_passes_through        CTK-102 — pass-through + null axis
+  test_all_live_vendor_yamls_load_clean       CTK-102 SC-3 — canonical fleet pin
 """
 
 from __future__ import annotations
@@ -120,11 +121,12 @@ def _expect_config_error(slug: str, vendors_dir: Path, yaml_text: str, *expect: 
 
 
 def test_blank_entry_on_denylist_axis_raises():
-    """CTK-102 F1 — a blank entry on a substring/prefix axis is
+    """CTK-102 F1 — an empty entry on a substring/prefix axis is
     match-everything ('' is a substring of every title; startswith('') is
     always True) → silently empty catalog. Must raise at load, naming
-    vendor slug + axis. Whitespace-only entries are the same mechanism
-    class (' ' matches any title containing a space)."""
+    vendor slug + axis. On tag_denylist the equivalent degenerate shape is
+    an entry that normalizes to blank. (Whitespace-PADDED title entries are
+    deliberately legal — see test_comparator_padding_rules.)"""
     with tempfile.TemporaryDirectory() as tmp:
         vendors_dir = Path(tmp) / "vendors"
         vendors_dir.mkdir()
@@ -135,13 +137,49 @@ def test_blank_entry_on_denylist_axis_raises():
         )
         _expect_config_error(
             "f1-vendor", vendors_dir,
-            'category_filter:\n  title_denylist_prefix:\n    - " "\n',
+            'category_filter:\n  title_denylist_prefix:\n    - ""\n',
             "f1-vendor", "title_denylist_prefix",
         )
         _expect_config_error(
             "f1-vendor", vendors_dir,
             'category_filter:\n  tag_denylist:\n    - ""\n',
             "f1-vendor", "tag_denylist",
+        )
+
+
+def test_comparator_padding_rules():
+    """CTK-102 /code-review F2-F4 fold — per-entry blank/padding rules match
+    each axis's ACTUAL parse-side comparator in _should_keep:
+
+      tag_allowlist     lowercase membership, NO strip → padded entry can
+                        never match a tag → reject.
+      product_type_     raw exact match → whitespace-only entry can never
+      allowlist         match the empty-PT bucket ('' != ' ') → reject;
+                        '' itself stays exempt (live empty-PT bucket).
+      tag_denylist      _normalize_tag membership → an entry folding to ''
+                        ('-', whitespace) can never match a real tag →
+                        reject.
+      title axes        raw-lowercase substring/prefix → padding IS
+                        matchable (UC 'ARID ' trailing-space, CTK-096
+                        Q-NEW-1) → NOT strip-rejected; pass-through pinned
+                        in test_valid_multi_axis_passes_through."""
+    with tempfile.TemporaryDirectory() as tmp:
+        vendors_dir = Path(tmp) / "vendors"
+        vendors_dir.mkdir()
+        _expect_config_error(
+            "pad-vendor", vendors_dir,
+            'category_filter:\n  tag_allowlist:\n    - " Coral"\n',
+            "pad-vendor", "tag_allowlist", "' Coral'",
+        )
+        _expect_config_error(
+            "pad-vendor", vendors_dir,
+            'category_filter:\n  product_type_allowlist:\n    - " "\n',
+            "pad-vendor", "product_type_allowlist", "' '",
+        )
+        _expect_config_error(
+            "pad-vendor", vendors_dir,
+            'category_filter:\n  tag_denylist:\n    - "-"\n',
+            "pad-vendor", "tag_denylist", "'-'",
         )
 
 
@@ -228,7 +266,10 @@ def test_category_filter_non_mapping_raises():
 def test_top_level_non_mapping_raises():
     """CTK-102 — a vendor YAML whose top level isn't a mapping (bare list /
     scalar) would AttributeError on the first config.get downstream with
-    error_class='other'; must raise ConfigError at load instead."""
+    error_class='other'; must raise ConfigError at load instead.
+    /code-review F1 fold: FALSY non-mappings ([], false) used to slip
+    through the `or {}` collapse and silently pass — only None (empty file)
+    coalesces now, so falsy non-mappings raise like truthy ones."""
     with tempfile.TemporaryDirectory() as tmp:
         vendors_dir = Path(tmp) / "vendors"
         vendors_dir.mkdir()
@@ -237,13 +278,26 @@ def test_top_level_non_mapping_raises():
             "- a\n- b\n",
             "list-vendor", "top-level mapping",
         )
+        _expect_config_error(
+            "falsy-vendor", vendors_dir,
+            "[]\n",
+            "falsy-vendor", "top-level mapping",
+        )
+        _expect_config_error(
+            "falsy-vendor", vendors_dir,
+            "false\n",
+            "falsy-vendor", "top-level mapping",
+        )
 
 
 def test_valid_multi_axis_passes_through():
-    """CTK-102 pass-through — a well-formed multi-axis config (all five
-    axes, plus a null axis and an empty-list axis, both valid-unset per the
-    canary_floor coalesce posture; battlecorals / jf carry an empty
-    tag_denylist today) parses unchanged."""
+    """CTK-102 pass-through — a well-formed multi-axis config parses
+    unchanged. The fixture deliberately exercises the three valid-unset /
+    edge shapes alongside populated axes: a present-but-null axis
+    (`tag_denylist:` — /code-review F8, the `value is None` branch), an
+    empty-list axis (battlecorals / jf carry one today), and the
+    ARID-style padded title entry (raw substring comparator; padding legal
+    per the F2-F4 comparator rules)."""
     with tempfile.TemporaryDirectory() as tmp:
         vendors_dir = Path(tmp) / "vendors"
         vendors_dir.mkdir()
@@ -255,7 +309,7 @@ def test_valid_multi_axis_passes_through():
             "    - CORAL\n"
             "  tag_allowlist:\n"
             "    - Coral\n"
-            "  tag_denylist: []\n"
+            "  tag_denylist:\n"
             "  title_denylist:\n"
             "    - Chaeto\n"
             '    - "ARID "\n'
@@ -267,9 +321,19 @@ def test_valid_multi_axis_passes_through():
         cf = result["category_filter"]
         assert cf["product_type_allowlist"] == ["", "CORAL"]
         assert cf["tag_allowlist"] == ["Coral"]
-        assert cf["tag_denylist"] == []
+        assert cf["tag_denylist"] is None, (
+            f"present-but-null axis must pass through as None; got: "
+            f"{cf['tag_denylist']!r}"
+        )
         assert cf["title_denylist"] == ["Chaeto", "ARID "]
         assert cf["title_denylist_prefix"] == ["WS - "]
+        # Empty-list axis is likewise valid-unset (battlecorals / jf shape).
+        (vendors_dir / "ok-vendor-2.yaml").write_text(
+            "category_filter:\n  tag_denylist: []\n",
+            encoding="utf-8",
+        )
+        result2 = _run_load_yaml_with_vendors_dir("ok-vendor-2", vendors_dir)
+        assert result2["category_filter"]["tag_denylist"] == []
 
 
 def test_all_live_vendor_yamls_load_clean():
@@ -278,14 +342,19 @@ def test_all_live_vendor_yamls_load_clean():
     resolution against the real repo). This is the load-bearing no-op pin:
     the loader change must not reject any current fleet config, and a
     future YAML edit that introduces a malformed axis fails HERE before it
-    fails in a cron window."""
+    fails in a cron window.
+
+    /code-review F7 fold: this glob sweep is the CANONICAL fleet-enumeration
+    pin (the prior slug-list copy in test_parse_shopify_filter_axes.py is
+    trimmed to defer here); it absorbs that test's slug-key assertion."""
     vendors_dir = Path(run.__file__).parent.parent / "vendors"
     yaml_files = sorted(vendors_dir.glob("*.yaml"))
     assert len(yaml_files) >= 11, (
         f"expected the 11-vendor fleet in {vendors_dir}; found {len(yaml_files)}"
     )
     for yaml_file in yaml_files:
-        run._load_yaml(yaml_file.stem)  # raises ConfigError on any rejection
+        cfg = run._load_yaml(yaml_file.stem)  # raises ConfigError on rejection
+        assert "slug" in cfg, f"{yaml_file.name} missing 'slug' field"
 
 
 # ─── Test runner ──────────────────────────────────────────────────────────────
@@ -294,6 +363,7 @@ TESTS = [
     test_empty_file_returns_empty_dict,
     test_present_file_returns_parsed_dict,
     test_blank_entry_on_denylist_axis_raises,
+    test_comparator_padding_rules,
     test_scalar_axis_raises,
     test_non_string_entry_raises,
     test_product_type_allowlist_blank_entry_allowed,

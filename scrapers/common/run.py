@@ -60,31 +60,23 @@ def _load_yaml(slug: str) -> dict:
     yaml_path = Path(__file__).parent.parent / "vendors" / f"{slug}.yaml"
     if not yaml_path.exists():
         raise ConfigError(f"no vendor YAML at {yaml_path}")
-    config = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+    config = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+    if config is None:
+        config = {}  # present-but-empty file stays valid; defaults apply
     if not isinstance(config, dict):
         # CTK-102 — a YAML whose top level isn't a mapping (bare list /
         # scalar) would AttributeError on the first config.get downstream
         # with error_class='other' pointing on-call at the vendor surface;
-        # fail here with the config routing instead.
+        # fail here with the config routing instead. /code-review F1 fold:
+        # only None collapses to {} above — a falsy non-mapping top level
+        # ([], false, 0, '') reaches this guard instead of silently passing
+        # through the prior `or {}`.
         raise ConfigError(
             f"{slug}: vendor YAML must be a top-level mapping; "
             f"got {type(config).__name__}"
         )
     _validate_category_filter(slug, config)
     return config
-
-
-# CTK-102 — the five category_filter axes consumed by parse-side filtering
-# (parse_shopify._should_keep + the fetch_and_parse hoisted sets). Keys
-# outside this tuple are not validated here (an unknown key is silently
-# inert at parse time — see CTK-102 Q-1 for the typo'd-axis-name gap).
-_FILTER_AXES = (
-    "product_type_allowlist",
-    "tag_allowlist",
-    "tag_denylist",
-    "title_denylist",
-    "title_denylist_prefix",
-)
 
 
 def _validate_category_filter(slug: str, config: dict) -> None:
@@ -114,7 +106,26 @@ def _validate_category_filter(slug: str, config: dict) -> None:
     means the axis is simply unset and per-key defaults apply. An empty
     list is likewise a valid unset axis (battlecorals / jf carry an empty
     tag_denylist today). Message register per the TG category_paths
-    precedent: vendor slug + offending axis + offending value."""
+    precedent: vendor slug + offending axis + offending value.
+
+    Per-entry blank/padding rules (CTK-102 /code-review F2-F4 fold) are
+    derived from each axis's ACTUAL parse-side comparator in _should_keep,
+    not a generic "non-empty string" notion:
+
+      product_type_allowlist — raw exact match. '' is the live empty-PT
+          bucket entry (exempt above); a whitespace-only entry can never
+          match it ('' != ' ') — rejected. Padded non-blank entries stay
+          legal (they exact-match a padded vendor PT).
+      tag_allowlist — lowercase membership with NO strip on either side,
+          so any leading/trailing whitespace makes an entry unmatchable —
+          rejected, along with ''.
+      tag_denylist — membership under _normalize_tag (both sides), which
+          folds '-' and whitespace runs; an entry that normalizes to ''
+          can never match a real tag — rejected.
+      title_denylist / title_denylist_prefix — raw-lowercase substring /
+          prefix. Padding IS matchable and deliberately live (UC "ARID "
+          trailing-space, CTK-096 Q-NEW-1) — NOT strip-rejected; only ''
+          (match-everything) is rejected."""
     category_filter = config.get("category_filter")
     if category_filter is None:
         return
@@ -123,7 +134,12 @@ def _validate_category_filter(slug: str, config: dict) -> None:
             f"{slug}: category_filter must be a mapping of filter axes; "
             f"got {category_filter!r}"
         )
-    for axis in _FILTER_AXES:
+    # Axis set imported from the consumption site (parse_shopify.FILTER_AXES,
+    # /code-review F6) so a sixth axis added parse-side gets load-validation
+    # automatically. Keys outside that tuple are not validated here (an
+    # unknown key is silently inert at parse time — see CTK-102 Q-1 for the
+    # typo'd-axis-name gap).
+    for axis in parse_shopify.FILTER_AXES:
         value = category_filter.get(axis)
         if value is None:
             continue  # absent or blank (`tag_denylist:`) — axis unset
@@ -138,12 +154,36 @@ def _validate_category_filter(slug: str, config: dict) -> None:
                     f"{slug}: category_filter.{axis} entries must be "
                     f"strings; got {entry!r}"
                 )
-            if axis != "product_type_allowlist" and not entry.strip():
-                raise ConfigError(
-                    f"{slug}: category_filter.{axis} entry must be a "
-                    f"non-empty string (a blank substring or prefix matches "
-                    f"every product); got {entry!r}"
-                )
+            if axis == "product_type_allowlist":
+                if entry and not entry.strip():
+                    raise ConfigError(
+                        f"{slug}: category_filter.{axis} entry is "
+                        f"whitespace-only — the raw exact-match comparator "
+                        f"can never match it (the empty-PT bucket entry is "
+                        f"''); got {entry!r}"
+                    )
+            elif axis == "tag_allowlist":
+                if not entry or entry != entry.strip():
+                    raise ConfigError(
+                        f"{slug}: category_filter.{axis} entry must be "
+                        f"non-empty with no leading/trailing whitespace "
+                        f"(membership is lowercase-exact, no strip); "
+                        f"got {entry!r}"
+                    )
+            elif axis == "tag_denylist":
+                if not parse_shopify._normalize_tag(entry):
+                    raise ConfigError(
+                        f"{slug}: category_filter.{axis} entry normalizes "
+                        f"to blank under tag normalization and can never "
+                        f"match a real tag; got {entry!r}"
+                    )
+            else:  # title_denylist / title_denylist_prefix
+                if entry == "":
+                    raise ConfigError(
+                        f"{slug}: category_filter.{axis} entry must be "
+                        f"non-empty (an empty substring or prefix matches "
+                        f"every product); got {entry!r}"
+                    )
 
 
 def _completeness_degraded(pages_fetched: int | None, median_pages_7d: float) -> bool:

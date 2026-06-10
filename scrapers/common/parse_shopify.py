@@ -22,6 +22,18 @@ log = logging.getLogger(__name__)
 # Auctions are ReefnBid's contract (CTK-007), never POTO Shopify coral.
 _KNOWN_EXCLUDED_PRODUCT_TYPES = frozenset({"merch", "Gift Card", "addon", "auction"})
 
+# CTK-102 /code-review F6 — the category_filter axes _should_keep consumes,
+# exported so the load-time validator (run._validate_category_filter) derives
+# its axis set from the consumption site: a sixth axis added here gets
+# load-validation automatically instead of silently bypassing it.
+FILTER_AXES = (
+    "product_type_allowlist",
+    "tag_allowlist",
+    "tag_denylist",
+    "title_denylist",
+    "title_denylist_prefix",
+)
+
 _TRUE_STRINGS = frozenset({"true", "1", "yes", "on"})
 
 

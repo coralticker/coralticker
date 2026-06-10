@@ -10,16 +10,19 @@ introduced the same regression-pin shape (multi-vendor filter-axis
 interaction); this file extends it for CTK-096 D-2.
 
 Asserts:
-  1. _load_yaml accepts every vendor YAML in scrapers/vendors/ — no parse
-     errors, no missing-field crashes. Catches a YAML-side typo or
-     accidental shape drift before it lands in the cron tick.
-  2. tag_denylist membership is case-insensitive in BOTH directions —
+  1. tag_denylist membership is case-insensitive in BOTH directions —
      YAML mixed-case + API lowercase = drop; YAML lowercase + API
      mixed-case = drop. Pins CTK-096 D-2 against future tag-shape
      regressions on any of the 11 vendors.
-  3. title_denylist_prefix (CTK-119) is ANCHORED + case-insensitive +
+  2. title_denylist_prefix (CTK-119) is ANCHORED + case-insensitive +
      permissive-when-unset — pins the anchor semantics (word-final "ws"
      collision class survives) and the 10 non-WWC vendors byte-identical.
+
+The all-vendor-YAML load smoke test that used to live here (CTK-096 D-4
+assert 1, slug-list enumeration) moved to test_run_load_yaml.py's
+test_all_live_vendor_yamls_load_clean (CTK-102 /code-review F7) — the glob
+sweep there is the canonical fleet-enumeration pin and absorbed the
+slug-key assertion.
 
 Runnable as:
   python -m scrapers.tests.test_parse_shopify_filter_axes
@@ -31,26 +34,6 @@ import sys
 import traceback
 
 from scrapers.common.parse_shopify import _should_keep
-from scrapers.common.run import _load_yaml
-
-
-VENDOR_SLUGS = [
-    "aquasd", "battlecorals", "jf", "pacific_east", "poto", "reef_chasers",
-    "tidal_gardens", "tsa", "unique_corals", "vivid_aquariums", "wwc",
-]
-
-
-def test_load_all_11_vendor_yamls():
-    """All 11 vendor YAMLs parse cleanly via the canonical _load_yaml entrypoint
-    used by run.py at scrape-start. A YAML-side typo (bad indent, missing
-    colon) would surface here rather than in the cron logs. The slug field
-    isn't asserted equal to the filename — CTK-093 surfaced an underscore-vs-
-    hyphen mismatch that's now codified DB-side; the YAML invariant here is
-    just `parses to a dict carrying a slug key`."""
-    for slug in VENDOR_SLUGS:
-        cfg = _load_yaml(slug)
-        assert isinstance(cfg, dict), f"{slug}.yaml did not parse to a dict"
-        assert "slug" in cfg, f"{slug}.yaml missing 'slug' field"
 
 
 # --- Lowercase-runtime mitigation, both directions ---
@@ -265,7 +248,6 @@ def test_title_denylist_prefix_anchored_not_substring():
 
 def main() -> int:
     tests = [
-        test_load_all_11_vendor_yamls,
         test_yaml_mixed_case_api_lowercase_drops,
         test_yaml_lowercase_api_mixed_case_drops,
         test_yaml_and_api_both_mixed_case_drops_no_regression,

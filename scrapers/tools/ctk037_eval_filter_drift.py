@@ -24,12 +24,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from pathlib import Path
-
-import yaml
 
 from scrapers.common import db, http
 from scrapers.common.parse_shopify import _should_keep, SchemaChangeError
+
+# CTK-102 /code-review F5 — use the canonical loader (with its load-time
+# axis validation) instead of a private clone; ctk119 tools' convention.
+from scrapers.common.run import _load_yaml
 
 
 VENDOR_SLUGS = ("pacific_east", "wwc", "tsa")
@@ -58,11 +59,6 @@ SUSPECT_BUCKETS: dict[str, dict[str, int]] = {
         "Coral-POS": 1,
     },
 }
-
-
-def _load_yaml(slug: str) -> dict:
-    path = Path(__file__).parent.parent / "vendors" / f"{slug}.yaml"
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
 def _fetch_fresh_catalog(config: dict) -> dict[str, dict]:
