@@ -52,11 +52,98 @@ def _load_yaml(slug: str) -> dict:
     DB slug `unique-corals` hyphenated) silently dropped `originator_prefix`
     on every UC scrape until the rename landed. A present-but-empty file
     stays valid — `yaml.safe_load(...) or {}` collapses null content to
-    {} so per-key defaults still apply."""
+    {} so per-key defaults still apply.
+
+    CTK-102: the category_filter axes are shape-validated here (see
+    _validate_category_filter) so a malformed axis fails loud at load time
+    with error_class='config', never silently mis-filters mid-scrape."""
     yaml_path = Path(__file__).parent.parent / "vendors" / f"{slug}.yaml"
     if not yaml_path.exists():
         raise ConfigError(f"no vendor YAML at {yaml_path}")
-    return yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+    config = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(config, dict):
+        # CTK-102 — a YAML whose top level isn't a mapping (bare list /
+        # scalar) would AttributeError on the first config.get downstream
+        # with error_class='other' pointing on-call at the vendor surface;
+        # fail here with the config routing instead.
+        raise ConfigError(
+            f"{slug}: vendor YAML must be a top-level mapping; "
+            f"got {type(config).__name__}"
+        )
+    _validate_category_filter(slug, config)
+    return config
+
+
+# CTK-102 — the five category_filter axes consumed by parse-side filtering
+# (parse_shopify._should_keep + the fetch_and_parse hoisted sets). Keys
+# outside this tuple are not validated here (an unknown key is silently
+# inert at parse time — see CTK-102 Q-1 for the typo'd-axis-name gap).
+_FILTER_AXES = (
+    "product_type_allowlist",
+    "tag_allowlist",
+    "tag_denylist",
+    "title_denylist",
+    "title_denylist_prefix",
+)
+
+
+def _validate_category_filter(slug: str, config: dict) -> None:
+    """CTK-102 — schema-validate the category_filter axes at load time,
+    never at scrape. Each axis must be a list of strings or absent. Three
+    latent malformed-shape classes fail loud here as ConfigError
+    (error_class='config' via the run() handler, same routing as
+    canary_floor / cohort_flip_cap):
+
+      F1 — blank entry on a substring/prefix axis: `'' in title` and
+           `title.startswith('')` are always True, so one blank entry on
+           title_denylist / title_denylist_prefix silently empties the
+           catalog; on the tag axes a blank entry is a dead no-op. Either
+           way it is config noise — rejected. product_type_allowlist is
+           EXEMPT: '' there is an exact match against an empty
+           product_type, a deliberate live shape on 5 of 11 fleet YAMLs
+           (battlecorals / jf / poto / tsa / unique_corals empty-PT
+           buckets).
+      F3 — scalar where a list is expected (`tag_denylist: coral`): the
+           parse-side `for e in <axis>` iterates the string char-by-char
+           (['c','o','r','a','l']) — silent mis-filter, no crash.
+      F4 — non-string entry (`tag_denylist: [123]`): AttributeError on
+           .lower() mid-scrape — loud but late, and error_class='other'
+           points on-call at the vendor surface instead of the YAML.
+
+    Coalesce posture mirrors canary_floor (Stage 5.6): absent / null axis
+    means the axis is simply unset and per-key defaults apply. An empty
+    list is likewise a valid unset axis (battlecorals / jf carry an empty
+    tag_denylist today). Message register per the TG category_paths
+    precedent: vendor slug + offending axis + offending value."""
+    category_filter = config.get("category_filter")
+    if category_filter is None:
+        return
+    if not isinstance(category_filter, dict):
+        raise ConfigError(
+            f"{slug}: category_filter must be a mapping of filter axes; "
+            f"got {category_filter!r}"
+        )
+    for axis in _FILTER_AXES:
+        value = category_filter.get(axis)
+        if value is None:
+            continue  # absent or blank (`tag_denylist:`) — axis unset
+        if not isinstance(value, list):
+            raise ConfigError(
+                f"{slug}: category_filter.{axis} must be a list of strings "
+                f"or absent; got {value!r}"
+            )
+        for entry in value:
+            if not isinstance(entry, str):
+                raise ConfigError(
+                    f"{slug}: category_filter.{axis} entries must be "
+                    f"strings; got {entry!r}"
+                )
+            if axis != "product_type_allowlist" and not entry.strip():
+                raise ConfigError(
+                    f"{slug}: category_filter.{axis} entry must be a "
+                    f"non-empty string (a blank substring or prefix matches "
+                    f"every product); got {entry!r}"
+                )
 
 
 def _completeness_degraded(pages_fetched: int | None, median_pages_7d: float) -> bool:

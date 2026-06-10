@@ -1,5 +1,6 @@
 """scrapers/tests/test_run_load_yaml.py — CTK-093 SC-3 unit coverage for
-`scrapers.common.run._load_yaml` raise-on-missing.
+`scrapers.common.run._load_yaml` raise-on-missing, extended by CTK-102 with
+category_filter axis shape-validation coverage.
 
 Runnable as:
   python -m scrapers.tests.test_run_load_yaml
@@ -8,12 +9,21 @@ or
 
 No pytest dependency. No DB connection — `_load_yaml` is a pure filesystem
 read with `pathlib.Path` + `yaml.safe_load`. Each test stubs the path
-resolution to a tmpdir-controlled YAML file.
+resolution to a tmpdir-controlled YAML file (except the live-fleet sweep,
+which deliberately reads the real scrapers/vendors/ directory).
 
 Coverage:
-  test_missing_file_raises_config_error  CTK-093 Q3 — bare error condition
-  test_empty_file_returns_empty_dict     yaml.safe_load(...) or {} fallback
-  test_present_file_returns_parsed_dict  happy path
+  test_missing_file_raises_config_error       CTK-093 Q3 — bare error condition
+  test_empty_file_returns_empty_dict          yaml.safe_load(...) or {} fallback
+  test_present_file_returns_parsed_dict       happy path
+  test_blank_entry_on_denylist_axis_raises    CTK-102 F1 — '' / whitespace entry
+  test_scalar_axis_raises                     CTK-102 F3 — scalar char-iterate
+  test_non_string_entry_raises                CTK-102 F4 — AttributeError class
+  test_product_type_allowlist_blank_entry_allowed  CTK-102 — live-fleet exemption
+  test_category_filter_non_mapping_raises     CTK-102 — block-level shape
+  test_top_level_non_mapping_raises           CTK-102 — file-level shape
+  test_valid_multi_axis_passes_through        CTK-102 — pass-through case
+  test_all_live_vendor_yamls_load_clean       CTK-102 SC-3 — no-op on fleet
 """
 
 from __future__ import annotations
@@ -87,11 +97,210 @@ def test_present_file_returns_parsed_dict():
         )
 
 
+# ─── CTK-102 — category_filter axis shape-validation ─────────────────────────
+
+
+def _expect_config_error(slug: str, vendors_dir: Path, yaml_text: str, *expect: str):
+    """Write yaml_text as <slug>.yaml, load it, assert ConfigError whose
+    message contains every `expect` substring (slug + axis name per the
+    plan's message contract)."""
+    (vendors_dir / f"{slug}.yaml").write_text(yaml_text, encoding="utf-8")
+    try:
+        _run_load_yaml_with_vendors_dir(slug, vendors_dir)
+    except ConfigError as e:
+        for fragment in expect:
+            assert fragment in str(e), (
+                f"ConfigError message should contain {fragment!r}; got: {e}"
+            )
+        return
+    raise AssertionError(
+        f"malformed config must raise ConfigError at load time, not pass: "
+        f"{yaml_text!r}"
+    )
+
+
+def test_blank_entry_on_denylist_axis_raises():
+    """CTK-102 F1 — a blank entry on a substring/prefix axis is
+    match-everything ('' is a substring of every title; startswith('') is
+    always True) → silently empty catalog. Must raise at load, naming
+    vendor slug + axis. Whitespace-only entries are the same mechanism
+    class (' ' matches any title containing a space)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        vendors_dir = Path(tmp) / "vendors"
+        vendors_dir.mkdir()
+        _expect_config_error(
+            "f1-vendor", vendors_dir,
+            'category_filter:\n  title_denylist:\n    - Chaeto\n    - ""\n',
+            "f1-vendor", "title_denylist",
+        )
+        _expect_config_error(
+            "f1-vendor", vendors_dir,
+            'category_filter:\n  title_denylist_prefix:\n    - " "\n',
+            "f1-vendor", "title_denylist_prefix",
+        )
+        _expect_config_error(
+            "f1-vendor", vendors_dir,
+            'category_filter:\n  tag_denylist:\n    - ""\n',
+            "f1-vendor", "tag_denylist",
+        )
+
+
+def test_scalar_axis_raises():
+    """CTK-102 F3 — a scalar where a list is expected. The parse-side
+    `for e in <axis>` iterates a string char-by-char (`tag_denylist: coral`
+    → ['c','o','r','a','l']) — silent mis-filter, no crash. The plan's F1
+    scalar shape (`product_type_allowlist: ""`) is the same class: today
+    the `or []` collapse silently DISABLES the axis (equipment leaks), so
+    both scalar shapes must raise at load."""
+    with tempfile.TemporaryDirectory() as tmp:
+        vendors_dir = Path(tmp) / "vendors"
+        vendors_dir.mkdir()
+        _expect_config_error(
+            "f3-vendor", vendors_dir,
+            "category_filter:\n  tag_denylist: coral\n",
+            "f3-vendor", "tag_denylist", "'coral'",
+        )
+        _expect_config_error(
+            "f3-vendor", vendors_dir,
+            'category_filter:\n  product_type_allowlist: ""\n',
+            "f3-vendor", "product_type_allowlist",
+        )
+
+
+def test_non_string_entry_raises():
+    """CTK-102 F4 — a non-string entry (`tag_denylist: [123]`) hits
+    AttributeError on .lower() mid-scrape with error_class='other' pointing
+    on-call at the vendor surface; must instead raise ConfigError at load.
+    A non-string scalar axis (`tag_denylist: 123`) is caught by the F3
+    list-shape check. YAML bools (`- true`) are non-string entries too."""
+    with tempfile.TemporaryDirectory() as tmp:
+        vendors_dir = Path(tmp) / "vendors"
+        vendors_dir.mkdir()
+        _expect_config_error(
+            "f4-vendor", vendors_dir,
+            "category_filter:\n  tag_denylist:\n    - 123\n",
+            "f4-vendor", "tag_denylist", "123",
+        )
+        _expect_config_error(
+            "f4-vendor", vendors_dir,
+            "category_filter:\n  tag_denylist: 123\n",
+            "f4-vendor", "tag_denylist",
+        )
+        _expect_config_error(
+            "f4-vendor", vendors_dir,
+            "category_filter:\n  tag_allowlist:\n    - true\n",
+            "f4-vendor", "tag_allowlist",
+        )
+
+
+def test_product_type_allowlist_blank_entry_allowed():
+    """CTK-102 — the F1 blank-entry rejection EXEMPTS product_type_allowlist:
+    '' there is an exact match against an empty product_type, a deliberate
+    live shape on 5 of 11 fleet YAMLs (battlecorals / jf / poto / tsa /
+    unique_corals empty-PT buckets). Rejecting it would false-positive
+    half the fleet at next checkout."""
+    with tempfile.TemporaryDirectory() as tmp:
+        vendors_dir = Path(tmp) / "vendors"
+        vendors_dir.mkdir()
+        (vendors_dir / "pt-vendor.yaml").write_text(
+            'category_filter:\n  product_type_allowlist:\n    - ""\n    - CORAL\n',
+            encoding="utf-8",
+        )
+        result = _run_load_yaml_with_vendors_dir("pt-vendor", vendors_dir)
+        assert result["category_filter"]["product_type_allowlist"] == ["", "CORAL"], (
+            f"'' member of product_type_allowlist must pass through; got: {result!r}"
+        )
+
+
+def test_category_filter_non_mapping_raises():
+    """CTK-102 — category_filter itself must be a mapping; a scalar/list
+    there would AttributeError on the first .get at parse time."""
+    with tempfile.TemporaryDirectory() as tmp:
+        vendors_dir = Path(tmp) / "vendors"
+        vendors_dir.mkdir()
+        _expect_config_error(
+            "cf-vendor", vendors_dir,
+            "category_filter: coral\n",
+            "cf-vendor", "category_filter", "mapping",
+        )
+
+
+def test_top_level_non_mapping_raises():
+    """CTK-102 — a vendor YAML whose top level isn't a mapping (bare list /
+    scalar) would AttributeError on the first config.get downstream with
+    error_class='other'; must raise ConfigError at load instead."""
+    with tempfile.TemporaryDirectory() as tmp:
+        vendors_dir = Path(tmp) / "vendors"
+        vendors_dir.mkdir()
+        _expect_config_error(
+            "list-vendor", vendors_dir,
+            "- a\n- b\n",
+            "list-vendor", "top-level mapping",
+        )
+
+
+def test_valid_multi_axis_passes_through():
+    """CTK-102 pass-through — a well-formed multi-axis config (all five
+    axes, plus a null axis and an empty-list axis, both valid-unset per the
+    canary_floor coalesce posture; battlecorals / jf carry an empty
+    tag_denylist today) parses unchanged."""
+    with tempfile.TemporaryDirectory() as tmp:
+        vendors_dir = Path(tmp) / "vendors"
+        vendors_dir.mkdir()
+        (vendors_dir / "ok-vendor.yaml").write_text(
+            "slug: ok-vendor\n"
+            "category_filter:\n"
+            "  product_type_allowlist:\n"
+            '    - ""\n'
+            "    - CORAL\n"
+            "  tag_allowlist:\n"
+            "    - Coral\n"
+            "  tag_denylist: []\n"
+            "  title_denylist:\n"
+            "    - Chaeto\n"
+            '    - "ARID "\n'
+            "  title_denylist_prefix:\n"
+            '    - "WS - "\n',
+            encoding="utf-8",
+        )
+        result = _run_load_yaml_with_vendors_dir("ok-vendor", vendors_dir)
+        cf = result["category_filter"]
+        assert cf["product_type_allowlist"] == ["", "CORAL"]
+        assert cf["tag_allowlist"] == ["Coral"]
+        assert cf["tag_denylist"] == []
+        assert cf["title_denylist"] == ["Chaeto", "ARID "]
+        assert cf["title_denylist_prefix"] == ["WS - "]
+
+
+def test_all_live_vendor_yamls_load_clean():
+    """CTK-102 SC-3 — every live vendor YAML in scrapers/vendors/ loads
+    clean under the new validation (no stub: real run.__file__ path
+    resolution against the real repo). This is the load-bearing no-op pin:
+    the loader change must not reject any current fleet config, and a
+    future YAML edit that introduces a malformed axis fails HERE before it
+    fails in a cron window."""
+    vendors_dir = Path(run.__file__).parent.parent / "vendors"
+    yaml_files = sorted(vendors_dir.glob("*.yaml"))
+    assert len(yaml_files) >= 11, (
+        f"expected the 11-vendor fleet in {vendors_dir}; found {len(yaml_files)}"
+    )
+    for yaml_file in yaml_files:
+        run._load_yaml(yaml_file.stem)  # raises ConfigError on any rejection
+
+
 # ─── Test runner ──────────────────────────────────────────────────────────────
 TESTS = [
     test_missing_file_raises_config_error,
     test_empty_file_returns_empty_dict,
     test_present_file_returns_parsed_dict,
+    test_blank_entry_on_denylist_axis_raises,
+    test_scalar_axis_raises,
+    test_non_string_entry_raises,
+    test_product_type_allowlist_blank_entry_allowed,
+    test_category_filter_non_mapping_raises,
+    test_top_level_non_mapping_raises,
+    test_valid_multi_axis_passes_through,
+    test_all_live_vendor_yamls_load_clean,
 ]
 
 
