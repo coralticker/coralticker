@@ -61,7 +61,16 @@ export interface DigestRow {
 
 const EMBED_DESCRIPTION_CAP = 4096; // Discord hard limit per embed description
 const PER_VENDOR_CAP = 3; // Jon + /reef-lead lock 2026-06-04
+
+// Site links (email masthead wordmark-home parity, lib/email/digest.ts). The
+// embed's url field makes the title link home; the "+ N more" tails link to
+// /new because the overflow rows are last-24h lead events and /new is that
+// exact surface (same RPC). Bare domains don't auto-link in embed
+// descriptions, so the tail is a masked markdown link — <>-wrapped per the
+// buy-link hardening below, link text stays the bare domain.
+const SITE_URL = 'https://coralticker.com';
 const TAIL_SITE = 'coralticker.com';
+const TAIL_LINK = `[${TAIL_SITE}](<${SITE_URL}/new>)`;
 
 // RPC precedence ranks, mirrored for within-vendor display order only —
 // the lead-event CHOICE per listing already happened in the RPC.
@@ -199,12 +208,12 @@ function renderGroup(group: VendorGroup, now: Date, capped: boolean): string {
   const n = group.rows.length;
   const header = `**${escapeDiscordMd(group.vendor)}** — ${n} drop${n === 1 ? '' : 's'}`;
   if (capped) {
-    return `${header}\n+ ${n} more at ${TAIL_SITE}`;
+    return `${header}\n+ ${n} more at ${TAIL_LINK}`;
   }
   const lines = group.rows.slice(0, PER_VENDOR_CAP).map((row) => buildLine(row, now));
   const overflow = n - PER_VENDOR_CAP;
   if (overflow > 0) {
-    lines.push(`+ ${overflow} more at ${TAIL_SITE}`);
+    lines.push(`+ ${overflow} more at ${TAIL_LINK}`);
   }
   return [header, ...lines].join('\n');
 }
@@ -244,6 +253,16 @@ export function buildTitle(now: Date): string {
     timeZone: 'America/New_York',
   }).format(now);
   return `CoralTicker — daily drops ${date}`;
+}
+
+// The embed url field renders the title as a link home — the embed-level
+// analogue of the email masthead's wordmark-home pattern (lib/email/digest.ts
+// MASTHEAD). Exported so the field is assertable without running main().
+export function buildEmbed(
+  title: string,
+  description: string,
+): { title: string; description: string; url: string } {
+  return { title, description, url: SITE_URL };
 }
 
 async function fetchRows(): Promise<DigestRow[]> {
@@ -297,7 +316,7 @@ async function main(): Promise<number> {
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ embeds: [{ title, description }] }),
+    body: JSON.stringify({ embeds: [buildEmbed(title, description)] }),
   });
   if (!response.ok) {
     console.error(`digest: webhook POST failed: HTTP ${response.status} ${await response.text()}`);

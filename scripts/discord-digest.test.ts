@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildDescription,
+  buildEmbed,
   buildFields,
   buildLine,
   buildTitle,
@@ -156,7 +157,12 @@ test('per-vendor cap at 3 with honest overflow tail', () => {
   const description = buildDescription(rows, NOW);
   assert.match(description, /^\*\*WWC\*\* — 5 drops\n/);
   assert.equal(description.split('\n').length, 5); // header + 3 lines + tail
-  assert.match(description, /\n\+ 2 more at coralticker\.com$/);
+  // Tail is a masked markdown link to /new (bare domains don't auto-link in
+  // embed descriptions); link text stays the bare domain.
+  assert.match(
+    description,
+    /\n\+ 2 more at \[coralticker\.com\]\(<https:\/\/coralticker\.com\/new>\)$/,
+  );
 });
 
 test('vendor at or under cap renders all lines, no tail', () => {
@@ -189,11 +195,24 @@ test('defensive trim collapses quietest vendors and stays under 4096', () => {
   // Busiest-first ordering is count-equal here, so name-asc: Vendor 00
   // stays fully rendered; collapsed groups carry the full-count tail.
   assert.match(description, /\*\*Vendor 00\*\* — 3 drops\n\*\*Extremely/);
-  assert.match(description, /\*\*Vendor 39\*\* — 3 drops\n\+ 3 more at coralticker\.com/);
+  // Collapsed-group tail (the capped renderGroup branch) carries the same
+  // masked /new link as the overflow tail.
+  assert.match(
+    description,
+    /\*\*Vendor 39\*\* — 3 drops\n\+ 3 more at \[coralticker\.com\]\(<https:\/\/coralticker\.com\/new>\)/,
+  );
 });
 
 test('empty rows produce empty description (caller skips the post)', () => {
   assert.equal(buildDescription([], NOW), '');
+});
+
+test('embed url field links the title home (wordmark-home parity)', () => {
+  assert.deepEqual(buildEmbed('CoralTicker — daily drops 2026-06-04', 'body'), {
+    title: 'CoralTicker — daily drops 2026-06-04',
+    description: 'body',
+    url: 'https://coralticker.com',
+  });
 });
 
 test('title carries the US Eastern date', () => {
