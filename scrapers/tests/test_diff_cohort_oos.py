@@ -19,6 +19,14 @@ the CTK-094 D-1 cohort-comparison-OOS pass in scrapers/common/diff.classify:
   (gating happens at run.py per §3 short-circuit); test the tuple shape so the
   caller can discard the second list cleanly.
 
+CTK-106 admitted-set contract (decision #83) — verify-pass tests 1-6: the
+CTK-094 fold-#4 filtered-URL exclusion is retired. `in_stock=true` is asserted
+only while a row is in the vendor's current admitted set (parsed + YAML-filter-
+passed); filter-rejected rows flip OOS through the cohort pass for either
+cause (vendor-recat or operator-tighten). `filtered_urls` is observability-
+only. The vendor-recat flip test REPLACES the original exclusion regression
+test — the expectation inverted at the contract change.
+
 Runnable as:
   python -m scrapers.tests.test_diff_cohort_oos
 """
@@ -30,7 +38,7 @@ import traceback
 from decimal import Decimal
 
 from scrapers.common.diff import Counters, ItemDecision, classify
-from scrapers.common.run import _apply_cohort_gate
+from scrapers.common.run import _apply_cohort_gate, _flip_cap_tripped, _resolve_flip_cap
 
 
 # ---------------------------------------------------------------------------
@@ -329,38 +337,186 @@ def test_classify_tuple_shape_supports_caller_gate():
     assert cohort_on[0].item["product_url"] == "url-b"
 
 
-def test_filtered_urls_excluded_from_cohort_absent_set():
-    """CTK-094 fold #4 — URLs the parser rejected via YAML filter (e.g.,
-    in_stock_only sold-out drop, product_type_allowlist mismatch) MUST be
-    excluded from the cohort absent-set. The parser's _should_keep dropping
-    item X doesn't mean X is vendor-sold-out — could be a re-categorization
-    by the vendor. Cohort branch should NOT flip such URLs to OOS."""
-    existing_by_url = {
-        "url-still-in-scrape": _make_existing(1, "url-still-in-scrape", in_stock=True),
-        "url-vendor-sold": _make_existing(2, "url-vendor-sold", in_stock=True),  # absent + not filtered → cohort flip
-        "url-parser-rejected": _make_existing(3, "url-parser-rejected", in_stock=True),  # absent + filtered → NO flip
-    }
-    items = [_make_item("url-still-in-scrape", in_stock=True)]
-    filtered_urls = {"url-parser-rejected"}
+# ---------------------------------------------------------------------------
+# CTK-106 admitted-set contract (decision #83) — verify-pass tests 1-6.
+# The fold-#4 exclusion regression test that lived here
+# (test_filtered_urls_excluded_from_cohort_absent_set) is REPLACED by
+# test_vendor_recat_filtered_url_flips below: the expectation inverted at
+# the contract change (vendor-recat rows now flip, deliberately).
+# ---------------------------------------------------------------------------
 
+
+def test_operator_tighten_filtered_url_flips():
+    """CTK-106 verify-pass 1 — operator-tighten: a previously-admitted
+    in-stock row, still present in the vendor feed but newly denied by a
+    YAML filter edit (tag_denylist / product_type_allowlist tightening),
+    joins the cohort absent-set and flips OOS. This is the CTK-104 6-fish /
+    CTK-119 / CTK-121 hand-bridge class — under the retired fold-#4
+    exclusion these rows persisted as stale in_stock=true."""
+    existing_by_url = {
+        "url-still-admitted": _make_existing(1, "url-still-admitted", in_stock=True),
+        "url-newly-denied": _make_existing(2, "url-newly-denied", in_stock=True, current_price="80.00"),
+    }
+    # The newly-denied row is in the FEED but the parser rejected it, so it
+    # reaches classify via filtered_urls, not items.
+    items = [_make_item("url-still-admitted", in_stock=True)]
     per_item, cohort_oos = classify(
         items,
         existing_by_url,
         cohort_oos_at_persist=True,
-        filtered_urls=filtered_urls,
+        filtered_urls={"url-newly-denied"},
     )
-
-    # Only url-vendor-sold gets cohort-flipped. url-parser-rejected is
-    # excluded because the parser actively dropped it (could be re-categorized
-    # not sold).
     assert len(cohort_oos) == 1
-    assert cohort_oos[0].item["product_url"] == "url-vendor-sold"
+    d = cohort_oos[0]
+    assert d.item["product_url"] == "url-newly-denied"
+    assert d.decision == "oos"
+    assert d.existing_id == 2
+    assert d.item["in_stock"] is False
+    # Last-known price rides into price_history alongside the flip.
+    assert d.item["current_price"] == Decimal("80.00")
+
+
+def test_vendor_recat_filtered_url_flips():
+    """CTK-106 verify-pass 2 — vendor-recat: vendor moves a tracked item to
+    a non-allowlisted product_type; the parser rejects it; it exits the
+    admitted set and flips OOS. REPLACES the original fold-#4 no-flip
+    expectation: still-live-but-untracked must not render as available at a
+    stale price (D-1; the WWC Auction 5 are the worked example)."""
+    existing_by_url = {
+        "url-still-in-scrape": _make_existing(1, "url-still-in-scrape", in_stock=True),
+        "url-vendor-sold": _make_existing(2, "url-vendor-sold", in_stock=True),
+        "url-vendor-recatted": _make_existing(3, "url-vendor-recatted", in_stock=True),
+    }
+    items = [_make_item("url-still-in-scrape", in_stock=True)]
+    per_item, cohort_oos = classify(
+        items,
+        existing_by_url,
+        cohort_oos_at_persist=True,
+        filtered_urls={"url-vendor-recatted"},
+    )
+    # BOTH absences flip — plain absence and filter-rejection are the same
+    # admitted-set exit under the CTK-106 contract.
+    assert len(cohort_oos) == 2
+    assert {d.item["product_url"] for d in cohort_oos} == {
+        "url-vendor-sold",
+        "url-vendor-recatted",
+    }
+    for d in cohort_oos:
+        assert d.decision == "oos"
+        assert d.item["in_stock"] is False
+
+
+def test_filtered_then_readmitted_fires_restocked():
+    """CTK-106 verify-pass 3 — restock symmetry (D-5): a row that flipped
+    OOS via filter-rejection re-enters the admitted set (operator relaxes
+    the filter / vendor recats back) and fires 'restocked' through the
+    existing per-item branch. No new code path — symmetry is free."""
+    # State after the filtered-flip run: row sits in_stock=false in DB.
+    existing_by_url = {
+        "url-readmitted": _make_existing(1, "url-readmitted", in_stock=False, current_price="25.00"),
+    }
+    # Next run: parser admits it again (present in items, no longer filtered).
+    items = [_make_item("url-readmitted", in_stock=True, current_price="25.00")]
+    per_item, cohort_oos = classify(
+        items,
+        existing_by_url,
+        cohort_oos_at_persist=True,
+        filtered_urls=set(),
+    )
+    assert len(per_item) == 1
+    assert per_item[0].decision == "restocked"
+    assert cohort_oos == []
+
+
+def test_filtered_flips_count_toward_flip_cap():
+    """CTK-106 verify-pass 4 — guard routing (D-3): filtered-flips join
+    cohort_oos_decisions, so they count toward the Stage-5.65 flip cap with
+    no separate accounting. An over-cap filtered set (overbroad YAML edit)
+    trips the cap and _apply_cohort_gate drops the whole cohort list
+    cleanly — per-item decisions untouched."""
+    n = 60  # default cap is max(50, 0.25 * prev_in_stock) = 50 at prev=60
+    existing_by_url = {
+        f"url-{i}": _make_existing(i, f"url-{i}", in_stock=True) for i in range(n)
+    }
+    items: list[dict] = []  # nothing admitted this run
+    filtered = {f"url-{i}" for i in range(n)}  # ALL absences are filter-rejections
+    per_item, cohort_oos = classify(
+        items, existing_by_url, cohort_oos_at_persist=True, filtered_urls=filtered,
+    )
+    assert len(cohort_oos) == n  # filtered-flips ARE cohort flips
+
+    cap = _resolve_flip_cap({}, prev_in_stock=n)
+    assert cap == 50
+    assert _flip_cap_tripped(len(cohort_oos), cap) is True
+
+    counters = Counters(seen=0, oos=0)
+    decisions, cohort_safe = _apply_cohort_gate(
+        per_item, cohort_oos, counters,
+        canary_tripped=False,
+        matcher_error_count=0,
+        cohort_unsafe_partial=False,
+        completeness_degraded=False,
+        flip_cap_tripped=True,
+    )
+    assert cohort_safe is False
+    assert decisions == per_item  # cohort dropped cleanly
+    assert counters.oos == 0
+
+
+def test_truncated_filtered_set_adds_no_flips():
+    """CTK-106 verify-pass 5 — truncation safety: filtered_urls no longer
+    gates membership, so a shrunken set from a partial fetch cannot change
+    decisions — flips are driven by absence from seen_urls alone, guarded
+    by the existing completeness + cap rails. Full vs. truncated vs. empty
+    filtered sets must classify identically."""
+    existing_by_url = {
+        f"url-{i}": _make_existing(i, f"url-{i}", in_stock=True) for i in range(1, 6)
+    }
+    items = [_make_item("url-1", in_stock=True), _make_item("url-2", in_stock=True)]
+
+    def run(filtered):
+        per_item, cohort = classify(
+            items, existing_by_url, cohort_oos_at_persist=True, filtered_urls=filtered,
+        )
+        return (
+            [(d.item["product_url"], d.decision) for d in per_item],
+            sorted((d.item["product_url"], d.decision, d.existing_id) for d in cohort),
+        )
+
+    full = run({"url-3", "url-4", "url-5"})
+    truncated = run({"url-3"})  # partial fetch shrank the set
+    empty = run(set())
+    assert full == truncated == empty
+
+
+def test_byte_equivalence_empty_filtered_set():
+    """CTK-106 verify-pass 6 — byte-equivalence: with an empty/absent
+    filtered set, classify produces identical decisions to the pre-CTK-106
+    predicate (`url not in empty_set` was vacuously true, so deleting the
+    clause is a no-op on every run that filters nothing)."""
+    existing_by_url = {
+        "url-present": _make_existing(1, "url-present", in_stock=True),
+        "url-absent": _make_existing(2, "url-absent", in_stock=True),
+        "url-already-oos": _make_existing(3, "url-already-oos", in_stock=False),
+    }
+    items = [_make_item("url-present", in_stock=True)]
+
+    per_item_none, cohort_none = classify(
+        items, existing_by_url, cohort_oos_at_persist=True,
+    )
+    per_item_empty, cohort_empty = classify(
+        items, existing_by_url, cohort_oos_at_persist=True, filtered_urls=set(),
+    )
+    for per_item, cohort in ((per_item_none, cohort_none), (per_item_empty, cohort_empty)):
+        assert [d.decision for d in per_item] == ["unchanged"]
+        assert len(cohort) == 1
+        assert cohort[0].item["product_url"] == "url-absent"  # already-OOS row skipped
 
 
 def test_filtered_urls_default_none_is_empty_set():
     """Backward-compat: classify() with no filtered_urls kwarg treats it as
-    empty set — same behavior as pre-fold-#4 for tests + callers that
-    don't pass the parameter."""
+    empty set — callers that don't pass the parameter get plain absent-set
+    behavior (unchanged across CTK-094 fold #4 and the CTK-106 retirement)."""
     existing_by_url = {
         "url-absent": _make_existing(1, "url-absent", in_stock=True),
     }
@@ -573,7 +729,12 @@ if __name__ == "__main__":
         test_no_regression_default_off_returns_empty_cohort,
         test_no_regression_per_item_decisions_match_pre_ctk094_shape,
         test_classify_tuple_shape_supports_caller_gate,
-        test_filtered_urls_excluded_from_cohort_absent_set,
+        test_operator_tighten_filtered_url_flips,
+        test_vendor_recat_filtered_url_flips,
+        test_filtered_then_readmitted_fires_restocked,
+        test_filtered_flips_count_toward_flip_cap,
+        test_truncated_filtered_set_adds_no_flips,
+        test_byte_equivalence_empty_filtered_set,
         test_filtered_urls_default_none_is_empty_set,
         test_apply_cohort_gate_canary_tripped_drops_cohort,
         test_apply_cohort_gate_matcher_errors_drops_cohort,

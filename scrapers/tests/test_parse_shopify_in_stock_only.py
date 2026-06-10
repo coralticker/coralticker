@@ -221,18 +221,18 @@ def test_known_excluded_bucket_does_not_warn(caplog):
 # Test 13 (CTK-094 Session 5 fold #6 — regression-pin for Session 3 → Session 4
 # fold #1). Drives parse_shopify.fetch_and_parse end-to-end to pin the
 # filtered_urls discrimination: only category-rejected URLs (vendor still
-# buyable) enter the cohort absent-set; sold-out rejects are the cohort signal
-# and must NOT enter filtered_urls. Session 3's fold #4 added URLs at the
-# wrong scope, defeating CTK-094 on POTO; Session 4 restored the discrimination
-# but landed no test. This test would have caught the Session 3 regression at
-# landing time. Three assertions cover all three classes of _should_keep
-# rejects under in_stock_only:true.
+# buyable) enter filtered_urls; sold-out rejects must NOT. Post-CTK-106
+# (admitted-set contract) the set is observability-only — membership no
+# longer spares a row from the cohort flip — but the discrimination still
+# keeps the filtered-stuck log count honest: sold-out absences are the plain
+# cohort signal, not filtered-stuck. Three assertions cover all three
+# classes of _should_keep rejects under in_stock_only:true.
 def test_filtered_urls_excludes_sold_out_includes_category_rejected():
     """CTK-094 Session 5 fold #6 — three assertions on parse_shopify.fetch_and_parse:
     (a) sold-out product (in_stock_only short-circuit at skipped_unavailable) →
-        URL NOT in filtered_urls (cohort signal preserved).
+        URL NOT in filtered_urls (not a parser-active rejection).
     (b) buyable + category-rejected product (skipped_category) → URL IS in
-        filtered_urls (cohort exclusion: vendor still buyable, no false-OOS).
+        filtered_urls (parser-active rejection; filtered-stuck observability).
     (c) sold-out + category-rejected product (skipped_unavailable wins per
         L165-168 discrimination order) → URL NOT in filtered_urls."""
     fixture = {
@@ -322,15 +322,17 @@ def test_filtered_urls_excludes_sold_out_includes_category_rejected():
     buyable_merch_url = f"{base}/buyable-merch"
     sold_out_merch_url = f"{base}/sold-out-merch"
 
-    # (a) sold-out coral — NOT in filtered_urls (cohort signal preserved).
+    # (a) sold-out coral — NOT in filtered_urls (plain cohort signal, not a
+    # parser-active rejection; keeps the filtered-stuck log count honest).
     assert sold_out_url not in result.filtered_urls, (
-        f"sold-out coral URL must NOT enter filtered_urls (it IS the cohort "
-        f"signal); got filtered_urls={result.filtered_urls}"
+        f"sold-out coral URL must NOT enter filtered_urls (plain cohort "
+        f"signal, not filtered-stuck); got filtered_urls={result.filtered_urls}"
     )
-    # (b) buyable + category-rejected — IS in filtered_urls (cohort exclusion).
+    # (b) buyable + category-rejected — IS in filtered_urls (parser-active
+    # rejection; counts as filtered-stuck in the cohort pass log line).
     assert buyable_merch_url in result.filtered_urls, (
-        f"buyable + category-rejected URL must enter filtered_urls (vendor "
-        f"still buyable, prevents false cohort-OOS); got "
+        f"buyable + category-rejected URL must enter filtered_urls "
+        f"(parser-active rejection, filtered-stuck observability); got "
         f"filtered_urls={result.filtered_urls}"
     )
     # (c) sold-out + category-rejected — NOT in filtered_urls
