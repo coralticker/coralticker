@@ -121,12 +121,16 @@ def _expect_config_error(slug: str, vendors_dir: Path, yaml_text: str, *expect: 
 
 
 def test_blank_entry_on_denylist_axis_raises():
-    """CTK-102 F1 — an empty entry on a substring/prefix axis is
-    match-everything ('' is a substring of every title; startswith('') is
-    always True) → silently empty catalog. Must raise at load, naming
-    vendor slug + axis. On tag_denylist the equivalent degenerate shape is
-    an entry that normalizes to blank. (Whitespace-PADDED title entries are
-    deliberately legal — see test_comparator_padding_rules.)"""
+    """CTK-102 F1 — a blank entry on a substring/prefix axis is
+    match-everything-or-nearly ('' is a substring of every title;
+    startswith('') is always True; ' ' matches any title containing a
+    space) → silently empty catalog. Both '' and whitespace-only raise at
+    load, naming vendor slug + axis (re-fold 2026-06-10: the F2-F4 fold
+    briefly narrowed this to '' only; /lead-backend second review-results
+    restored whitespace-only rejection). On tag_denylist the equivalent
+    degenerate shape is an entry that normalizes to blank.
+    (Whitespace-PADDED non-blank title entries are deliberately legal —
+    see test_comparator_padding_rules.)"""
     with tempfile.TemporaryDirectory() as tmp:
         vendors_dir = Path(tmp) / "vendors"
         vendors_dir.mkdir()
@@ -134,6 +138,16 @@ def test_blank_entry_on_denylist_axis_raises():
             "f1-vendor", vendors_dir,
             'category_filter:\n  title_denylist:\n    - Chaeto\n    - ""\n',
             "f1-vendor", "title_denylist",
+        )
+        _expect_config_error(
+            "f1-vendor", vendors_dir,
+            'category_filter:\n  title_denylist:\n    - " "\n',
+            "f1-vendor", "title_denylist",
+        )
+        _expect_config_error(
+            "f1-vendor", vendors_dir,
+            'category_filter:\n  title_denylist_prefix:\n    - " "\n',
+            "f1-vendor", "title_denylist_prefix",
         )
         _expect_config_error(
             "f1-vendor", vendors_dir,
@@ -159,10 +173,13 @@ def test_comparator_padding_rules():
       tag_denylist      _normalize_tag membership → an entry folding to ''
                         ('-', whitespace) can never match a real tag →
                         reject.
-      title axes        raw-lowercase substring/prefix → padding IS
-                        matchable (UC 'ARID ' trailing-space, CTK-096
-                        Q-NEW-1) → NOT strip-rejected; pass-through pinned
-                        in test_valid_multi_axis_passes_through."""
+      title axes        raw-lowercase substring/prefix → blank and
+                        whitespace-only rejected (match-everything-or-
+                        nearly; see test_blank_entry_on_denylist_axis_
+                        raises), but padded NON-BLANK entries stay legal
+                        (UC 'ARID ' trailing-space, CTK-096 Q-NEW-1) —
+                        no strip-equality rule; pass-through pinned in
+                        test_valid_multi_axis_passes_through."""
     with tempfile.TemporaryDirectory() as tmp:
         vendors_dir = Path(tmp) / "vendors"
         vendors_dir.mkdir()

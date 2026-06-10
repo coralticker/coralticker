@@ -123,9 +123,12 @@ def _validate_category_filter(slug: str, config: dict) -> None:
           folds '-' and whitespace runs; an entry that normalizes to ''
           can never match a real tag — rejected.
       title_denylist / title_denylist_prefix — raw-lowercase substring /
-          prefix. Padding IS matchable and deliberately live (UC "ARID "
-          trailing-space, CTK-096 Q-NEW-1) — NOT strip-rejected; only ''
-          (match-everything) is rejected."""
+          prefix. Blank and whitespace-only entries are rejected ('' is
+          match-everything; ' ' matches nearly every title under the
+          substring comparator). Padded NON-BLANK entries stay legal —
+          padding is matchable and deliberately live (UC "ARID "
+          trailing-space, CTK-096 Q-NEW-1), so the strip-equality rule
+          used on tag_allowlist does not apply here."""
     category_filter = config.get("category_filter")
     if category_filter is None:
         return
@@ -178,11 +181,12 @@ def _validate_category_filter(slug: str, config: dict) -> None:
                         f"match a real tag; got {entry!r}"
                     )
             else:  # title_denylist / title_denylist_prefix
-                if entry == "":
+                if not entry.strip():
                     raise ConfigError(
-                        f"{slug}: category_filter.{axis} entry must be "
-                        f"non-empty (an empty substring or prefix matches "
-                        f"every product); got {entry!r}"
+                        f"{slug}: category_filter.{axis} entry must contain "
+                        f"non-whitespace (an empty or whitespace-only "
+                        f"substring/prefix matches every or nearly every "
+                        f"product); got {entry!r}"
                     )
 
 
