@@ -71,10 +71,12 @@ const PRECEDENCE: Record<DigestRow['event'], number> = {
   'just-listed': 3,
 };
 
-// Discord markdown metacharacters in vendor titles (coral names carry
-// asterisks and underscores in the wild). Backslash first.
+// Discord markdown metacharacters in vendor titles (coral names carry asterisks,
+// underscores, and bracketed tags like [WYSIWYG] / (Rainbow) in the wild).
+// Backslash first. The [ ] escapes are load-bearing for the masked buy-link: an
+// unescaped ] in raw_title terminates the [link text] early and mangles the line.
 export function escapeDiscordMd(text: string): string {
-  return text.replace(/([\\*_~`|])/g, '\\$1');
+  return text.replace(/([\\*_~`|[\]])/g, '\\$1');
 }
 
 // Verbatim port of components/listing-card.tsx formatPrice — null price is
@@ -148,12 +150,18 @@ export function buildFields(row: DigestRow): DataRowField[] {
 }
 
 // The bold coral name links to the vendor's product page via Discord markdown
-// ([**name**](url)) — same buy-link destination as the web feed + email. A markdown
-// link in an embed description renders clickable without spawning a preview card.
-// Null product_url renders the name unlinked (graceful fallback).
+// ([**name**](<url>)) — same buy-link destination as the web feed + email. A
+// markdown link in an embed description renders clickable without a preview card.
+// Hardening (CTK-136 /code-review F1+F3): the URL is wrapped in <> so a ')' in the
+// query string can't terminate the (…) target early; escapeDiscordMd now escapes
+// [ ] so a bracketed coral name can't terminate the [text]; and only https URLs
+// linkify (a non-https / dangerous-scheme product_url renders the name unlinked).
 export function buildLine(row: DigestRow, now: Date): string {
   const name = `**${escapeDiscordMd(row.raw_title)}**`;
-  const named = row.product_url ? `[${name}](${row.product_url})` : name;
+  const named =
+    row.product_url && /^https:\/\//i.test(row.product_url)
+      ? `[${name}](<${row.product_url}>)`
+      : name;
   return `${named} — ${formatDataRow(buildFields(row), now)}`;
 }
 

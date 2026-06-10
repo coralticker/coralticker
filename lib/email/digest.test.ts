@@ -64,6 +64,13 @@ test('null product_url renders the coral name unlinked (graceful fallback)', () 
   );
 });
 
+test('non-https product_url renders the name unlinked (F3 scheme allowlist)', () => {
+  assert.equal(
+    buildLine(row({ product_url: 'javascript:alert(1)' }), NOW),
+    '<strong>Test Coral</strong> — Price. $50.00 — Listed. 3 hours ago',
+  );
+});
+
 test('price-dropped line: was-value in <del>, now-value bold-forest', () => {
   const line = buildLine(
     row({ event: 'price-dropped', prior_price: '400.00', current_price: '50.00' }),

@@ -96,15 +96,25 @@ export async function signupAction(
     return { ok: true, alreadySubscribed: false };
   }
 
-  // Statement 2: SELECT existing row to branch on subscription status.
-  let existing: { id: number; unsubscribed_at: string | null } | null = null;
+  // Statement 2: SELECT existing row to branch on subscription status. Projects
+  // confirmed_at + token (beyond unsubscribed_at) so the active-row branch below
+  // can distinguish a genuinely-subscribed row from a pending-confirmation one
+  // and re-send the confirm where needed (CTK-136 /code-review F2).
+  let existing:
+    | { id: number; unsubscribed_at: string | null; confirmed_at: string | null; token: string }
+    | null = null;
   try {
     const rows = (await sql`
-      SELECT id, unsubscribed_at
+      SELECT id, unsubscribed_at, confirmed_at, token
       FROM email_signups
       WHERE email = ${email}
       LIMIT 1
-    `) as unknown as { id: number; unsubscribed_at: string | null }[];
+    `) as unknown as {
+      id: number;
+      unsubscribed_at: string | null;
+      confirmed_at: string | null;
+      token: string;
+    }[];
     existing = rows[0] ?? null;
   } catch {
     return { ok: false, error: DB_ERROR };
@@ -114,8 +124,21 @@ export async function signupAction(
     return { ok: false, error: DB_ERROR };
   }
 
+  // Active row (not unsubscribed). Two sub-cases (CTK-136 /code-review F2):
   if (existing.unsubscribed_at === null) {
-    return { ok: true, alreadySubscribed: true };
+    if (existing.confirmed_at !== null) {
+      // Genuinely subscribed + confirmed — true no-op.
+      return { ok: true, alreadySubscribed: true };
+    }
+    // Pending confirmation (signed up, never confirmed): a re-submit almost
+    // always means the confirm email was lost (spam/Resend hiccup — never
+    // retried). Re-send it (reuse the token so any in-flight link still works)
+    // rather than falsely returning "already subscribed" with no recovery — the
+    // row never enters fetchRecipients() (confirmed_at IS NOT NULL) until /confirm
+    // fires, so the false claim would otherwise be a permanent dead-end.
+    const tokenToSend = existing.token;
+    after(() => sendConfirm(email, tokenToSend));
+    return { ok: true, alreadySubscribed: false };
   }
 
   // Statement 3: re-subscribe — clear unsubscribed_at + reset confirmed_at +

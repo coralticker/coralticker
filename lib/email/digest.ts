@@ -224,9 +224,13 @@ export function buildFields(row: DigestRow): DataRowField[] {
 // as the web feed (listing-row-frame.tsx — whole card -> product_url, new tab).
 export function buildLine(row: DigestRow, now: Date): string {
   const name = `<strong>${htmlEscape(row.raw_title)}</strong>`;
-  const named = row.product_url
-    ? `<a href="${htmlEscape(row.product_url)}" target="_blank" rel="noopener noreferrer" style="color:${INK};text-decoration:underline;">${name}</a>`
-    : name;
+  // https-only on the vendor-controlled URL (CTK-136 /code-review F3): htmlEscape
+  // already closes the attribute-breakout, and the scheme allowlist drops
+  // javascript:/data: schemes — a non-https product_url renders the name unlinked.
+  const named =
+    row.product_url && /^https:\/\//i.test(row.product_url)
+      ? `<a href="${htmlEscape(row.product_url)}" target="_blank" rel="noopener noreferrer" style="color:${INK};text-decoration:underline;">${name}</a>`
+      : name;
   return `${named} — ${formatDataRow(buildFields(row), now)}`;
 }
 

@@ -43,14 +43,32 @@ test('just-listed line: bold name + bare Price + Listed relative-time', () => {
   );
 });
 
-test('product_url markdown-links the bold coral name; null renders unlinked', () => {
+test('product_url markdown-links the bold name (https only, <>-wrapped); null/non-https unlinked', () => {
   assert.equal(
     buildLine(row({ product_url: 'https://wwc.example/p/test-coral' }), NOW),
-    '[**Test Coral**](https://wwc.example/p/test-coral) — Price. $50.00 — Listed. 3 hours ago',
+    '[**Test Coral**](<https://wwc.example/p/test-coral>) — Price. $50.00 — Listed. 3 hours ago',
   );
+  // null -> unlinked
   assert.equal(
     buildLine(row({ product_url: null }), NOW),
     '**Test Coral** — Price. $50.00 — Listed. 3 hours ago',
+  );
+  // non-https / dangerous scheme -> unlinked (F3)
+  assert.equal(
+    buildLine(row({ product_url: 'javascript:alert(1)' }), NOW),
+    '**Test Coral** — Price. $50.00 — Listed. 3 hours ago',
+  );
+});
+
+test('bracketed coral name + paren in URL survive the masked link (F1)', () => {
+  // ] in the name is escaped so it can't terminate [text]; the URL is <>-wrapped
+  // so ')' in the query string can't terminate the (target).
+  assert.equal(
+    buildLine(
+      row({ raw_title: 'Acro [WYSIWYG] Colony', product_url: 'https://v.example/p?variant=(red)&r=ct' }),
+      NOW,
+    ),
+    '[**Acro \\[WYSIWYG\\] Colony**](<https://v.example/p?variant=(red)&r=ct>) — Price. $50.00 — Listed. 3 hours ago',
   );
 });
 
