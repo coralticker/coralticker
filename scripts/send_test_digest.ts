@@ -45,13 +45,13 @@ function sampleRows(now: Date): DigestRow[] {
   const ago = (mins: number) => new Date(now.getTime() - mins * 60_000).toISOString();
   return [
     // WWC — CT-observed price drop + a bare in-stock (with escaped metachars)
-    { id: 1, raw_title: 'WWC Pink Floyd Acropora', current_price: '650.00', compare_at_price: null, prior_price: '800.00', event: 'price-dropped', event_at: ago(120), first_seen_at: ago(11520), vendor_display_name: 'World Wide Corals' },
-    { id: 2, raw_title: 'WWC OG Bounce <Mushroom> & "Rainbow"', current_price: '120.00', compare_at_price: null, prior_price: null, event: 'just-listed', event_at: ago(60), first_seen_at: ago(60), vendor_display_name: 'World Wide Corals' },
+    { id: 1, raw_title: 'WWC Pink Floyd Acropora', current_price: '650.00', compare_at_price: null, prior_price: '800.00', event: 'price-dropped', event_at: ago(120), first_seen_at: ago(11520), vendor_display_name: 'World Wide Corals', product_url: 'https://wwc.example/products/pink-floyd-acropora' },
+    { id: 2, raw_title: 'WWC OG Bounce <Mushroom> & "Rainbow"', current_price: '120.00', compare_at_price: null, prior_price: null, event: 'just-listed', event_at: ago(60), first_seen_at: ago(60), vendor_display_name: 'World Wide Corals', product_url: 'https://wwc.example/products/og-bounce?variant=1&x=2' },
     // TSA — vendor-set markdown
-    { id: 3, raw_title: 'TSA Disco Hammer', current_price: '149.00', compare_at_price: '199.00', prior_price: null, event: 'just-listed', event_at: ago(180), first_seen_at: ago(180), vendor_display_name: 'Top Shelf Aquatics' },
-    // JF — restock + null-price (auction / price-on-request)
-    { id: 4, raw_title: 'JF Bombshell Blasto', current_price: '90.00', compare_at_price: null, prior_price: null, event: 'back-in-stock', event_at: ago(30), first_seen_at: ago(28800), vendor_display_name: 'Jason Fox Signature Corals' },
-    { id: 5, raw_title: 'JF Reverse Sunset Monti', current_price: null, compare_at_price: null, prior_price: null, event: 'just-listed', event_at: ago(240), first_seen_at: ago(240), vendor_display_name: 'Jason Fox Signature Corals' },
+    { id: 3, raw_title: 'TSA Disco Hammer', current_price: '149.00', compare_at_price: '199.00', prior_price: null, event: 'just-listed', event_at: ago(180), first_seen_at: ago(180), vendor_display_name: 'Top Shelf Aquatics', product_url: 'https://tsa.example/products/disco-hammer' },
+    // JF — restock + null-price (auction / price-on-request); null product_url -> unlinked fallback
+    { id: 4, raw_title: 'JF Bombshell Blasto', current_price: '90.00', compare_at_price: null, prior_price: null, event: 'back-in-stock', event_at: ago(30), first_seen_at: ago(28800), vendor_display_name: 'Jason Fox Signature Corals', product_url: 'https://jf.example/products/bombshell-blasto' },
+    { id: 5, raw_title: 'JF Reverse Sunset Monti', current_price: null, compare_at_price: null, prior_price: null, event: 'just-listed', event_at: ago(240), first_seen_at: ago(240), vendor_display_name: 'Jason Fox Signature Corals', product_url: null },
   ];
 }
 
@@ -60,7 +60,7 @@ async function realRows(): Promise<DigestRow[]> {
   const sql = getNeonSql();
   const rows = await sql`
     SELECT id, raw_title, current_price, compare_at_price, prior_price,
-           event, event_at, first_seen_at, vendor_display_name
+           event, event_at, first_seen_at, vendor_display_name, product_url
     FROM get_listing_lead_event(NULL, 24, NULL, NULL)
   `;
   return rows as unknown as DigestRow[];

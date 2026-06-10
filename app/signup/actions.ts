@@ -118,15 +118,27 @@ export async function signupAction(
     return { ok: true, alreadySubscribed: true };
   }
 
-  // Statement 3: re-subscribe — clear unsubscribed_at + bump subscribed_at.
+  // Statement 3: re-subscribe — clear unsubscribed_at + reset confirmed_at +
+  // bump subscribed_at. Resetting confirmed_at to NULL forces a fresh
+  // double-opt-in (Q-6, option (c)): a confirm→unsubscribe→re-subscribe address
+  // must re-confirm before re-entering the digest recipient set, which gates on
+  // `confirmed_at IS NOT NULL AND unsubscribed_at IS NULL`. Without this reset,
+  // clearing unsubscribed_at alone re-admits the address the instant the form is
+  // submitted — re-mailing a previously-unsubscribed, unauthenticated address
+  // with no fresh opt-in, the highest spam-complaint risk to the sending domain.
+  // The reset is unconditional: a never-confirmed row is already NULL, so it's a
+  // no-op there. The confirm email sent below (now correct copy — they genuinely
+  // must re-confirm) re-admits them only when /confirm sets confirmed_at.
   // RETURNING token REUSES the row's existing token — do NOT re-mint: re-minting
   // would invalidate any confirm/unsubscribe link already sitting in this
-  // person's inbox. Send happens after the DB try resolves (DB-only try).
+  // person's inbox, and the re-confirm link in the new email must match it.
+  // Send happens after the DB try resolves (DB-only try).
   let resubToken: string | undefined;
   try {
     const rows = (await sql`
       UPDATE email_signups
       SET unsubscribed_at = NULL,
+          confirmed_at = NULL,
           subscribed_at = ${new Date().toISOString()}
       WHERE id = ${existing.id}
       RETURNING token

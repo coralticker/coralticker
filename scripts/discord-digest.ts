@@ -53,6 +53,10 @@ export interface DigestRow {
   event_at: string;
   first_seen_at: string;
   vendor_display_name: string;
+  // The vendor's product page (the buy link). Returned by get_listing_lead_event
+  // (migration 0030); the coral name becomes a markdown link to it. Nullable — a
+  // row without a URL renders the name unlinked.
+  product_url: string | null;
 }
 
 const EMBED_DESCRIPTION_CAP = 4096; // Discord hard limit per embed description
@@ -143,8 +147,14 @@ export function buildFields(row: DigestRow): DataRowField[] {
   return fields;
 }
 
+// The bold coral name links to the vendor's product page via Discord markdown
+// ([**name**](url)) — same buy-link destination as the web feed + email. A markdown
+// link in an embed description renders clickable without spawning a preview card.
+// Null product_url renders the name unlinked (graceful fallback).
 export function buildLine(row: DigestRow, now: Date): string {
-  return `**${escapeDiscordMd(row.raw_title)}** — ${formatDataRow(buildFields(row), now)}`;
+  const name = `**${escapeDiscordMd(row.raw_title)}**`;
+  const named = row.product_url ? `[${name}](${row.product_url})` : name;
+  return `${named} — ${formatDataRow(buildFields(row), now)}`;
 }
 
 interface VendorGroup {
@@ -235,7 +245,7 @@ async function fetchRows(): Promise<DigestRow[]> {
   const sql = getNeonSql();
   const rows = await sql`
     SELECT id, raw_title, current_price, compare_at_price, prior_price,
-           event, event_at, first_seen_at, vendor_display_name
+           event, event_at, first_seen_at, vendor_display_name, product_url
     FROM get_listing_lead_event(NULL, 24, NULL, NULL)
   `;
   return rows as unknown as DigestRow[];

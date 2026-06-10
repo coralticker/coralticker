@@ -37,6 +37,7 @@ function row(overrides: Partial<DigestRow>): DigestRow {
     event_at: '2026-06-09T10:00:00Z',
     first_seen_at: '2026-06-09T10:00:00Z',
     vendor_display_name: 'WWC',
+    product_url: null,
     ...overrides,
   };
 }
@@ -44,6 +45,21 @@ function row(overrides: Partial<DigestRow>): DigestRow {
 test('just-listed line: bold name + bare Price + Listed relative-time', () => {
   assert.equal(
     buildLine(row({}), NOW),
+    '<strong>Test Coral</strong> — Price. $50.00 — Listed. 3 hours ago',
+  );
+});
+
+test('product_url links the bold coral name (new tab, ink + underline)', () => {
+  const line = buildLine(row({ product_url: 'https://wwc.example/products/test-coral?v=1&x=2' }), NOW);
+  assert.equal(
+    line,
+    '<a href="https://wwc.example/products/test-coral?v=1&amp;x=2" target="_blank" rel="noopener noreferrer" style="color:#1A1A1A;text-decoration:underline;"><strong>Test Coral</strong></a> — Price. $50.00 — Listed. 3 hours ago',
+  );
+});
+
+test('null product_url renders the coral name unlinked (graceful fallback)', () => {
+  assert.equal(
+    buildLine(row({ product_url: null }), NOW),
     '<strong>Test Coral</strong> — Price. $50.00 — Listed. 3 hours ago',
   );
 });
@@ -180,6 +196,8 @@ test('wrapDigestDoc: branded document — wordmark-alone masthead, white bg, sub
   );
   // Wordmark nameplate — coral(bold) + ticker(regular) + forest dot.
   assert.match(doc, /<span style="font-weight:700;">coral<\/span><span style="font-weight:400;">ticker<\/span>/);
+  // The wordmark links home (newspaper-masthead pattern), not underlined.
+  assert.match(doc, /<a href="https:\/\/coralticker\.com" style="color:#1A1A1A;text-decoration:none;">/);
   // Tagline dropped on the daily surface (§3 resolved 2026-06-09).
   assert.ok(!/Never miss the drop/.test(doc), 'no tagline on the daily digest masthead');
   // White page bg (spec §6) and the ET-anchored subject in <title>.

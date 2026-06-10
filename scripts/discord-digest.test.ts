@@ -31,6 +31,7 @@ function row(overrides: Partial<DigestRow>): DigestRow {
     event_at: '2026-06-04T10:21:00Z',
     first_seen_at: '2026-06-04T10:21:00Z',
     vendor_display_name: 'WWC',
+    product_url: null,
     ...overrides,
   };
 }
@@ -38,6 +39,17 @@ function row(overrides: Partial<DigestRow>): DigestRow {
 test('just-listed line: bold name + bare Price + Listed relative-time', () => {
   assert.equal(
     buildLine(row({}), NOW),
+    '**Test Coral** — Price. $50.00 — Listed. 3 hours ago',
+  );
+});
+
+test('product_url markdown-links the bold coral name; null renders unlinked', () => {
+  assert.equal(
+    buildLine(row({ product_url: 'https://wwc.example/p/test-coral' }), NOW),
+    '[**Test Coral**](https://wwc.example/p/test-coral) — Price. $50.00 — Listed. 3 hours ago',
+  );
+  assert.equal(
+    buildLine(row({ product_url: null }), NOW),
     '**Test Coral** — Price. $50.00 — Listed. 3 hours ago',
   );
 });

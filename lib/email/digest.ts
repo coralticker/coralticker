@@ -67,6 +67,10 @@ export interface DigestRow {
   event_at: string;
   first_seen_at: string;
   vendor_display_name: string;
+  // The vendor's product page (the buy link). Already returned by
+  // get_listing_lead_event (migration 0030); the coral name links to it. Nullable
+  // — a row without a URL renders the name unlinked (graceful fallback).
+  product_url: string | null;
 }
 
 export interface Recipient {
@@ -106,8 +110,16 @@ const WORDMARK_PX = 32;
 // on THIS surface only; the confirm email keeps its tagline as a first-impression
 // asset). /brand-manager folds spec §3 to match. Left-aligned, same WORDMARK_PX as
 // the confirm email so the nameplate is pixel-identical across both emails.
+// The wordmark links home (newspaper-masthead pattern — the nameplate IS the site
+// link). NOT underlined: it's the brand mark, not a text link; the L"links are
+// underlined" rule is for in-copy text links, and underlining the wordmark would
+// fight the colored-full-stop mark. color:INK keeps it from turning link-blue; the
+// forest dot's inner span overrides.
+const SITE_URL = 'https://coralticker.com';
 const MASTHEAD = `<div style="font-family:${SANS};font-size:${WORDMARK_PX}px;line-height:1;color:${INK};">` +
+  `<a href="${SITE_URL}" style="color:${INK};text-decoration:none;">` +
   `<span style="font-weight:700;">coral</span><span style="font-weight:400;">ticker</span><span style="font-weight:700;color:${FOREST};">.</span>` +
+  `</a>` +
   `</div>`;
 
 // CAN-SPAM requires a physical postal address on every commercial send. Jon's
@@ -204,10 +216,18 @@ export function buildFields(row: DigestRow): DataRowField[] {
   return fields;
 }
 
-// One listing line: bold coral name, em-dash, then the formatDataRow() render.
-// raw_title is HTML-escaped (vendor-controlled); the wrapping <strong> is ours.
+// One listing line: the bold coral name links to the vendor's product page (the
+// buy link — new tab, neutral ink + underline per branding-guide §"Color system"
+// link rule), em-dash, then the formatDataRow() render. raw_title + product_url
+// are vendor-controlled, so both are HTML-escaped; the <strong>/<a> are ours. A
+// null product_url renders the name unlinked (graceful fallback). Same destination
+// as the web feed (listing-row-frame.tsx — whole card -> product_url, new tab).
 export function buildLine(row: DigestRow, now: Date): string {
-  return `<strong>${htmlEscape(row.raw_title)}</strong> — ${formatDataRow(buildFields(row), now)}`;
+  const name = `<strong>${htmlEscape(row.raw_title)}</strong>`;
+  const named = row.product_url
+    ? `<a href="${htmlEscape(row.product_url)}" target="_blank" rel="noopener noreferrer" style="color:${INK};text-decoration:underline;">${name}</a>`
+    : name;
+  return `${named} — ${formatDataRow(buildFields(row), now)}`;
 }
 
 interface VendorGroup {
@@ -371,7 +391,7 @@ async function fetchRows(): Promise<DigestRow[]> {
   const sql = getNeonSql();
   const rows = await sql`
     SELECT id, raw_title, current_price, compare_at_price, prior_price,
-           event, event_at, first_seen_at, vendor_display_name
+           event, event_at, first_seen_at, vendor_display_name, product_url
     FROM get_listing_lead_event(NULL, 24, NULL, NULL)
   `;
   return rows as unknown as DigestRow[];
