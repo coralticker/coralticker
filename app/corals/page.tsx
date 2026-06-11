@@ -1,6 +1,8 @@
 // /corals — flat alphabetical index of named corals with at-least-one
 // in-window listing per CTK-057. Composition mirrors /vendors (CTK-055):
-// max-w-3xl frame, prose-register H1, Suspense + skeleton, py-3 rows.
+// max-w-3xl frame, prose-register H1, Suspense + skeleton; rows carry the
+// listing-row divider treatment (py-6 border-b border-line, CTK-140 rider —
+// parity with ListingRowFrame + /search rows; /vendors fixed same commit).
 //
 // Dormancy gate: getAllNamedCoralsWithListings() restricts to corals with an
 // in-window in-stock listing — rendered rows route to a populated
@@ -85,7 +87,7 @@ async function CoralList() {
       {corals.map((coral) => {
         const fields = buildLineageFields(coral);
         return (
-          <li key={coral.slug} className="py-3">
+          <li key={coral.slug} className="py-6 border-b border-line">
             <Link
               href={`/coral/${coral.slug}`}
               className="group flex items-center gap-4"
@@ -148,7 +150,7 @@ function CoralListSkeleton() {
   return (
     <ul role="status" aria-busy="true" aria-label="Loading corals">
       {Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
-        <li key={i} className="py-3">
+        <li key={i} className="py-6 border-b border-line">
           <span className="flex items-center gap-4" aria-hidden="true">
             <span className="shrink-0 w-24 h-24 bg-wash animate-pulse" />
             {/* Two bone lines — name + data row — so the loading shape

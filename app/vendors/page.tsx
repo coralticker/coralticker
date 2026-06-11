@@ -3,7 +3,9 @@
 // Discovery surface for /vendor/[slug]; rows link directly into per-vendor
 // inventory. Alphabetical sort by display_name per branding-guide.md L41-42
 // (no curated tier ranking). v1-minimal: no enrichment, no eyebrow, no
-// last-scrape timestamp (Phase 3 charter per CTK-009).
+// last-scrape timestamp (Phase 3 charter per CTK-009). Rows carry the
+// listing-row divider treatment (py-6 border-b border-line) per the CTK-140
+// rider — parity with /corals + /search + the feed surfaces.
 //
 // ISR revalidate = 600 per site.md §1.2 + /vendor/[slug] precedent.
 
@@ -34,7 +36,7 @@ async function VendorList() {
       {vendors.map((vendor) => (
         <li
           key={vendor.slug}
-          className="flex flex-wrap items-baseline gap-x-6 gap-y-1 py-3"
+          className="flex flex-wrap items-baseline gap-x-6 gap-y-1 py-6 border-b border-line"
         >
           <Link
             href={`/vendor/${vendor.slug}`}
@@ -60,7 +62,7 @@ function VendorListSkeleton() {
   return (
     <ul role="status" aria-busy="true" aria-label="Loading vendors">
       {Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
-        <li key={i} className="py-3">
+        <li key={i} className="py-6 border-b border-line">
           <span
             aria-hidden="true"
             className="inline-block h-4 w-40 align-middle bg-wash rounded-sm animate-pulse"
