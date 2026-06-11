@@ -5,8 +5,9 @@
 //
 // First handshake-flavor "I" carve-out consumer per branding-guide.md line 98
 // (gap-vs-handshake functional rule; success-acknowledgment is the first
-// handshake example, this surface is the anchor). "as they list" lead-verb
-// echoes branding-guide.md vocabulary per /brand-manager note.
+// handshake example, this surface is the anchor). Lead paragraph superseded
+// 2026-06-11 by the brand-ratified daily-digest expectation line ("one email
+// each morning") — the original "as they list" wording predated the digest.
 //
 // Ships at HTTP 200 on direct URL at v1. CTK-016 Resend wiring is not yet
 // shipped, so no email currently points at this URL, but the surface is
@@ -38,7 +39,8 @@ export default function SignupConfirmed() {
         You&apos;re subscribed.
       </h1>
       <p className="text-base leading-relaxed">
-        I&apos;ll send new arrivals as they list.
+        I&apos;ll send one email each morning — new arrivals, price drops, and
+        back-in-stock from the vendors I cover.
       </p>
       <p className="text-base leading-relaxed mt-4">
         I track what each vendor charges over time — so you can see how a price

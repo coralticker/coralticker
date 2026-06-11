@@ -23,7 +23,7 @@ import { SignupForm } from '@/components/signup-form';
 export const metadata: Metadata = {
   title: 'Sign up', // suffix via root title.template
   description:
-    'Weekly digest of new coral drops, price changes, and arrivals across vendors. Free.',
+    'Daily digest of new coral drops, price changes, and arrivals across vendors. Free.',
   alternates: { canonical: '/signup' },
   openGraph: { url: '/signup', siteName: 'CoralTicker', type: 'website', locale: 'en_US' },
   twitter: { card: 'summary' },

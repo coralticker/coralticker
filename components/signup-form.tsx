@@ -32,6 +32,8 @@ interface SignupFormProps {
 }
 
 const SECTION_LABEL = 'New arrivals in your inbox.';
+const EXPECTATION_TEXT =
+  'One email each morning — new arrivals, price drops, and back-in-stock across vendors. Free.';
 const PLACEHOLDER = 'you@example.com';
 const SUBMIT_LABEL = 'Subscribe';
 const SUCCESS_TEXT = 'Thanks. Check your email.';
@@ -84,6 +86,7 @@ export function SignupForm({ source, showLabel = true }: SignupFormProps) {
         </div>
         <SubmitButton />
       </div>
+      <p className="text-sm text-ink">{EXPECTATION_TEXT}</p>
       <input type="hidden" name="source" value={source} />
       <div
         aria-live="polite"

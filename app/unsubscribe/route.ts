@@ -82,7 +82,7 @@ export async function GET(request: Request): Promise<Response> {
   // The button POSTs to this same URL with ?t= preserved; a hidden field is a
   // belt-and-suspenders fallback for any proxy that drops the action query.
   const body = `
-    <p style="font-size:16px;line-height:1.5;margin:0 0 28px;">Click below to stop the weekly digest.</p>
+    <p style="font-size:16px;line-height:1.5;margin:0 0 28px;">Click below to stop the daily digest.</p>
     <form method="POST" action="/unsubscribe?t=${encodeURIComponent(token)}">
       <input type="hidden" name="token" value="${safe}">
       <button type="submit" style="display:inline-block;font-family:${SANS};font-size:16px;font-weight:700;line-height:1;color:#FFFFFF;background:${FOREST};border:0;border-radius:6px;padding:14px 28px;cursor:pointer;">Unsubscribe</button>
