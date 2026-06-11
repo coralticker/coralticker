@@ -36,7 +36,8 @@ const EXPECTATION_TEXT =
   'One email each morning — new arrivals, price drops, and back-in-stock across vendors. Free.';
 const PLACEHOLDER = 'you@example.com';
 const SUBMIT_LABEL = 'Subscribe';
-const SUCCESS_TEXT = 'Thanks. Check your email.';
+const SUCCESS_TEXT =
+  'Thanks. Check your email — spam folder too, while the domain is new. Dragging it to your inbox teaches the filter.';
 const ALREADY_SUBSCRIBED_TEXT =
   'Already on the list. Check your email for the next digest.';
 
