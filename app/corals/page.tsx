@@ -53,6 +53,8 @@ import { buildLineageFields } from '@/lib/format/lineage-fields';
 import { DataRow } from '@/components/ui/data-row';
 import { ThumbSlot, THUMB_SLOT_BOX } from '@/components/ui/thumb-slot';
 import { PageShell } from '@/components/ui/page-shell';
+import { PageH1 } from '@/components/ui/page-h1';
+import { SectionHeader } from '@/components/ui/section-header';
 
 export const revalidate = 300;
 
@@ -186,9 +188,9 @@ function AboutThisList() {
     <section id="about-this-list" className="mt-12">
       {/* Sentence-case header + 1px under-rule per branding-guide
           §"Section transitions on content surfaces". */}
-      <h2 className="text-sm font-bold pb-2 mb-2 border-b border-line">
+      <SectionHeader>
         About this list.
-      </h2>
+      </SectionHeader>
       <div className="text-base leading-relaxed space-y-4 pt-2">
         <p>
           These are corals people hunt by name &mdash; a curated list, not
@@ -229,7 +231,7 @@ function AboutThisList() {
 export default function CoralsPage() {
   return (
     <PageShell as="section">
-      <h1 className="text-3xl md:text-4xl font-bold mb-8">Corals.</h1>
+      <PageH1 className="mb-8">Corals.</PageH1>
       <Suspense fallback={<CoralListSkeleton />}>
         <CoralList />
       </Suspense>

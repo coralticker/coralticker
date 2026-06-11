@@ -19,6 +19,7 @@
 import type { Metadata } from 'next';
 import { SignupForm } from '@/components/signup-form';
 import { PageShell } from '@/components/ui/page-shell';
+import { PageH1 } from '@/components/ui/page-h1';
 
 // Metadata wording verbatim from site.md §6.1 line 1710.
 export const metadata: Metadata = {
@@ -33,9 +34,9 @@ export const metadata: Metadata = {
 export default function Signup() {
   return (
     <PageShell as="section">
-      <h1 className="text-3xl md:text-4xl font-bold mb-8">
+      <PageH1 className="mb-8">
         New arrivals in your inbox.
-      </h1>
+      </PageH1>
       <SignupForm source="other" showLabel={false} />
     </PageShell>
   );

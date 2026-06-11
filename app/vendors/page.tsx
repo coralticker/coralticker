@@ -14,6 +14,7 @@ import { Suspense } from 'react';
 import Link from 'next/link';
 import { getAllActiveVendors } from '@/lib/queries/vendors';
 import { PageShell } from '@/components/ui/page-shell';
+import { PageH1 } from '@/components/ui/page-h1';
 
 export const revalidate = 600;
 
@@ -77,7 +78,7 @@ function VendorListSkeleton() {
 export default function VendorsPage() {
   return (
     <PageShell as="section">
-      <h1 className="text-3xl md:text-4xl font-bold mb-8">Vendors.</h1>
+      <PageH1 className="mb-8">Vendors.</PageH1>
       <Suspense fallback={<VendorListSkeleton />}>
         <VendorList />
       </Suspense>

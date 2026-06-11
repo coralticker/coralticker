@@ -14,6 +14,8 @@ import { parseIncludeOOS } from '@/lib/queries/listing-params';
 import { DataRow } from '@/components/ui/data-row';
 import { PageEyebrow } from '@/components/ui/page-eyebrow';
 import { PageShell } from '@/components/ui/page-shell';
+import { PageH1 } from '@/components/ui/page-h1';
+import { SectionHeader } from '@/components/ui/section-header';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { latestTimestamp } from '@/lib/format/latest-timestamp';
 import { buildLineageFields } from '@/lib/format/lineage-fields';
@@ -197,9 +199,9 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
   return (
     <PageShell as="article">
       <PageEyebrow chunks={eyebrowChunks} />
-      <h1 className="text-3xl md:text-4xl font-bold mb-4">
+      <PageH1 className="mb-4">
         {coral.canonical_name}
-      </h1>
+      </PageH1>
 
       {lineageFields.length > 0 ? (
         <div className="mb-6">
@@ -211,11 +213,9 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
         <p className="text-base leading-relaxed mb-8">{coral.description}</p>
       ) : null}
 
-      <div className="mt-10 mb-2">
-        <h2 className="text-sm font-bold pb-2 border-b border-line">
-          {sectionHeader}
-        </h2>
-      </div>
+      <SectionHeader className="mt-10">
+        {sectionHeader}
+      </SectionHeader>
 
       <IncludeOOSToggle slug={slug} includeOOS={includeOOS} />
 
@@ -258,9 +258,9 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
 
       {coral.source_urls !== null && coral.source_urls.length > 0 ? (
         <footer className="mt-12 text-sm">
-          <h2 className="text-sm font-bold pb-2 mb-2 border-b border-line">
+          <SectionHeader>
             Sources.
-          </h2>
+          </SectionHeader>
           <ul className="space-y-1">
             {coral.source_urls.map((url) => (
               <li key={url}>

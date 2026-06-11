@@ -6,6 +6,7 @@ import { GroupDivider } from '@/components/group-divider';
 import { DataRowSkeleton } from '@/components/ui/data-row-skeleton';
 import { PageEyebrow, PageEyebrowSkeleton } from '@/components/ui/page-eyebrow';
 import { SortFilterBar } from '@/components/ui/sort-filter-bar';
+import { PageH1 } from '@/components/ui/page-h1';
 import { buildBucketedRows, DIVIDER_THRESHOLD } from '@/lib/format/group-bucket';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { formatTypeLabel } from '@/lib/format/type-label';
@@ -228,9 +229,9 @@ export default async function DealsPage({ searchParams }: PageProps) {
       <Suspense fallback={<PageEyebrowSkeleton />}>
         <Eyebrow sort={sort} category={category} />
       </Suspense>
-      <h1 className="text-3xl md:text-4xl font-bold mb-8">
+      <PageH1 className="mb-8">
         Price drops.
-      </h1>
+      </PageH1>
       {/* Two axes only — no INCLUDE OUT OF STOCK on feed surfaces per
           branding-guide §"State markers" deal-buyer query-filter lock
           (includeOOS omitted → axis not rendered). */}

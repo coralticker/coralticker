@@ -30,6 +30,8 @@ import { DataRowSkeleton } from '@/components/ui/data-row-skeleton';
 import { PageEyebrow } from '@/components/ui/page-eyebrow';
 import { PageShell } from '@/components/ui/page-shell';
 import { SortFilterBar } from '@/components/ui/sort-filter-bar';
+import { PageH1 } from '@/components/ui/page-h1';
+import { SectionHeader } from '@/components/ui/section-header';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { pluralize } from '@/lib/format/pluralize';
 import { VendorInventoryRow } from './_components/vendor-inventory-row';
@@ -111,9 +113,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 function RetiredVendorView({ vendor }: { vendor: Vendor }) {
   return (
     <PageShell as="section">
-      <h1 className="text-3xl md:text-4xl font-bold mb-6">
+      <PageH1 className="mb-6">
         {vendor.display_name}
-      </h1>
+      </PageH1>
       <p className="text-base leading-relaxed mb-8">
         I&apos;m not tracking them anymore.
       </p>
@@ -252,9 +254,9 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
       {page > 1 && <link rel="prev" href={prevHref} />}
       {page < totalPages && <link rel="next" href={nextHref} />}
       {eyebrowChunks && <PageEyebrow chunks={eyebrowChunks} />}
-      <h1 className="text-3xl md:text-4xl font-bold mb-4">
+      <PageH1 className="mb-4">
         {vendor.display_name}
-      </h1>
+      </PageH1>
 
       <p className="text-base mb-2">
         <a
@@ -274,9 +276,9 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
           category={category}
           includeOOS={includeOOS}
         />
-        <h2 className="text-sm font-bold pb-2 mb-2 border-b border-line">
+        <SectionHeader>
           Current inventory.
-        </h2>
+        </SectionHeader>
         <Suspense fallback={<VendorInventorySkeleton />}>
           <Inventory
             vendor={vendor}

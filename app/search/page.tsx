@@ -20,6 +20,7 @@ import { GroupDivider } from '@/components/group-divider';
 import { ListingCard } from '@/components/listing-card';
 import { DataRow, type DataRowField } from '@/components/ui/data-row';
 import { PageEyebrow } from '@/components/ui/page-eyebrow';
+import { PageH1 } from '@/components/ui/page-h1';
 import {
   DIVIDER_THRESHOLD,
   buildBucketedRows,
@@ -230,9 +231,9 @@ export default async function SearchPage({ searchParams }: PageProps) {
           prose register, declarative period (D-058-5 #3, guide L296),
           clamped per clampSearchEcho. The no-match line below deliberately
           doesn't repeat it. */}
-      <h1 className="text-3xl md:text-4xl font-bold mb-8">
+      <PageH1 className="mb-8">
         Results for &ldquo;{clampSearchEcho(rawQ!)}&rdquo;.
-      </h1>
+      </PageH1>
 
       {noMatch ? (
         // Locked no-match copy verbatim (guide L100) — honest-zero class, no
