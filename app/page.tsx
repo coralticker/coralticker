@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   // CoralTicker".
   title: { absolute: 'CoralTicker — every drop, one feed' },
   description:
-    "Drop alerts and price tracking for reef hobbyists. Never miss the piece you've been hunting. One feed, every vendor.",
+    "Drop alerts and price tracking for reef hobbyists. Never miss the piece you've been hunting. Every drop, one feed.",
   alternates: { canonical: '/' },
   // og:title/og:description inherit from title/description; twitter:* falls
   // back to openGraph. Text-only card v1 — no og:image per Jon's CTK-078 call.
