@@ -51,7 +51,7 @@ import { CORAL_RECENCY_DAYS } from '@/lib/queries/listings';
 import { getRequiredEnv } from '@/lib/env';
 import { buildLineageFields } from '@/lib/format/lineage-fields';
 import { DataRow } from '@/components/ui/data-row';
-import { ThumbSlot } from '@/components/ui/thumb-slot';
+import { ThumbSlot, THUMB_SLOT_BOX } from '@/components/ui/thumb-slot';
 
 export const revalidate = 300;
 
@@ -145,7 +145,7 @@ function CoralListSkeleton() {
       {Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
         <li key={i} className="py-6 border-b border-line">
           <span className="flex gap-4" aria-hidden="true">
-            <span className="shrink-0 w-24 h-24 bg-wash animate-pulse" />
+            <span className={`${THUMB_SLOT_BOX} animate-pulse`} />
             {/* Two bone lines — name + data row — so the loading shape
                 matches the loaded shape (CTK-140 D3 skeleton parity; CLS
                 guard). */}

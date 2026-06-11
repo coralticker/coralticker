@@ -13,9 +13,15 @@
 // was hidden-iff-imageless.
 import Image from 'next/image';
 
+// Shared box geometry/tone for the 96px slot. Exported so the /corals loading
+// skeleton bone consumes the SAME class string (as `${THUMB_SLOT_BOX}
+// animate-pulse`) — a future thumb-size or bg change propagates to both, so the
+// skeleton's parity comment is structurally honored, not just asserted.
+export const THUMB_SLOT_BOX = 'shrink-0 w-24 h-24 bg-wash';
+
 export function ThumbSlot({ src, alt }: { src: string | null; alt: string }) {
   return (
-    <div className="shrink-0 w-24 h-24 bg-wash" aria-hidden={alt === '' || !src}>
+    <div className={THUMB_SLOT_BOX} aria-hidden={alt === '' || !src}>
       {src ? (
         <Image
           src={src}

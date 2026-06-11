@@ -56,7 +56,7 @@ export function ListingRowFrame({
       className="block py-6 border-b border-line hover:bg-wash"
     >
       <div className="flex gap-4">
-        <ThumbSlot src={listing.imageUrl} alt={deriveAltText(listing)} />
+        <ThumbSlot src={listing.imageUrl} alt={listing.imageUrl ? deriveAltText(listing) : ''} />
         <div className="flex-1 min-w-0">
           {/* OOS render branch is a composition-parity backstop. Feed surfaces
               (/new, /deals) filter in_stock=true at the query layer; this branch
