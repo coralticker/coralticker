@@ -79,7 +79,7 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // CORAL_RECENCY_DAYS (lib/queries/listings.ts) — the same constant that gates
 // the getCoralAvailability populated branch, so constant-level window drift
 // is closed (the runtime TTL skew below is not). CTK-126 D-2 (2026-06-05):
-// EXISTS carries in_stock = true per the **Default-render parity** rule
+// the gate carries in_stock = true per the **Default-render parity** rule
 // (branding-guide §"State markers") — /coral/[slug] now defaults to in-stock
 // rows behind an INCLUDE OUT OF STOCK toggle, and parity is measured against
 // the destination's DEFAULT (bare-URL) render, not the toggled-on view: a
@@ -89,7 +89,7 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // can hold its index row for up to ~10 min and route to the all-OOS third
 // state in that window (/code-review 2026-06-05 #3; skew disposition
 // DEFERRED to CTK-128, the D-2 hygiene bundle).
-// The VENDOR-side EXISTS guards (active + sentinel-slug, CTK-095 Axis 3
+// The VENDOR-side lateral guards (active + sentinel-slug, CTK-095 Axis 3
 // belt-and-suspenders; ESCAPE '!' — backslash collapses in JS template cooking
 // and would invert the filter) are deliberately STRICTER than the destination:
 // getCoralAvailability carries no vendor filter, so a coral whose only
@@ -98,22 +98,30 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // destination-side asymmetry (the detail page would still render such rows)
 // is CTK-125 (Tier 4 trigger-gated). Window evaluates at query time inside
 // the cached fn; drift ≤ 10 min on a 7-day window per getVendorInventory
-// precedent. V3 key-prefix bump at the CTK-139 image_url shape-widen (V2 was
-// the D-2 predicate flip) — Data Cache persists across deploys
-// (feedback_unstable_cache_shape_change), and stale-shape entries would
-// deserialize image_url as undefined for up to the 600s window.
-// CTK-139: representative thumbnail via LEFT JOIN LATERAL — newest
-// (first_seen_at DESC) in-window in-stock listing with a non-null image_url,
-// carrying the SAME vendor guards as the EXISTS so the thumbnail can never
-// come from a vendor the dormancy gate would reject. LEFT join + the EXISTS
-// kept unchanged: a coral whose in-window rows all lack images still lists,
-// image_url null (page renders the bare bg-wash box). vl.id DESC tiebreak:
-// first_seen_at is DB DEFAULT now(), transaction-stable across a scrape run's
-// single-transaction batch insert, so same-coral ties are routine — without
-// the pin the LIMIT 1 pick (and the thumbnail) flaps across revalidations.
+// precedent.
+// Single inner JOIN LATERAL (CTK-140; equivalence to the retired EXISTS +
+// LEFT LATERAL pair ratified by the CTK-139 /code-review D1 verifier —
+// dormancy gate, thumbnail pick, no-image case all checked): the lateral is
+// BOTH the dormancy gate (zero qualifying rows → no lateral row → the inner
+// join drops the coral) and the thumbnail pick. The prefer-image sort
+// `(vl.image_url IS NOT NULL) DESC` floats image-bearing rows first, so a
+// coral whose in-window rows all lack images still lists, image_url null
+// (page renders the bare bg-wash box) — the 5-guard block now stated once
+// instead of twice (CTK-139 had EXISTS + lateral copies coupled by comment
+// only). vl.id DESC tiebreak (CTK-139 /code-review F1): first_seen_at is DB
+// DEFAULT now(), transaction-stable across a scrape run's single-transaction
+// batch insert, so same-coral ties are routine — without the pin the LIMIT 1
+// pick (and the thumbnail) flaps across revalidations.
+// Key-prefix history: V2 the D-2 predicate flip, V3 the CTK-139 image_url
+// shape-widen, V4 the CTK-140 coral_type/origin_vendor shape-widen — Data
+// Cache persists across deploys (feedback_unstable_cache_shape_change), and
+// stale-shape entries would deserialize new fields as undefined for up to
+// the 600s window.
 interface CoralIndexRow {
   slug: string;
   canonical_name: string;
+  coral_type: string | null;
+  origin_vendor: string | null;
   image_url: string | null;
 }
 
@@ -127,38 +135,32 @@ export async function getAllNamedCoralsWithListings(): Promise<
         Date.now() - CORAL_RECENCY_DAYS * MS_PER_DAY,
       ).toISOString();
       const rows = (await sql`
-        SELECT nc.slug, nc.canonical_name, img.image_url
+        SELECT nc.slug, nc.canonical_name, nc.coral_type, nc.origin_vendor,
+               img.image_url
         FROM named_corals nc
-        LEFT JOIN LATERAL (
+        JOIN LATERAL (
+          -- Prefer-image sort: image-bearing rows float first, so image_url
+          -- is null only when NO in-window in-stock row has an image — the
+          -- inner join still keeps the coral (dormancy gate is row existence,
+          -- not image existence).
           SELECT vl.image_url
           FROM vendor_listings vl
           JOIN vendors v ON v.id = vl.vendor_id
           WHERE vl.named_coral_id = nc.id
             AND vl.last_seen_at > ${windowStart}
             AND vl.in_stock = true
-            AND vl.image_url IS NOT NULL
             AND v.active = true
             AND v.slug NOT LIKE '!_%' ESCAPE '!'
-          ORDER BY vl.first_seen_at DESC, vl.id DESC
+          ORDER BY (vl.image_url IS NOT NULL) DESC, vl.first_seen_at DESC, vl.id DESC
           LIMIT 1
         ) img ON true
         WHERE nc.active = true
           AND nc.slug NOT LIKE '!_%' ESCAPE '!'
-          AND EXISTS (
-            SELECT 1
-            FROM vendor_listings vl
-            JOIN vendors v ON v.id = vl.vendor_id
-            WHERE vl.named_coral_id = nc.id
-              AND vl.last_seen_at > ${windowStart}
-              AND vl.in_stock = true
-              AND v.active = true
-              AND v.slug NOT LIKE '!_%' ESCAPE '!'
-          )
         ORDER BY nc.canonical_name ASC
       `) as unknown as CoralIndexRow[];
       return rows;
     },
-    ['getAllNamedCoralsWithListingsV3'],
+    ['getAllNamedCoralsWithListingsV4'],
     { revalidate: 600, tags: ['corals-index'] },
   )();
 }

@@ -15,13 +15,20 @@
 // sentinel-suppression + class-casing + originator-resolution composition
 // has a pure-function test boundary per feedback_review_results_spec_flow_
 // trace.md (diff-at-consumer ≠ behavior-at-DOM).
+//
+// Param is the structural subset, not NamedCoral (CTK-140): the /corals
+// index row carries only the identity pair, and both consumers — the full
+// NamedCoral on /coral/[slug], the widened CoralIndexRow on /corals — must
+// satisfy it without forking the builder.
 
 import type { DataRowField } from '@/components/ui/data-row';
 import type { NamedCoral } from '@/lib/queries/named-corals';
 import { formatTypeLabel } from './type-label.ts';
 import { resolveOriginVendor } from './origin-vendor.ts';
 
-export function buildLineageFields(coral: NamedCoral): DataRowField[] {
+export function buildLineageFields(
+  coral: Pick<NamedCoral, 'coral_type' | 'origin_vendor'>,
+): DataRowField[] {
   const fields: DataRowField[] = [];
   // Truthy guards (not !== null) — rule out null AND empty-string drift in
   // one boundary. Empty strings in DB columns would otherwise render as a

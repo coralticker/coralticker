@@ -20,12 +20,20 @@
 // CTK-009 enrichment park per external first-look feedback 2026-06-11,
 // Jon-ratified — 96×96 slot per the ListingRowFrame convention, image =
 // newest in-window in-stock listing with an image (null renders the bare
-// bg-wash box). The /vendors mirror divergence (thumbs here, none there) is
-// scope, not drift. Single internal link per row — /coral/[slug] hero owns
-// the vendor CTA, so no outbound pair (deviation from the /vendors two-link
-// row is scope, not drift). Row underline treatment drift-added to the
-// /vendors hover-only carve-out per /brand-manager 2026-06-04
-// (branding-guide §"Color system" carve-out entry).
+// bg-wash box). CTK-140 exception: identity data row (Type. — Origin.)
+// below the name per the locked field-set canon (branding-guide §"Em-dash
+// data row format" → "/corals index-row field-set") — the destination
+// lineage row's leading pair, same render rules via buildLineageFields;
+// vendor-count / last-seen / Year. stay canon-rejected (re-open trigger
+// lives in the canon entry). The /vendors mirror divergence (thumbs here,
+// none there) is scope, not drift. Single internal link per row —
+// /coral/[slug] hero owns the vendor CTA, so no outbound pair (deviation
+// from the /vendors two-link row is scope, not drift). Row underline
+// treatment drift-added to the /vendors hover-only carve-out per
+// /brand-manager 2026-06-04 (branding-guide §"Color system" carve-out
+// entry); since CTK-140 it scopes to the name span via group-hover — the
+// data row keeps the destination's text-sm regular register (canon register
+// split), so neither the link's bold nor its hover underline may reach it.
 //
 // ISR revalidate = 600 per site.md §1.2 + /vendors precedent.
 
@@ -35,6 +43,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { getAllNamedCoralsWithListings } from '@/lib/queries/named-corals';
 import { CORAL_RECENCY_DAYS } from '@/lib/queries/listings';
+import { buildLineageFields } from '@/lib/format/lineage-fields';
+import { DataRow } from '@/components/ui/data-row';
 
 export const revalidate = 600;
 
@@ -72,34 +82,56 @@ async function CoralList() {
 
   return (
     <ul>
-      {corals.map((coral) => (
-        <li key={coral.slug} className="py-3">
-          <Link
-            href={`/coral/${coral.slug}`}
-            className="flex items-center gap-4 text-base font-bold hover:underline focus-visible:underline underline-offset-[3px] decoration-1"
-          >
-            {/* 96×96 slot per the ListingRowFrame convention; null image_url
-                renders the bare bg-wash box — the coral still lists.
-                alt="" — decorative: the name text inside the same link carries
-                the accessible name (/lead-frontend ruling 2026-06-11; non-empty
-                alt would double-announce per row). */}
-            <span className="shrink-0 w-24 h-24 bg-wash" aria-hidden="true">
-              {coral.image_url ? (
-                <Image
-                  src={coral.image_url}
-                  alt=""
-                  width={96}
-                  height={96}
-                  sizes="96px"
-                  unoptimized
-                  className="w-24 h-24 object-cover"
-                />
-              ) : null}
-            </span>
-            <span className="min-w-0">{coral.canonical_name}</span>
-          </Link>
-        </li>
-      ))}
+      {corals.map((coral) => {
+        const fields = buildLineageFields(coral);
+        return (
+          <li key={coral.slug} className="py-3">
+            <Link
+              href={`/coral/${coral.slug}`}
+              className="group flex items-center gap-4"
+            >
+              {/* 96×96 slot per the ListingRowFrame convention; null image_url
+                  renders the bare bg-wash box — the coral still lists.
+                  alt="" — decorative: the name text inside the same link carries
+                  the accessible name (/lead-frontend ruling 2026-06-11; non-empty
+                  alt would double-announce per row). */}
+              <span className="shrink-0 w-24 h-24 bg-wash" aria-hidden="true">
+                {coral.image_url ? (
+                  <Image
+                    src={coral.image_url}
+                    alt=""
+                    width={96}
+                    height={96}
+                    sizes="96px"
+                    unoptimized
+                    className="w-24 h-24 object-cover"
+                  />
+                ) : null}
+              </span>
+              <div className="min-w-0">
+                {/* Bold + hover-underline live on the name span, not the link:
+                    the data row below must keep the destination's text-sm
+                    regular register (canon register split), and an underline
+                    on the flex-container link would propagate into it. group-
+                    hover keeps the whole row as the hover surface. */}
+                <span className="block text-base font-bold group-hover:underline group-focus-visible:underline underline-offset-[3px] decoration-1">
+                  {coral.canonical_name}
+                </span>
+                {/* Length guard, not a truthy-null guard: a bare <DataRow>
+                    renders its wrapper div on an empty array — a both-null
+                    row must render no line and no phantom height (canon:
+                    never an empty dash line). Matches the /coral/[slug]
+                    consumer pattern. */}
+                {fields.length > 0 ? (
+                  <div className="mt-1">
+                    <DataRow fields={fields} />
+                  </div>
+                ) : null}
+              </div>
+            </Link>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -111,7 +143,13 @@ function CoralListSkeleton() {
         <li key={i} className="py-3">
           <span className="flex items-center gap-4" aria-hidden="true">
             <span className="shrink-0 w-24 h-24 bg-wash animate-pulse" />
-            <span className="inline-block h-4 w-40 bg-wash rounded-sm animate-pulse" />
+            {/* Two bone lines — name + data row — so the loading shape
+                matches the loaded shape (CTK-140 D3 skeleton parity; CLS
+                guard). */}
+            <span className="flex flex-col gap-2 min-w-0">
+              <span className="inline-block h-4 w-40 bg-wash rounded-sm animate-pulse" />
+              <span className="inline-block h-3.5 w-56 bg-wash rounded-sm animate-pulse" />
+            </span>
           </span>
         </li>
       ))}
