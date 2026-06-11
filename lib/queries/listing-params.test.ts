@@ -13,6 +13,8 @@ import {
   CATEGORY_LABELS,
   SEARCH_QUERY_MAX_LENGTH,
   SORT_LABELS,
+  clampSearchEcho,
+  clampSearchLength,
   parseCategory,
   parseIncludeOOS,
   parseSearchQuery,
@@ -111,6 +113,50 @@ test('parseSearchQuery: SQL metacharacters pass through for the pattern-builder 
   // Escaping is buildIlikePatterns' job (lib/queries/search.ts) — the parser
   // must not strip or double-handle % / _ / !.
   assert.equal(parseSearchQuery('50%_off!'), '50%_off!');
+});
+
+// CTK-130 #7/#8 — shared code-point-safe clamp. The former .slice(0, N) sites
+// (parseSearchQuery + the view-side echo) counted UTF-16 units and could split
+// a surrogate pair at the cap boundary; clampSearchLength truncates on whole
+// code points.
+
+test('clampSearchLength: BMP string truncates at the cap unchanged', () => {
+  const long = 'a'.repeat(SEARCH_QUERY_MAX_LENGTH + 10);
+  assert.equal(clampSearchLength(long).length, SEARCH_QUERY_MAX_LENGTH);
+  assert.equal(clampSearchLength('short'), 'short');
+});
+
+test('clampSearchLength: never splits a surrogate pair at the boundary', () => {
+  // 𝐀 (U+1D400) is one astral code point = two UTF-16 units. A string of N
+  // such glyphs has length 2N in units. .slice(0, N) would cut at unit N,
+  // landing mid-pair → a lone surrogate (\uD835). Code-point truncation keeps
+  // whole glyphs and never emits a lone surrogate.
+  const astral = '𝐀'.repeat(SEARCH_QUERY_MAX_LENGTH + 5);
+  const clamped = clampSearchLength(astral);
+  // No lone surrogate survives — every code unit pairs up.
+  assert.equal(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(clamped), false);
+  assert.equal(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(clamped), false);
+  // Caps at SEARCH_QUERY_MAX_LENGTH code points (not units).
+  assert.equal([...clamped].length, SEARCH_QUERY_MAX_LENGTH);
+});
+
+test('parseSearchQuery: surrogate-pair query caps without a lone surrogate', () => {
+  const astral = `${'𝐀'.repeat(SEARCH_QUERY_MAX_LENGTH + 5)}`;
+  const parsed = parseSearchQuery(astral)!;
+  assert.equal(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(parsed), false);
+});
+
+test('clampSearchEcho: raw echo — first array value, trimmed, code-point clamped', () => {
+  // Mirrors parseSearchQuery's array guard (first value wins) but echoes RAW,
+  // un-normalized text (CTK-058 locked decision).
+  assert.equal(clampSearchEcho('  Rainbow BOZO  '), 'Rainbow BOZO'); // un-lowercased
+  assert.equal(clampSearchEcho(['first', 'second']), 'first');
+  assert.equal(clampSearchEcho(undefined), '');
+  assert.equal(clampSearchEcho([]), '');
+  const long = 'b'.repeat(SEARCH_QUERY_MAX_LENGTH + 30);
+  assert.equal(clampSearchEcho(long).length, SEARCH_QUERY_MAX_LENGTH);
+  const astralEcho = clampSearchEcho('𝐀'.repeat(SEARCH_QUERY_MAX_LENGTH + 5));
+  assert.equal(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(astralEcho), false);
 });
 
 test('parseIncludeOOS: only literal "1" toggles', () => {

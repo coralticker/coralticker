@@ -109,19 +109,46 @@ export function parseIncludeOOS(raw: string | string[] | undefined): boolean {
 // drives matching only.
 export const SEARCH_QUERY_MAX_LENGTH = 80;
 
+// Code-point-safe truncation to the query cap (CTK-130 #7). `.slice(0, N)`
+// counts UTF-16 code units, so an N-unit cut lands mid-surrogate on an astral
+// character: a lone surrogate echoes into the /search H1 + <title>, and a
+// mangled trailing token reaches the matcher. Spreading to code points then
+// rejoining truncates on whole code points (the cap now counts code points,
+// not units — strictly more permissive for astral input, never less). Single
+// application point for SEARCH_QUERY_MAX_LENGTH, consumed by both the parser
+// (normalized) and the echo (raw) below — the two former uncoordinated
+// .slice() sites (CTK-130 #8).
+export function clampSearchLength(s: string): string {
+  return [...s].slice(0, SEARCH_QUERY_MAX_LENGTH).join('');
+}
+
 export function parseSearchQuery(
   raw: string | string[] | undefined,
 ): string | null {
   const single = Array.isArray(raw) ? raw[0] : raw;
   if (!single) return null;
-  const normalized = single
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/\p{M}/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, SEARCH_QUERY_MAX_LENGTH);
+  const normalized = clampSearchLength(
+    single
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/\p{M}/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  );
   return normalized === '' ? null : normalized;
+}
+
+// /search H1 + <title> query echo — raw (un-normalized) q, but clamped:
+// trimmed + code-point-truncated to the parser's cap so an arbitrarily long
+// ?q= can't blow out the title bar or the H1 line (CTK-058 close-out fold #3;
+// matching only ever sees the first cap normalized chars anyway). Array guard
+// mirrors parseSearchQuery — first value wins, so the echo names the value
+// that drove matching. Shares clampSearchLength with the parser (CTK-130 #8) —
+// one cap application, two consumers; lives here with the parser family rather
+// than view-side so the surrogate-pair case is unit-testable.
+export function clampSearchEcho(raw: string | string[] | undefined): string {
+  const single = Array.isArray(raw) ? raw[0] : raw;
+  return clampSearchLength((single ?? '').trim());
 }
 
 // /search pattern builder (CTK-058 D-058-1). Lives here with the parser —

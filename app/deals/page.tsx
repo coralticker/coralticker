@@ -6,10 +6,11 @@ import { GroupDivider } from '@/components/group-divider';
 import { DataRowSkeleton } from '@/components/ui/data-row-skeleton';
 import { PageEyebrow, PageEyebrowSkeleton } from '@/components/ui/page-eyebrow';
 import { SortFilterBar } from '@/components/ui/sort-filter-bar';
-import { bucketLabel, bucketTransition, DIVIDER_THRESHOLD } from '@/lib/format/group-bucket';
+import { buildBucketedRows, DIVIDER_THRESHOLD } from '@/lib/format/group-bucket';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { formatTypeLabel } from '@/lib/format/type-label';
 import { latestTimestamp } from '@/lib/format/latest-timestamp';
+import { pluralize } from '@/lib/format/pluralize';
 import {
   chromeCategoryLabel,
   parseCategory,
@@ -118,7 +119,7 @@ async function Eyebrow({
   const latestObservedAt =
     latestEventAt ?? latestTimestamp(drops, (d) => d.observedAt);
   const latestRelative = formatRelativeTime(latestObservedAt, new Date()).toUpperCase();
-  const countNoun = drops.length === 1 ? 'PRICE DROP' : 'PRICE DROPS';
+  const countNoun = pluralize(drops.length, 'PRICE DROP', 'PRICE DROPS');
   // Filtered eyebrows qualify the count chunk — the filtered page covers the
   // category, not the market; a bare count under a filter silently overclaims
   // (disclosure-symmetry rule). Sort changes order, not coverage — no eyebrow
@@ -191,22 +192,13 @@ async function PriceDropsFeed({
 
   const now = new Date();
   const out: ReactNode[] = [];
-  for (let i = 0; i < drops.length; i++) {
-    const curr = drops[i]!;
-    const prev = i > 0 ? drops[i - 1]! : null;
-    if (prev && bucketTransition(prev.observedAt, curr.observedAt)) {
-      out.push(
-        <GroupDivider
-          key={`div-${i}`}
-          label={bucketLabel(curr.observedAt, now)}
-        />,
-      );
+  buildBucketedRows(drops, (d) => d.observedAt, now).forEach(({ row, label }, i) => {
+    if (label !== null) {
+      out.push(<GroupDivider key={`div-${i}`} label={label} />);
     }
     // Bare id key per the flat path — one row per listing under 0033.
-    out.push(
-      <ListingCard key={curr.id} {...priceDropToProps(curr)} />,
-    );
-  }
+    out.push(<ListingCard key={row.id} {...priceDropToProps(row)} />);
+  });
   return <>{out}</>;
 }
 

@@ -11,7 +11,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bucketTransition, bucketLabel, DIVIDER_THRESHOLD } from './group-bucket.ts';
+import {
+  bucketTransition,
+  bucketLabel,
+  buildBucketedRows,
+  DIVIDER_THRESHOLD,
+} from './group-bucket.ts';
 
 // Helper: simulates the view-side dividers-fired count for a feed of N cards
 // with given event_at timestamps. Mirrors app/new/page.tsx FeedWithDividers
@@ -61,12 +66,21 @@ test('bucketTransition: crosses local-day boundary → true', () => {
 
 // --- bucketLabel ladder ---------------------------------------------------
 
-test('bucketLabel: dayDiff=0 same-day → throws (caller contract)', () => {
-  // Per CTK-062 F-7: same-day passthrough is a caller bug — bucketTransition()
-  // skips same-day pairs, so bucketLabel() should never receive dayDiff=0.
+test('bucketLabel: dayDiff=0 same-day → null (totality, CTK-130)', () => {
+  // CTK-130 (+): the former throw is now return-null — same-day = no divider
+  // (base no-Today-header rule). bucketTransition() still skips same-day pairs
+  // for inter-row transitions; the leading caller relies on this null.
   const now = new Date(2026, 4, 14, 12, 0);
   const sameDay = new Date(2026, 4, 14, 9, 0).toISOString();
-  assert.throws(() => bucketLabel(sameDay, now), /dayDiff must be positive/);
+  assert.equal(bucketLabel(sameDay, now), null);
+});
+
+test('bucketLabel: future-dated row (dayDiff<0) → null (clock-skew suppression)', () => {
+  // A top row ahead of now under midnight Neon-vs-Vercel skew — suppressed,
+  // not mislabelled. buildBucketedRows leans on this for the leading divider.
+  const now = new Date(2026, 4, 14, 12, 0);
+  const future = new Date(2026, 4, 15, 9, 0).toISOString();
+  assert.equal(bucketLabel(future, now), null);
 });
 
 test('bucketLabel: 1 day ago → YESTERDAY', () => {
@@ -123,4 +137,85 @@ test('5 cards spanning two days → no divider (under threshold)', () => {
   const feed = twoDaySplit(3, 2);
   assert.equal(feed.length, 5);
   assert.equal(dividersFired(feed), 0);
+});
+
+// --- buildBucketedRows (CTK-130 #5 + (+)) ---------------------------------
+// The annotate-then-render split that replaced the three hand-rolled loops.
+// Owns the leading-divider carve-out + future-day suppression + bucketLabel
+// totality. Rows are bare timestamp strings here; getTimestamp = identity.
+
+const id = (t: string) => t;
+
+test('buildBucketedRows: today-top feed → NO leading label (base no-Today rule)', () => {
+  // Top bucket is today (same local day as now) → leading label suppressed;
+  // this is the unfiltered-feed parity case (/new, /deals on a normal day).
+  const now = new Date(2026, 4, 14, 12, 0);
+  const rows = [
+    new Date(2026, 4, 14, 11, 0).toISOString(), // today
+    new Date(2026, 4, 14, 9, 0).toISOString(), // today
+    new Date(2026, 4, 13, 20, 0).toISOString(), // yesterday → transition here
+  ];
+  const out = buildBucketedRows(rows, id, now);
+  assert.equal(out[0]!.label, null); // no leading label
+  assert.equal(out[1]!.label, null); // same-day, no transition
+  assert.equal(out[2]!.label, 'YESTERDAY'); // inter-row transition
+});
+
+test('buildBucketedRows: past-top feed → leading label renders (filtered/slow-day case)', () => {
+  // Top bucket is days old (a filtered /search feed, or a slow-day unfiltered
+  // /new) → the leading label renders per the carve-out (CTK-130 #5).
+  const now = new Date(2026, 4, 14, 12, 0);
+  const rows = [
+    new Date(2026, 4, 11, 11, 0).toISOString(), // 3 days ago (top)
+    new Date(2026, 4, 11, 9, 0).toISOString(), // same bucket
+    new Date(2026, 4, 9, 9, 0).toISOString(), // 5 days ago → transition
+  ];
+  const out = buildBucketedRows(rows, id, now);
+  assert.equal(out[0]!.label, '3 DAYS AGO'); // leading label present
+  assert.equal(out[1]!.label, null);
+  assert.equal(out[2]!.label, '5 DAYS AGO');
+});
+
+test('buildBucketedRows: future-dated top row → leading label suppressed (clock skew)', () => {
+  // Different local day AND ahead of now → bucketTransition fires but
+  // bucketLabel totality returns null, so no leading divider (no throw).
+  const now = new Date(2026, 4, 14, 12, 0);
+  const rows = [
+    new Date(2026, 4, 15, 1, 0).toISOString(), // tomorrow (skew)
+    new Date(2026, 4, 14, 9, 0).toISOString(), // today
+  ];
+  const out = buildBucketedRows(rows, id, now);
+  assert.equal(out[0]!.label, null);
+  assert.equal(out[1]!.label, null); // future→today is a different-day pair,
+  // but the label keys on the CURR (today) vs now → same day → null.
+});
+
+test('buildBucketedRows: yesterday-top feed → leading YESTERDAY label', () => {
+  const now = new Date(2026, 4, 14, 12, 0);
+  const rows = [
+    new Date(2026, 4, 13, 22, 0).toISOString(), // yesterday (top)
+    new Date(2026, 4, 13, 8, 0).toISOString(), // same bucket
+  ];
+  const out = buildBucketedRows(rows, id, now);
+  assert.equal(out[0]!.label, 'YESTERDAY');
+  assert.equal(out[1]!.label, null);
+});
+
+test('buildBucketedRows: getTimestamp selects the surface ordering field', () => {
+  // Mirrors the real call shape — rows are objects, getTimestamp picks the
+  // per-surface field (eventAt / observedAt / firstSeenAt).
+  const now = new Date(2026, 4, 14, 12, 0);
+  const rows = [
+    { id: 1, ts: new Date(2026, 4, 12, 10, 0).toISOString() }, // 2 days ago top
+    { id: 2, ts: new Date(2026, 4, 12, 9, 0).toISOString() },
+  ];
+  const out = buildBucketedRows(rows, (r) => r.ts, now);
+  assert.equal(out[0]!.label, '2 DAYS AGO');
+  assert.equal(out[0]!.row.id, 1); // row passes through unchanged
+  assert.equal(out[1]!.label, null);
+});
+
+test('buildBucketedRows: empty feed → empty annotation list', () => {
+  const now = new Date(2026, 4, 14, 12, 0);
+  assert.deepEqual(buildBucketedRows([], id, now), []);
 });

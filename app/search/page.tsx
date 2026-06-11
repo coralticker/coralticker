@@ -22,12 +22,12 @@ import { DataRow, type DataRowField } from '@/components/ui/data-row';
 import { PageEyebrow } from '@/components/ui/page-eyebrow';
 import {
   DIVIDER_THRESHOLD,
-  bucketLabel,
-  bucketTransition,
+  buildBucketedRows,
 } from '@/lib/format/group-bucket';
 import { buildLineageFields } from '@/lib/format/lineage-fields';
+import { pluralize } from '@/lib/format/pluralize';
 import {
-  SEARCH_QUERY_MAX_LENGTH,
+  clampSearchEcho,
   parseSearchQuery,
 } from '@/lib/queries/listing-params';
 import type { Listing } from '@/lib/queries/listings';
@@ -47,17 +47,6 @@ interface PageProps {
   searchParams: Promise<{ q?: string | string[] }>;
 }
 
-// H1 + <title> query echo — raw (un-normalized) q, but clamped: trimmed +
-// sliced to the parser's 80-char cap so an arbitrarily long ?q= can't blow
-// out the title bar or the H1 line (close-out fold #3; matching only ever
-// sees the first 80 normalized chars anyway). Array guard mirrors
-// parseSearchQuery — first value wins, so the echo names the value that
-// drove matching.
-function clampEcho(rawQ: string | string[] | undefined): string {
-  const single = Array.isArray(rawQ) ? rawQ[0] : rawQ;
-  return (single ?? '').trim().slice(0, SEARCH_QUERY_MAX_LENGTH);
-}
-
 // Per-query title in the guide L105 SERP convention `{specific} —
 // CoralTicker` (close-out fold #2); the empty frame keeps the static title.
 // noindex either way — results pages stay out of the index; SERP convention
@@ -70,7 +59,7 @@ export async function generateMetadata({
   return {
     // suffix via root title.template
     title:
-      q === null ? 'Search' : `Results for "${clampEcho(sp.q)}"`,
+      q === null ? 'Search' : `Results for "${clampSearchEcho(sp.q)}"`,
     robots: { index: false, follow: true },
   };
 }
@@ -82,21 +71,43 @@ const rowLinkClass =
 // `line` under-rule (CTK-129 served-neutral token), left-aligned to the
 // data edge. Classification lives positionally at section level — never
 // per-row.
-function SectionLabel({
-  first,
-  children,
-}: {
-  first?: boolean;
-  children: ReactNode;
-}) {
+//
+// CTK-130 (#9): the "am I first?" bookkeeping (a hand-tracked prop threaded
+// through three call sites) folds into the Tailwind first-child variant —
+// `mt-12 first:mt-0`. The sections render inside a single wrapper <div> below,
+// so the first RENDERED label (false-conditional siblings emit nothing) is the
+// wrapper's :first-child and zeroes its top margin; the rest keep mt-12.
+function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <h2
-      className={`font-mono text-xs font-normal uppercase tracking-[0.08em] text-ink border-b border-line pb-2 ${
-        first ? 'mt-0' : 'mt-12'
-      }`}
-    >
+    <h2 className="font-mono text-xs font-normal uppercase tracking-[0.08em] text-ink border-b border-line pb-2 mt-12 first:mt-0">
       {children}
     </h2>
+  );
+}
+
+// Page-local text-row shell shared by the CORALS + VENDORS dictionary classes
+// (CTK-130 #10c). DELIBERATELY not promoted to a sitewide primitive: these are
+// text-only search rows, and a shared component would fire INV-02 (the
+// /brand-manager mockup gate) and collide with CTK-009 D2's wider row-shell
+// (ListingRowFrame/thumb-row) calculus. Kept here, scoped to /search.
+function SearchTextRow({
+  href,
+  name,
+  children,
+}: {
+  href: string;
+  name: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="py-6 border-b border-line">
+      <p className="text-base leading-snug">
+        <Link href={href} className={rowLinkClass}>
+          {name}
+        </Link>
+      </p>
+      {children}
+    </div>
   );
 }
 
@@ -121,43 +132,34 @@ function CoralRow({ hit }: { hit: CoralSearchHit }) {
   }
 
   return (
-    <div className="py-6 border-b border-line">
-      <p className="text-base leading-snug">
-        <Link href={`/coral/${hit.slug}`} className={rowLinkClass}>
-          {hit.canonicalName}
-        </Link>
-      </p>
+    <SearchTextRow href={`/coral/${hit.slug}`} name={hit.canonicalName}>
       {fields.length > 0 ? (
         <div className="mt-2">
           <DataRow fields={fields} />
         </div>
       ) : null}
-    </div>
+    </SearchTextRow>
   );
 }
 
 // Vendor row — same text-only thin-row shape; bold display-name link to
 // /vendor/[slug].
 function VendorRow({ hit }: { hit: VendorSearchHit }) {
-  return (
-    <div className="py-6 border-b border-line">
-      <p className="text-base leading-snug">
-        <Link href={`/vendor/${hit.slug}`} className={rowLinkClass}>
-          {hit.displayName}
-        </Link>
-      </p>
-    </div>
-  );
+  return <SearchTextRow href={`/vendor/${hit.slug}`} name={hit.displayName} />;
 }
 
 // Listings render through <ListingCard> verbatim — price-drop/vendor-markdown
 // state-markers ride the in-row fields; rows link out per natural behavior
 // (the frame's product_url anchor). Day-bucket dividers at 12+ cards per the
 // feed-surface rule, INCLUDING the leading divider when the top bucket isn't
-// today (D-058-5 #4, guide L396 leading-divider carve-out — /search is its
+// today (D-058-5 #4, guide L437 leading-divider carve-out — /search is its
 // first consumer; the no-Today-header base rule re-applies when the top
 // bucket IS today). Buckets key on firstSeenAt — the surface's ordering
 // timestamp (eventAt is null on this surface by construction).
+//
+// CTK-130: the leading carve-out + future-day suppression now live inside
+// buildBucketedRows (bucketLabel totality returns null for same-day AND
+// future-dated top rows), so the page just renders the annotated labels.
 function ListingsRows({ listings }: { listings: Listing[] }) {
   if (listings.length < DIVIDER_THRESHOLD) {
     return (
@@ -171,35 +173,12 @@ function ListingsRows({ listings }: { listings: Listing[] }) {
 
   const now = new Date();
   const out: ReactNode[] = [];
-  for (let i = 0; i < listings.length; i++) {
-    const curr = listings[i]!;
-    const prev = i > 0 ? listings[i - 1]! : null;
-    if (prev === null) {
-      // Leading carve-out: bucketTransition against now answers "is the top
-      // bucket a different local day than today." Different-AND-AHEAD (a
-      // future-dated top row — midnight Neon-vs-Vercel clock skew reaches
-      // it) suppresses instead of throwing: bucketLabel's dayDiff <= 0
-      // throw is a caller contract, so the past-day check rides the label
-      // computation caller-side (/code-review fold #2; the lib-level
-      // totality fix is the Tier 3 bundle CTK's).
-      if (bucketTransition(now.toISOString(), curr.firstSeenAt)) {
-        const currDate = new Date(curr.firstSeenAt);
-        const isPastDay =
-          new Date(currDate.getFullYear(), currDate.getMonth(), currDate.getDate()).getTime() <
-          new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-        if (isPastDay) {
-          out.push(
-            <GroupDivider key="div-lead" label={bucketLabel(curr.firstSeenAt, now)} />,
-          );
-        }
-      }
-    } else if (bucketTransition(prev.firstSeenAt, curr.firstSeenAt)) {
-      out.push(
-        <GroupDivider key={`div-${i}`} label={bucketLabel(curr.firstSeenAt, now)} />,
-      );
+  buildBucketedRows(listings, (l) => l.firstSeenAt, now).forEach(({ row, label }, i) => {
+    if (label !== null) {
+      out.push(<GroupDivider key={`div-${i}`} label={label} />);
     }
-    out.push(<ListingCard key={curr.id} listing={curr} />);
-  }
+    out.push(<ListingCard key={row.id} listing={row} />);
+  });
   return <>{out}</>;
 }
 
@@ -230,16 +209,16 @@ export default async function SearchPage({ searchParams }: PageProps) {
   // floor per disclosure-symmetry. All-empty renders `0 RESULTS`.
   const chunks: string[] = [];
   if (corals.length > 0) {
-    chunks.push(`${corals.length} ${corals.length === 1 ? 'CORAL' : 'CORALS'}`);
+    chunks.push(`${corals.length} ${pluralize(corals.length, 'CORAL', 'CORALS')}`);
   }
   if (vendors.length > 0) {
-    chunks.push(`${vendors.length} ${vendors.length === 1 ? 'VENDOR' : 'VENDORS'}`);
+    chunks.push(`${vendors.length} ${pluralize(vendors.length, 'VENDOR', 'VENDORS')}`);
   }
   if (overflow) {
     chunks.push(`${SEARCH_LISTINGS_LIMIT}+ LISTINGS`);
   } else if (listings.length > 0) {
     chunks.push(
-      `${listings.length} ${listings.length === 1 ? 'LISTING' : 'LISTINGS'}`,
+      `${listings.length} ${pluralize(listings.length, 'LISTING', 'LISTINGS')}`,
     );
   }
   const noMatch = chunks.length === 0;
@@ -249,10 +228,10 @@ export default async function SearchPage({ searchParams }: PageProps) {
       <PageEyebrow chunks={noMatch ? ['0 RESULTS'] : chunks} />
       {/* H1 owns the query echo — raw (un-normalized) q in curly quotes,
           prose register, declarative period (D-058-5 #3, guide L296),
-          clamped per clampEcho. The no-match line below deliberately
+          clamped per clampSearchEcho. The no-match line below deliberately
           doesn't repeat it. */}
       <h1 className="text-3xl md:text-4xl font-bold mb-8">
-        Results for &ldquo;{clampEcho(rawQ!)}&rdquo;.
+        Results for &ldquo;{clampSearchEcho(rawQ!)}&rdquo;.
       </h1>
 
       {noMatch ? (
@@ -270,10 +249,13 @@ export default async function SearchPage({ searchParams }: PageProps) {
           .
         </p>
       ) : (
-        <>
+        // Single wrapper so SectionLabel's `first:mt-0` targets the first
+        // RENDERED label as :first-child (CTK-130 #9) — the empty-section
+        // conditionals emit nothing, so the first present label wins.
+        <div>
           {corals.length > 0 ? (
             <>
-              <SectionLabel first>CORALS</SectionLabel>
+              <SectionLabel>CORALS</SectionLabel>
               {corals.map((hit) => (
                 <CoralRow key={hit.id} hit={hit} />
               ))}
@@ -282,7 +264,7 @@ export default async function SearchPage({ searchParams }: PageProps) {
 
           {vendors.length > 0 ? (
             <>
-              <SectionLabel first={corals.length === 0}>VENDORS</SectionLabel>
+              <SectionLabel>VENDORS</SectionLabel>
               {vendors.map((hit) => (
                 <VendorRow key={hit.slug} hit={hit} />
               ))}
@@ -291,13 +273,11 @@ export default async function SearchPage({ searchParams }: PageProps) {
 
           {listings.length > 0 ? (
             <>
-              <SectionLabel first={corals.length === 0 && vendors.length === 0}>
-                LISTINGS
-              </SectionLabel>
+              <SectionLabel>LISTINGS</SectionLabel>
               <ListingsRows listings={listings} />
             </>
           ) : null}
-        </>
+        </div>
       )}
     </section>
   );

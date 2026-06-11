@@ -30,7 +30,7 @@
 import { getNeonSql } from '@/lib/db/neon';
 import { buildIlikePatterns } from '@/lib/queries/listing-params';
 import {
-  getListingDropContext,
+  mergeDropContext,
   rowToListing,
   type Listing,
   type VendorListingRow,
@@ -102,6 +102,14 @@ export async function searchCorals(
   normalizedQuery: string,
 ): Promise<CoralSearchHit[]> {
   const patterns = buildIlikePatterns(normalizedQuery);
+  // Invariant guard — KEPT, not dead (CTK-130 #10b: verified soft). The page
+  // null-checks parseSearchQuery before any caller reaches here, so today this
+  // is unreachable. But the helper is exported, and on an empty patterns array
+  // toSlots() pads all-NULL → every `${p}::text IS NULL OR ...` slot folds to
+  // TRUE → an unfiltered full-table result. This guard (and its siblings in
+  // searchVendors/searchListings) is the second line of defense against that
+  // all-true predicate set (search.test.ts pins the contract); removing it
+  // trades a real failure mode for three saved lines.
   if (patterns.length === 0) return [];
   const [p1, p2, p3, p4, p5, p6] = toSlots(patterns);
   const sql = getNeonSql();
@@ -173,6 +181,8 @@ export async function searchVendors(
   normalizedQuery: string,
 ): Promise<VendorSearchHit[]> {
   const patterns = buildIlikePatterns(normalizedQuery);
+  // Invariant guard (CTK-130 #10b) — see searchCorals: empty patterns → all-
+  // true predicate set → unfiltered result. Kept as defense, not dead code.
   if (patterns.length === 0) return [];
   const [p1, p2, p3, p4, p5, p6] = toSlots(patterns);
   const sql = getNeonSql();
@@ -222,6 +232,8 @@ export async function searchListings(
   normalizedQuery: string,
 ): Promise<ListingSearchResult> {
   const patterns = buildIlikePatterns(normalizedQuery);
+  // Invariant guard (CTK-130 #10b) — see searchCorals: empty patterns → all-
+  // true predicate set → unfiltered result. Kept as defense, not dead code.
   if (patterns.length === 0) return { listings: [], overflow: false };
   const [p1, p2, p3, p4, p5, p6] = toSlots(patterns);
   const sql = getNeonSql();
@@ -262,15 +274,11 @@ export async function searchListings(
   const overflow = rows.length > SEARCH_LISTINGS_LIMIT;
   const listings = rows.slice(0, SEARCH_LISTINGS_LIMIT).map(rowToListing);
 
-  const context = await getListingDropContext(listings.map((l) => l.id));
+  // Markers only — withEventAt: false keeps eventAt null so Listed. + the
+  // /search day-bucket dividers read this surface's first_seen_at ordering
+  // timestamp (see header comment; CTK-058 fold-#3 rejection, CTK-130 (+)).
   return {
-    listings: listings.map((l) => {
-      const ctx = context.get(Number(l.id));
-      // Markers only — eventAt stays null (see header comment).
-      return ctx
-        ? { ...l, priorPrice: ctx.priorPrice, priceDropObservedAt: ctx.observedAt }
-        : l;
-    }),
+    listings: await mergeDropContext(listings, { withEventAt: false }),
     overflow,
   };
 }

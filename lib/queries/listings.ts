@@ -191,6 +191,44 @@ export async function getListingDropContext(
   return out;
 }
 
+// Shared CT-observed drop-context merge (CTK-130 (+); CTK-047 B-5 pattern).
+// Fetches getListingDropContext for the rendered set and folds priorPrice +
+// priceDropObservedAt onto each matching Listing so the struck-price Price
+// field + the Q3 lead promotion render with cross-surface parity (a row that
+// medals on /new medals everywhere).
+//
+// TWO DELIBERATE VARIANTS, not a default + override:
+//   - withEventAt: true  — the canonical feed/destination surfaces
+//     (getRecentDrops, getCoralAvailability, getVendorInventory) populate
+//     Listing.eventAt = ctx.eventAt so Listed. reads the drop time ("X hours
+//     ago") and day-bucket dividers key on it.
+//   - withEventAt: false — /search (searchListings) ONLY. eventAt stays null
+//     by construction so Listed. and the /search dividers keep reading the
+//     surface's own first_seen_at ordering timestamp. This divergence is the
+//     CTK-058 fold-#3 rejection made structural — do NOT collapse it into a
+//     withEventAt default; the markers-only caller depends on the null.
+// Same projection shape both ways (eventAt already defaults null on Listing),
+// so no unstable_cache key bump (feedback_unstable_cache_shape_change is for
+// shape changes; this is render-identical to the inlined merges it replaces).
+export async function mergeDropContext(
+  listings: Listing[],
+  opts: { withEventAt: boolean },
+): Promise<Listing[]> {
+  const context = await getListingDropContext(listings.map((l) => l.id));
+  return listings.map((l) => {
+    const ctx = context.get(Number(l.id));
+    if (!ctx) return l;
+    return opts.withEventAt
+      ? {
+          ...l,
+          priorPrice: ctx.priorPrice,
+          priceDropObservedAt: ctx.observedAt,
+          eventAt: ctx.eventAt,
+        }
+      : { ...l, priorPrice: ctx.priorPrice, priceDropObservedAt: ctx.observedAt };
+  });
+}
+
 // Homepage strip per site.md §4.2 + Q-E default policy.
 // Plain JOIN with LEFT JOIN named_corals; JS-side dedup on named_coral_id
 // preserved from the Supabase impl (rather than pushing DISTINCT ON into SQL,
@@ -238,27 +276,15 @@ export async function getRecentDrops(limit = 10): Promise<Listing[]> {
     out.push(rowToListing(row));
     if (out.length >= limit) break;
   }
-  // CTK-047 B-5 — LEFT JOIN drop context onto the rendered set so the strip's
-  // B-4 deriveEvent() can surface price-drop variants alongside just-listed.
-  // Close-window addendum: eventAt populated so the homepage strip's price-
-  // dropped rows show "X hours ago" on Listed. (the drop time) rather than
-  // falling back to firstSeenAt.
-  // CTK-124: the 24h default here is DELIBERATE divergence from /deals'
-  // DEALS_WINDOW_DAYS union window — homepage strip stays a 24h drop-context
-  // surface per Jon strip ruling 2026-06-03 (CTK-111 trigger-gated). Do not
-  // couple to the /deals constant.
-  const context = await getListingDropContext(out.map((l) => l.id));
-  return out.map((l) => {
-    const ctx = context.get(Number(l.id));
-    return ctx
-      ? {
-          ...l,
-          priorPrice: ctx.priorPrice,
-          priceDropObservedAt: ctx.observedAt,
-          eventAt: ctx.eventAt,
-        }
-      : l;
-  });
+  // CTK-047 B-5 — drop context onto the rendered set (mergeDropContext, CTK-130
+  // (+)) so the strip's B-4 deriveEvent() surfaces price-drop variants
+  // alongside just-listed; withEventAt so price-dropped rows show "X hours ago"
+  // (the drop time) on Listed. rather than firstSeenAt.
+  // CTK-124: getListingDropContext's 24h default is DELIBERATE divergence from
+  // /deals' DEALS_WINDOW_DAYS union window — homepage strip stays a 24h
+  // drop-context surface per Jon strip ruling 2026-06-03 (CTK-111
+  // trigger-gated). Do not couple to the /deals constant.
+  return mergeDropContext(out, { withEventAt: true });
 }
 
 // /coral/[slug] per site.md §4.1.
@@ -348,23 +374,12 @@ export async function getCoralAvailability(
       `) as unknown as VendorListingRow[];
 
       const listings = rows.map(rowToListing);
-      // CTK-047 B-5 — LEFT JOIN drop context for cross-surface medal on
-      // <VendorAvailabilityRow>. In-stock rows with priorPrice non-null render
-      // price-drop-new at position 2 in the precedence chain. Close-window
-      // addendum: eventAt populated so Listed. reads "X hours ago" not "X days
-      // ago" on rows with a recent CT-observed drop.
-      const context = await getListingDropContext(listings.map((l) => l.id));
-      return listings.map((l) => {
-        const ctx = context.get(Number(l.id));
-        return ctx
-          ? {
-              ...l,
-              priorPrice: ctx.priorPrice,
-              priceDropObservedAt: ctx.observedAt,
-              eventAt: ctx.eventAt,
-            }
-          : l;
-      });
+      // CTK-047 B-5 — drop context for cross-surface medal on
+      // <VendorAvailabilityRow> (mergeDropContext, CTK-130 (+)). In-stock rows
+      // with priorPrice non-null render price-drop-new at position 2 in the
+      // precedence chain; withEventAt so Listed. reads "X hours ago" not "X
+      // days ago" on rows with a recent CT-observed drop.
+      return mergeDropContext(listings, { withEventAt: true });
     },
     // V2 prefix bump 2026-06-05 (CTK-127) — default ordering flipped
     // recent-first → buy-intent ladder (below). Not a shape change, but the
@@ -541,24 +556,12 @@ export async function getVendorInventory(
       })()) as unknown as VendorListingRow[];
 
       const listings = rows.map(rowToListing);
-      // CTK-047 B-5 — LEFT JOIN drop context for cross-surface medal on
-      // <VendorInventoryRow>. Same merge pattern as getRecentDrops /
-      // getCoralAvailability; per-function call to getListingDropContext()
-      // stays inline (below abstraction threshold per directive 2026-06-02).
-      // Close-window addendum: eventAt populated for cross-surface Listed.
-      // parity with /deals (medal-bearing row's Listed. reads "X hours ago").
-      const context = await getListingDropContext(listings.map((l) => l.id));
-      return listings.map((l) => {
-        const ctx = context.get(Number(l.id));
-        return ctx
-          ? {
-              ...l,
-              priorPrice: ctx.priorPrice,
-              priceDropObservedAt: ctx.observedAt,
-              eventAt: ctx.eventAt,
-            }
-          : l;
-      });
+      // CTK-047 B-5 — drop context for cross-surface medal on
+      // <VendorInventoryRow> (mergeDropContext, CTK-130 (+) — the three
+      // full-merge sites that stayed inline at the 2026-06-02 abstraction-
+      // threshold call now share the helper). withEventAt for cross-surface
+      // Listed. parity with /deals (medal-bearing row reads "X hours ago").
+      return mergeDropContext(listings, { withEventAt: true });
     },
     [
       // V3 prefix bump 2026-06-01 (CTK-100 Wave-3) — Listing shape widened

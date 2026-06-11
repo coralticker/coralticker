@@ -16,6 +16,7 @@ import { PageEyebrow } from '@/components/ui/page-eyebrow';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { latestTimestamp } from '@/lib/format/latest-timestamp';
 import { buildLineageFields } from '@/lib/format/lineage-fields';
+import { pluralize } from '@/lib/format/pluralize';
 import { VendorAvailabilityRow } from './_components/vendor-availability-row';
 
 // CTK-047 B-2 — medal-bearing surface; cadence equalized to 5min with /deals
@@ -180,12 +181,12 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
   // newest row.
   const eyebrowChunks = hasInStockRow
     ? [
-        `${listings.length} ${listings.length === 1 ? 'VENDOR' : 'VENDORS'}`,
+        `${listings.length} ${pluralize(listings.length, 'VENDOR', 'VENDORS')}`,
         `LATEST ${formatRelativeTime(latestTimestamp(listings, (l) => l.firstSeenAt), now).toUpperCase()}`,
       ]
     : isAllOOS
       ? [
-          `${oosVendorCount} ${oosVendorCount === 1 ? 'VENDOR' : 'VENDORS'}`,
+          `${oosVendorCount} ${pluralize(oosVendorCount, 'VENDOR', 'VENDORS')}`,
           'ALL OUT OF STOCK',
         ]
       : lastSeenAt === null

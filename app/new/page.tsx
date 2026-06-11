@@ -6,10 +6,11 @@ import { GroupDivider } from '@/components/group-divider';
 import { DataRowSkeleton } from '@/components/ui/data-row-skeleton';
 import { PageEyebrow, PageEyebrowSkeleton } from '@/components/ui/page-eyebrow';
 import { SortFilterBar } from '@/components/ui/sort-filter-bar';
-import { bucketLabel, bucketTransition, DIVIDER_THRESHOLD } from '@/lib/format/group-bucket';
+import { buildBucketedRows, DIVIDER_THRESHOLD } from '@/lib/format/group-bucket';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { formatTypeLabel } from '@/lib/format/type-label';
 import { latestTimestamp } from '@/lib/format/latest-timestamp';
+import { pluralize } from '@/lib/format/pluralize';
 import {
   chromeCategoryLabel,
   parseCategory,
@@ -100,7 +101,7 @@ async function Eyebrow({
   // recency-order assumption (/review-plan pin; shared helper per fold #1).
   const latestEventAt = latestTimestamp(arrivals, (a) => a.eventAt);
   const latestRelative = formatRelativeTime(latestEventAt, new Date()).toUpperCase();
-  const countNoun = arrivals.length === 1 ? 'ARRIVAL' : 'ARRIVALS';
+  const countNoun = pluralize(arrivals.length, 'ARRIVAL', 'ARRIVALS');
   // Filtered eyebrows qualify the count chunk — the filtered page covers the
   // category, not the market; a bare count under a filter silently overclaims
   // (disclosure-symmetry rule). Sort changes order, not coverage — no eyebrow
@@ -159,16 +160,12 @@ async function ArrivalsFeed({
 
   const now = new Date();
   const out: ReactNode[] = [];
-  for (let i = 0; i < arrivals.length; i++) {
-    const curr = arrivals[i]!;
-    const prev = i > 0 ? arrivals[i - 1]! : null;
-    if (prev && bucketTransition(prev.eventAt, curr.eventAt)) {
-      out.push(
-        <GroupDivider key={`div-${i}`} label={bucketLabel(curr.eventAt, now)} />,
-      );
+  buildBucketedRows(arrivals, (a) => a.eventAt, now).forEach(({ row, label }, i) => {
+    if (label !== null) {
+      out.push(<GroupDivider key={`div-${i}`} label={label} />);
     }
-    out.push(<ListingCard key={curr.id} {...rowToProps(curr)} />);
-  }
+    out.push(<ListingCard key={row.id} {...rowToProps(row)} />);
+  });
   return <>{out}</>;
 }
 

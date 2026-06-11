@@ -30,6 +30,7 @@ import { DataRowSkeleton } from '@/components/ui/data-row-skeleton';
 import { PageEyebrow } from '@/components/ui/page-eyebrow';
 import { SortFilterBar } from '@/components/ui/sort-filter-bar';
 import { formatRelativeTime } from '@/lib/format/relative-time';
+import { pluralize } from '@/lib/format/pluralize';
 import { VendorInventoryRow } from './_components/vendor-inventory-row';
 import { PaginationNav } from './_components/pagination-nav';
 
@@ -214,10 +215,10 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
     total > 0
       ? latestScrapeAt !== null
         ? [
-            `${total} ${total === 1 ? 'CORAL' : 'CORALS'}`,
+            `${total} ${pluralize(total, 'CORAL', 'CORALS')}`,
             `UPDATED ${formatRelativeTime(latestScrapeAt, new Date()).toUpperCase()}`,
           ]
-        : [`${total} ${total === 1 ? 'CORAL' : 'CORALS'}`]
+        : [`${total} ${pluralize(total, 'CORAL', 'CORALS')}`]
       : null;
 
   // <link rel="prev"/"next"> emitted via React 19 link hoisting (auto-promoted
