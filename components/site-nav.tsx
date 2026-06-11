@@ -23,18 +23,20 @@
 //   Q-6: bare-gap cluster separation (no separator chrome between Wordmark
 //        / middle-cluster / right-CTA)
 //
-// Client-component carve-out per site.md §0.2 #2: active-route detection
-// via usePathname() requires client JS — Q-3 cannot render correctly from
-// a pure RSC at the layout level. Same narrow-leaf carve-out pattern as
-// <SignupForm> (§3.5.8). No other client behavior at v1; typeahead stays
-// CTK-058 v2.
+// Server Component shell (CTK-064): active-route detection moved to the
+// <ActiveLink> client leaf. usePathname() requires client JS — Q-3 cannot
+// render from a pure RSC — but only the link active-state needs it, so the
+// whole nav no longer ships 'use client'. Wordmark, mid-dot separators,
+// and <SearchBar> are pure markup; only <ActiveLink> instances are client.
+// Same narrow-leaf carve-out pattern as <SignupForm> (§3.5.8), now scoped
+// to the leaf instead of the shell. No other client behavior at v1;
+// typeahead stays CTK-058 v2.
 //
 // CTK-058 v1: <SearchBar> mounts bare-gap-separated between the link run
 // and SIGNUP per the INV-02 round-2 variant A lock (branding-guide L286) —
 // a control is the third bare-gap non-peer species; never inside the
 // mid-dot run (its every-item-navigates grammar binds IA peers only). The
-// bar is a hook-free GET form — riding inside this client boundary adds no
-// new client behavior.
+// bar is a hook-free GET form — RSC-safe.
 //
 // Mobile pattern: flex-wrap on the nav row + flex-wrap inside the middle
 // cluster <ul>, with each link + trailing forest mid-dot pair wrapped in
@@ -42,34 +44,37 @@
 // inside a pair (prevents orphan mid-dots). No hamburger drawer, no
 // stacked-nav layout switch (per CTK-053 <SortFilterBar> precedent).
 
-'use client';
-
 import { Fragment } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { ActiveLink, linkClass } from '@/components/active-link';
 import { SearchBar } from '@/components/ui/search-bar';
 import { Wordmark } from '@/components/ui/wordmark';
 
 interface NavLink {
   href: string;
   label: string;
+  matchPrefixes?: string[];
 }
 
+// Active-state policy (Jon-confirmed CTK-064: detail pages light their
+// index). matchPrefixes is the distinct detail stem, not an href-prefix —
+// VENDORS /vendors lights on /vendor/[slug]; CORALS /corals on /coral/[slug].
+// Stems carry a trailing slash so they only match at the sub-route boundary:
+// index pages light via href-exact, never via a bare-prefix collision with a
+// future sibling route (e.g. /vendor-guide, /coral-care).
 const NAV_LINKS: NavLink[] = [
   { href: '/new', label: 'NEW' },
   { href: '/deals', label: 'DEALS' },
-  { href: '/corals', label: 'CORALS' },
-  { href: '/vendors', label: 'VENDORS' },
+  { href: '/corals', label: 'CORALS', matchPrefixes: ['/coral/'] },
+  { href: '/vendors', label: 'VENDORS', matchPrefixes: ['/vendor/'] },
   { href: '/about', label: 'ABOUT' },
 ];
 
-const linkClass =
-  'hover:underline focus-visible:underline underline-offset-[3px] decoration-1';
-const activeLinkClass = 'underline underline-offset-[3px] decoration-1';
+// SIGNUP supplies its own font run (the middle cluster inherits font-mono
+// etc. from the <ul>); ActiveLink prepends it to the link/active class.
+const signupClass = 'font-mono text-xs uppercase tracking-[0.08em] text-ink';
 
 export function SiteNav() {
-  const pathname = usePathname();
-
   return (
     <nav
       aria-label="Site navigation"
@@ -81,18 +86,15 @@ export function SiteNav() {
 
       <ul className="list-none p-0 m-0 font-mono text-xs uppercase tracking-[0.08em] text-ink">
         {NAV_LINKS.map((link, i) => {
-          const isActive = pathname === link.href;
           const isLast = i === NAV_LINKS.length - 1;
           return (
             <Fragment key={link.href}>
               <li className="inline whitespace-nowrap">
-                <Link
+                <ActiveLink
                   href={link.href}
-                  aria-current={isActive ? 'page' : undefined}
-                  className={isActive ? activeLinkClass : linkClass}
-                >
-                  {link.label}
-                </Link>
+                  label={link.label}
+                  matchPrefixes={link.matchPrefixes}
+                />
                 {!isLast && (
                   <span aria-hidden="true" className="text-forest">
                     {' · '}
@@ -107,14 +109,12 @@ export function SiteNav() {
 
       <SearchBar />
 
-      <Link
+      <ActiveLink
         href="/signup"
-        className={`font-mono text-xs uppercase tracking-[0.08em] text-ink ${
-          pathname === '/signup' ? activeLinkClass : linkClass
-        }`}
-      >
-        SIGNUP
-      </Link>
+        label="SIGNUP"
+        matchPrefixes={['/signup/']}
+        className={signupClass}
+      />
     </nav>
   );
 }
