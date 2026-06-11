@@ -46,12 +46,12 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { getAllNamedCoralsWithListings } from '@/lib/queries/named-corals';
 import { CORAL_RECENCY_DAYS } from '@/lib/queries/listings';
 import { getRequiredEnv } from '@/lib/env';
 import { buildLineageFields } from '@/lib/format/lineage-fields';
 import { DataRow } from '@/components/ui/data-row';
+import { ThumbSlot } from '@/components/ui/thumb-slot';
 
 export const revalidate = 300;
 
@@ -95,34 +95,22 @@ async function CoralList() {
           <li key={coral.slug} className="py-6 border-b border-line">
             <Link
               href={`/coral/${coral.slug}`}
-              className="group flex items-center gap-4"
+              className="group flex gap-4"
             >
-              {/* 96×96 slot per the ListingRowFrame convention; null image_url
-                  renders the bare bg-wash box — the coral still lists.
-                  alt="" — decorative: the NAME SPAN ALONE carries the link's
-                  accessible name (/lead-frontend ruling 2026-06-11; non-empty
-                  alt would double-announce per row). The data row below is
-                  aria-hidden under the same ruling — see its comment. */}
-              <span className="shrink-0 w-24 h-24 bg-wash" aria-hidden="true">
-                {coral.image_url ? (
-                  <Image
-                    src={coral.image_url}
-                    alt=""
-                    width={96}
-                    height={96}
-                    sizes="96px"
-                    unoptimized
-                    className="w-24 h-24 object-cover"
-                  />
-                ) : null}
-              </span>
+              {/* Shared 96×96 slot (ThumbSlot). alt="" — decorative: the NAME
+                  SPAN ALONE carries the link's accessible name (/lead-frontend
+                  ruling 2026-06-11; non-empty alt would double-announce per
+                  row), so ThumbSlot's aria-hidden rule keeps the slot hidden
+                  here regardless of image. The data row below is aria-hidden
+                  under the same ruling — see its comment. */}
+              <ThumbSlot src={coral.image_url} alt="" />
               <div className="min-w-0">
                 {/* Bold + hover-underline live on the name span, not the link:
                     the data row below must keep the destination's text-sm
                     regular register (canon register split), and an underline
                     on the flex-container link would propagate into it. group-
                     hover keeps the whole row as the hover surface. */}
-                <span className="block text-base font-bold group-hover:underline group-focus-visible:underline underline-offset-[3px] decoration-1">
+                <span className="block text-base font-bold leading-snug group-hover:underline group-focus-visible:underline underline-offset-[3px] decoration-1">
                   {coral.canonical_name}
                 </span>
                 {/* Length guard, not a truthy-null guard: a bare <DataRow>
@@ -138,7 +126,7 @@ async function CoralList() {
                     duplicative-within-link, repeated link-free one click away
                     on /coral/[slug] (CTK-140 /code-review fold). */}
                 {fields.length > 0 ? (
-                  <div className="mt-1" aria-hidden="true">
+                  <div className="mt-2" aria-hidden="true">
                     <DataRow fields={fields} />
                   </div>
                 ) : null}
@@ -156,7 +144,7 @@ function CoralListSkeleton() {
     <ul role="status" aria-busy="true" aria-label="Loading corals">
       {Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
         <li key={i} className="py-6 border-b border-line">
-          <span className="flex items-center gap-4" aria-hidden="true">
+          <span className="flex gap-4" aria-hidden="true">
             <span className="shrink-0 w-24 h-24 bg-wash animate-pulse" />
             {/* Two bone lines — name + data row — so the loading shape
                 matches the loaded shape (CTK-140 D3 skeleton parity; CLS

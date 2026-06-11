@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
-import Image from 'next/image';
 import { DataRow, type DataRowField } from '@/components/ui/data-row';
 import { OutOfStockMarker } from '@/components/ui/out-of-stock-marker';
+import { ThumbSlot } from '@/components/ui/thumb-slot';
 import type { Listing } from '@/lib/queries/listings';
 
 interface ListingRowFrameProps {
@@ -56,19 +56,7 @@ export function ListingRowFrame({
       className="block py-6 border-b border-line hover:bg-wash"
     >
       <div className="flex gap-4">
-        <div className="shrink-0 w-24 h-24 bg-wash" aria-hidden={!listing.imageUrl}>
-          {listing.imageUrl ? (
-            <Image
-              src={listing.imageUrl}
-              alt={deriveAltText(listing)}
-              width={96}
-              height={96}
-              sizes="96px"
-              unoptimized
-              className="w-24 h-24 object-cover"
-            />
-          ) : null}
-        </div>
+        <ThumbSlot src={listing.imageUrl} alt={deriveAltText(listing)} />
         <div className="flex-1 min-w-0">
           {/* OOS render branch is a composition-parity backstop. Feed surfaces
               (/new, /deals) filter in_stock=true at the query layer; this branch
