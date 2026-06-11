@@ -92,9 +92,10 @@ async function CoralList() {
             >
               {/* 96×96 slot per the ListingRowFrame convention; null image_url
                   renders the bare bg-wash box — the coral still lists.
-                  alt="" — decorative: the name text inside the same link carries
-                  the accessible name (/lead-frontend ruling 2026-06-11; non-empty
-                  alt would double-announce per row). */}
+                  alt="" — decorative: the NAME SPAN ALONE carries the link's
+                  accessible name (/lead-frontend ruling 2026-06-11; non-empty
+                  alt would double-announce per row). The data row below is
+                  aria-hidden under the same ruling — see its comment. */}
               <span className="shrink-0 w-24 h-24 bg-wash" aria-hidden="true">
                 {coral.image_url ? (
                   <Image
@@ -121,9 +122,16 @@ async function CoralList() {
                     renders its wrapper div on an empty array — a both-null
                     row must render no line and no phantom height (canon:
                     never an empty dash line). Matches the /coral/[slug]
-                    consumer pattern. */}
+                    consumer pattern.
+                    aria-hidden — the row sits INSIDE the link, and without it
+                    every links-rotor entry reads "Name Type. X Origin. Y"
+                    (only the em-dash separator is hidden inside <DataRow>).
+                    Same principle as the alt="" ruling above: the name span
+                    alone is the accessible name; the lineage pair is
+                    duplicative-within-link, repeated link-free one click away
+                    on /coral/[slug] (CTK-140 /code-review fold). */}
                 {fields.length > 0 ? (
-                  <div className="mt-1">
+                  <div className="mt-1" aria-hidden="true">
                     <DataRow fields={fields} />
                   </div>
                 ) : null}
@@ -146,9 +154,9 @@ function CoralListSkeleton() {
             {/* Two bone lines — name + data row — so the loading shape
                 matches the loaded shape (CTK-140 D3 skeleton parity; CLS
                 guard). */}
-            <span className="flex flex-col gap-2 min-w-0">
-              <span className="inline-block h-4 w-40 bg-wash rounded-sm animate-pulse" />
-              <span className="inline-block h-3.5 w-56 bg-wash rounded-sm animate-pulse" />
+            <span className="flex flex-col gap-2">
+              <span className="h-4 w-40 bg-wash rounded-sm animate-pulse" />
+              <span className="h-3.5 w-56 bg-wash rounded-sm animate-pulse" />
             </span>
           </span>
         </li>

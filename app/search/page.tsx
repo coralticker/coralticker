@@ -25,8 +25,7 @@ import {
   bucketLabel,
   bucketTransition,
 } from '@/lib/format/group-bucket';
-import { resolveOriginVendor } from '@/lib/format/origin-vendor';
-import { formatTypeLabel } from '@/lib/format/type-label';
+import { buildLineageFields } from '@/lib/format/lineage-fields';
 import {
   SEARCH_QUERY_MAX_LENGTH,
   parseSearchQuery,
@@ -108,20 +107,15 @@ function SectionLabel({
 // resolver, sentinel-suppressed) + Matched. on alias-side hits only (guide
 // L327 — stored alias text as-is, field-presence graceful degradation).
 function CoralRow({ hit }: { hit: CoralSearchHit }) {
-  const fields: DataRowField[] = [];
-  if (hit.coralType) {
-    const type = formatTypeLabel(hit.coralType);
-    fields.push({
-      label: 'Type',
-      value: type.italic ? { kind: 'italic', value: type.display } : type.display,
-    });
-  }
-  if (hit.originVendor) {
-    const origin = resolveOriginVendor(hit.originVendor);
-    if (!('suppress' in origin && origin.suppress)) {
-      fields.push({ label: 'Origin', value: origin.display });
-    }
-  }
+  // Type./Origin. via buildLineageFields — the casing + originator-resolution
+  // + sentinel-suppression composition lives behind that builder's test
+  // boundary; this row previously inlined an identical copy (CTK-140
+  // /code-review fold — the builder's structural-subset param makes the
+  // camelCase hit shape a two-key map away).
+  const fields: DataRowField[] = buildLineageFields({
+    coral_type: hit.coralType,
+    origin_vendor: hit.originVendor,
+  });
   if (hit.matchedAlias !== null) {
     fields.push({ label: 'Matched', value: hit.matchedAlias });
   }
