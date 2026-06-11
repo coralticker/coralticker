@@ -98,12 +98,18 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // destination-side asymmetry (the detail page would still render such rows)
 // is CTK-125 (Tier 4 trigger-gated). Window evaluates at query time inside
 // the cached fn; drift ≤ 10 min on a 7-day window per getVendorInventory
-// precedent. V2 key-prefix bump at the D-2 predicate flip — Data Cache
-// persists across deploys (feedback_unstable_cache_shape_change), and V1
-// pre-flip entries would keep OOS-only corals on the index against a
-// default-empty destination for up to the 600s window.
+// precedent. V3 key-prefix bump at the CTK-139 image_url shape-widen (V2 was
+// the D-2 predicate flip) — Data Cache persists across deploys
+// (feedback_unstable_cache_shape_change), and stale-shape entries would
+// deserialize image_url as undefined for up to the 600s window.
+// CTK-139: representative thumbnail via LEFT JOIN LATERAL — newest
+// (first_seen_at DESC) in-window in-stock listing with a non-null image_url,
+// carrying the SAME vendor guards as the EXISTS so the thumbnail can never
+// come from a vendor the dormancy gate would reject. LEFT join + the EXISTS
+// kept unchanged: a coral whose in-window rows all lack images still lists,
+// image_url null (page renders the bare bg-wash box).
 export async function getAllNamedCoralsWithListings(): Promise<
-  { slug: string; canonical_name: string }[]
+  { slug: string; canonical_name: string; image_url: string | null }[]
 > {
   return unstable_cache(
     async () => {
@@ -112,8 +118,21 @@ export async function getAllNamedCoralsWithListings(): Promise<
         Date.now() - CORAL_RECENCY_DAYS * MS_PER_DAY,
       ).toISOString();
       const rows = (await sql`
-        SELECT nc.slug, nc.canonical_name
+        SELECT nc.slug, nc.canonical_name, img.image_url
         FROM named_corals nc
+        LEFT JOIN LATERAL (
+          SELECT vl.image_url
+          FROM vendor_listings vl
+          JOIN vendors v ON v.id = vl.vendor_id
+          WHERE vl.named_coral_id = nc.id
+            AND vl.last_seen_at > ${windowStart}
+            AND vl.in_stock = true
+            AND vl.image_url IS NOT NULL
+            AND v.active = true
+            AND v.slug NOT LIKE '!_%' ESCAPE '!'
+          ORDER BY vl.first_seen_at DESC
+          LIMIT 1
+        ) img ON true
         WHERE nc.active = true
           AND nc.slug NOT LIKE '!_%' ESCAPE '!'
           AND EXISTS (
@@ -127,10 +146,14 @@ export async function getAllNamedCoralsWithListings(): Promise<
               AND v.slug NOT LIKE '!_%' ESCAPE '!'
           )
         ORDER BY nc.canonical_name ASC
-      `) as unknown as { slug: string; canonical_name: string }[];
+      `) as unknown as {
+        slug: string;
+        canonical_name: string;
+        image_url: string | null;
+      }[];
       return rows;
     },
-    ['getAllNamedCoralsWithListingsV2'],
+    ['getAllNamedCoralsWithListingsV3'],
     { revalidate: 600, tags: ['corals-index'] },
   )();
 }

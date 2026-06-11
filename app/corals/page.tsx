@@ -15,18 +15,24 @@
 // .claude/plans/tickets/CTK-126/copy/round-1/corals-about-block-rev1.md
 // (rev1 LOCKED 2026-06-05 incl. Jon third-beat amendment). First-person per
 // the provenance-moments "I"-carve-out flavor.
-// v1-minimal: no enrichment, no eyebrow, no vendor counts (CTK-009 Phase 3
-// charter). Single internal link per row — /coral/[slug] hero owns the
-// vendor CTA, so no outbound pair (deviation from the /vendors two-link row
-// is scope, not drift). Row underline treatment drift-added to the /vendors
-// hover-only carve-out per /brand-manager 2026-06-04 (branding-guide §"Color
-// system" carve-out entry).
+// v1-minimal: no eyebrow, no vendor counts (CTK-009 Phase 3 charter).
+// CTK-139 exception: representative thumbnails pulled forward from the
+// CTK-009 enrichment park per external first-look feedback 2026-06-11,
+// Jon-ratified — 96×96 slot per the ListingRowFrame convention, image =
+// newest in-window in-stock listing with an image (null renders the bare
+// bg-wash box). The /vendors mirror divergence (thumbs here, none there) is
+// scope, not drift. Single internal link per row — /coral/[slug] hero owns
+// the vendor CTA, so no outbound pair (deviation from the /vendors two-link
+// row is scope, not drift). Row underline treatment drift-added to the
+// /vendors hover-only carve-out per /brand-manager 2026-06-04
+// (branding-guide §"Color system" carve-out entry).
 //
 // ISR revalidate = 600 per site.md §1.2 + /vendors precedent.
 
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { getAllNamedCoralsWithListings } from '@/lib/queries/named-corals';
 import { CORAL_RECENCY_DAYS } from '@/lib/queries/listings';
 
@@ -70,9 +76,27 @@ async function CoralList() {
         <li key={coral.slug} className="py-3">
           <Link
             href={`/coral/${coral.slug}`}
-            className="text-base font-bold hover:underline focus-visible:underline underline-offset-[3px] decoration-1"
+            className="flex items-center gap-4 text-base font-bold hover:underline focus-visible:underline underline-offset-[3px] decoration-1"
           >
-            {coral.canonical_name}
+            {/* 96×96 slot per the ListingRowFrame convention; null image_url
+                renders the bare bg-wash box — the coral still lists. */}
+            <span
+              className="shrink-0 w-24 h-24 bg-wash"
+              aria-hidden={!coral.image_url}
+            >
+              {coral.image_url ? (
+                <Image
+                  src={coral.image_url}
+                  alt={coral.canonical_name}
+                  width={96}
+                  height={96}
+                  sizes="96px"
+                  unoptimized
+                  className="w-24 h-24 object-cover"
+                />
+              ) : null}
+            </span>
+            <span className="min-w-0">{coral.canonical_name}</span>
           </Link>
         </li>
       ))}
@@ -85,10 +109,10 @@ function CoralListSkeleton() {
     <ul role="status" aria-busy="true" aria-label="Loading corals">
       {Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
         <li key={i} className="py-3">
-          <span
-            aria-hidden="true"
-            className="inline-block h-4 w-40 align-middle bg-wash rounded-sm animate-pulse"
-          />
+          <span className="flex items-center gap-4" aria-hidden="true">
+            <span className="shrink-0 w-24 h-24 bg-wash animate-pulse" />
+            <span className="inline-block h-4 w-40 bg-wash rounded-sm animate-pulse" />
+          </span>
         </li>
       ))}
     </ul>
