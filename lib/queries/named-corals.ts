@@ -107,9 +107,18 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // carrying the SAME vendor guards as the EXISTS so the thumbnail can never
 // come from a vendor the dormancy gate would reject. LEFT join + the EXISTS
 // kept unchanged: a coral whose in-window rows all lack images still lists,
-// image_url null (page renders the bare bg-wash box).
+// image_url null (page renders the bare bg-wash box). vl.id DESC tiebreak:
+// first_seen_at is DB DEFAULT now(), transaction-stable across a scrape run's
+// single-transaction batch insert, so same-coral ties are routine — without
+// the pin the LIMIT 1 pick (and the thumbnail) flaps across revalidations.
+interface CoralIndexRow {
+  slug: string;
+  canonical_name: string;
+  image_url: string | null;
+}
+
 export async function getAllNamedCoralsWithListings(): Promise<
-  { slug: string; canonical_name: string; image_url: string | null }[]
+  CoralIndexRow[]
 > {
   return unstable_cache(
     async () => {
@@ -130,7 +139,7 @@ export async function getAllNamedCoralsWithListings(): Promise<
             AND vl.image_url IS NOT NULL
             AND v.active = true
             AND v.slug NOT LIKE '!_%' ESCAPE '!'
-          ORDER BY vl.first_seen_at DESC
+          ORDER BY vl.first_seen_at DESC, vl.id DESC
           LIMIT 1
         ) img ON true
         WHERE nc.active = true
@@ -146,11 +155,7 @@ export async function getAllNamedCoralsWithListings(): Promise<
               AND v.slug NOT LIKE '!_%' ESCAPE '!'
           )
         ORDER BY nc.canonical_name ASC
-      `) as unknown as {
-        slug: string;
-        canonical_name: string;
-        image_url: string | null;
-      }[];
+      `) as unknown as CoralIndexRow[];
       return rows;
     },
     ['getAllNamedCoralsWithListingsV3'],

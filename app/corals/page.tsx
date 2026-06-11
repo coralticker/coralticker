@@ -79,15 +79,15 @@ async function CoralList() {
             className="flex items-center gap-4 text-base font-bold hover:underline focus-visible:underline underline-offset-[3px] decoration-1"
           >
             {/* 96×96 slot per the ListingRowFrame convention; null image_url
-                renders the bare bg-wash box — the coral still lists. */}
-            <span
-              className="shrink-0 w-24 h-24 bg-wash"
-              aria-hidden={!coral.image_url}
-            >
+                renders the bare bg-wash box — the coral still lists.
+                alt="" — decorative: the name text inside the same link carries
+                the accessible name (/lead-frontend ruling 2026-06-11; non-empty
+                alt would double-announce per row). */}
+            <span className="shrink-0 w-24 h-24 bg-wash" aria-hidden="true">
               {coral.image_url ? (
                 <Image
                   src={coral.image_url}
-                  alt={coral.canonical_name}
+                  alt=""
                   width={96}
                   height={96}
                   sizes="96px"
