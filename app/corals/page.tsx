@@ -7,8 +7,9 @@
 // Dormancy gate: getAllNamedCoralsWithListings() restricts to corals with an
 // in-window in-stock listing — rendered rows route to a populated
 // /coral/[slug] DEFAULT render per the Default-render parity rule
-// (branding-guide §"State markers", CTK-126 D-2), modulo the 600/300 TTL
-// skew window documented at the helper's header; vendor-side deliberately
+// (branding-guide §"State markers", CTK-126 D-2). Cadence matched to the
+// destination's 300 at CTK-128 (d), closing the former 600/300 TTL-skew
+// window (history at the helper's header); vendor-side deliberately
 // stricter (see the helper's header comment).
 //
 // CTK-126: "About this list." block below the row stack — scope caveat +
@@ -37,7 +38,11 @@
 // data row keeps the destination's text-sm regular register (canon register
 // split), so neither the link's bold nor its hover underline may reach it.
 //
-// ISR revalidate = 600 per site.md §1.2 + /vendors precedent.
+// ISR revalidate = 300 (CTK-128 (d) retune, from the site.md §1.2 /vendors-
+// precedent 600) — tandem with getAllNamedCoralsWithListings' unstable_cache
+// so the page cache never outlasts the data cache. Deliberate divergence
+// from /vendors' 600: vendor index rows aren't stock-gated, so no
+// index-vs-destination skew class exists there.
 
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
@@ -45,10 +50,11 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { getAllNamedCoralsWithListings } from '@/lib/queries/named-corals';
 import { CORAL_RECENCY_DAYS } from '@/lib/queries/listings';
+import { getRequiredEnv } from '@/lib/env';
 import { buildLineageFields } from '@/lib/format/lineage-fields';
 import { DataRow } from '@/components/ui/data-row';
 
-export const revalidate = 600;
+export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: 'Corals', // suffix via root title.template
@@ -182,16 +188,11 @@ function CoralListSkeleton() {
 // channel invite. DISCORD_DROPS_INVITE_URL stays valid for drop-watching
 // surfaces (no consumer today).
 //
-// Throw-on-missing per the lib/db/neon.ts:24 idiom (CTK-126 fold,
-// /code-review #2 Tier 1B): a missing var fails the build loudly instead of
-// shipping a dead Discord anchor (href={undefined} renders a non-link).
-const DISCORD_FEEDBACK_INVITE_URL_RAW = process.env.DISCORD_FEEDBACK_INVITE_URL;
-
-if (!DISCORD_FEEDBACK_INVITE_URL_RAW) {
-  throw new Error('DISCORD_FEEDBACK_INVITE_URL must be set. See .env.example.');
-}
-
-const discordInviteUrl: string = DISCORD_FEEDBACK_INVITE_URL_RAW;
+// Throw-on-missing via getRequiredEnv (lib/env.ts, CTK-128 (f) extraction
+// of the neon.ts idiom; originally CTK-126 fold, /code-review #2 Tier 1B):
+// a missing var fails the build loudly instead of shipping a dead Discord
+// anchor (href={undefined} renders a non-link).
+const discordInviteUrl = getRequiredEnv('DISCORD_FEEDBACK_INVITE_URL');
 
 function AboutThisList() {
   return (

@@ -8,8 +8,9 @@
 // Uses NEON_DATABASE_URL — a direct Postgres connection string from the Neon
 // dashboard. No RLS layer; Neon is bare Postgres, so the service-role-bypass
 // posture from Supabase no longer applies. Module-scope read with throw-on-
-// missing; the file lives outside the client bundle by virtue of consuming
-// `process.env` at module scope.
+// missing via getRequiredEnv (this file was the idiom's donor; extracted at
+// CTK-128 (f)); the file lives outside the client bundle by virtue of
+// consuming `process.env` at module scope.
 //
 // @neondatabase/serverless ships a fetch-compatible HTTP driver — no pooler
 // ceremony, native to Vercel's edge/serverless runtime. The tagged-template
@@ -17,15 +18,9 @@
 // (each becomes $N + values array under the hood).
 
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
+import { getRequiredEnv } from '@/lib/env';
 
-const NEON_DATABASE_URL_RAW = process.env.NEON_DATABASE_URL;
-
-if (!NEON_DATABASE_URL_RAW) {
-  throw new Error('NEON_DATABASE_URL must be set. See .env.example.');
-}
-
-// Narrowed past the throw — no `!` needed at the call site below.
-const NEON_DATABASE_URL: string = NEON_DATABASE_URL_RAW;
+const NEON_DATABASE_URL = getRequiredEnv('NEON_DATABASE_URL');
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 

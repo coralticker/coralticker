@@ -7,20 +7,16 @@
 // only when a second surface consumes (Phase 4 /signup/confirmed).
 
 import type { ReactNode } from 'react';
+import { getRequiredEnv } from '@/lib/env';
 
 // CTK-126 D-5(b) — hardcoded invite literal migrated to a per-surface env
 // var (the old DbGnQTfzC invite was expiring 2026-06-18; Jon minted a
 // permanent replacement 2026-06-05). Per-surface vars are DELIBERATE —
 // Discord's native invite tracking gives per-surface join attribution; do
-// NOT consolidate with the /corals invite (DISCORD_DROPS_INVITE_URL).
-// Throw-on-missing per the lib/db/neon.ts:24 idiom (/code-review #2 class).
-const DISCORD_ABOUT_INVITE_URL_RAW = process.env.DISCORD_ABOUT_INVITE_URL;
-
-if (!DISCORD_ABOUT_INVITE_URL_RAW) {
-  throw new Error('DISCORD_ABOUT_INVITE_URL must be set. See .env.example.');
-}
-
-const DISCORD_ABOUT_INVITE_URL: string = DISCORD_ABOUT_INVITE_URL_RAW;
+// NOT consolidate with the /corals invite (DISCORD_FEEDBACK_INVITE_URL).
+// Throw-on-missing via getRequiredEnv (lib/env.ts, CTK-128 (f) extraction
+// of the neon.ts idiom — /code-review CTK-126 #2 class).
+const DISCORD_ABOUT_INVITE_URL = getRequiredEnv('DISCORD_ABOUT_INVITE_URL');
 
 type SocialLink = {
   href: string;

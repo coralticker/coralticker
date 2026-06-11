@@ -10,6 +10,7 @@ import {
   getCoralAvailability,
   getCoralInWindowVendorCount,
 } from '@/lib/queries/listings';
+import { parseIncludeOOS } from '@/lib/queries/listing-params';
 import { DataRow } from '@/components/ui/data-row';
 import { PageEyebrow } from '@/components/ui/page-eyebrow';
 import { formatRelativeTime } from '@/lib/format/relative-time';
@@ -24,10 +25,12 @@ import { VendorAvailabilityRow } from './_components/vendor-availability-row';
 // INCLUDE OUT OF STOCK toggle (?include-oos=1) restores the inventory-recon
 // mixed render — single-axis variant of the CTK-098 <SortFilterBar> third
 // axis, toggle ONLY per the 2026-06-05 chrome-scope ruling (no SORT/FILTER
-// axes at 1-6 rows). The searchParams read flips the route pure-dynamic at
-// runtime, so getCoralAvailability now carries the unstable_cache wrap
-// (revalidate 300, key carries toggle state) per the CTK-046 /vendor/[slug]
-// precedent — the page-level revalidate no longer is the data-cache TTL.
+// axes at 1-6 rows). The searchParams read makes query-bearing requests
+// render dynamically (bare URLs stay SSG/ISR via generateStaticParams —
+// route table ●, the CTK-126 #8-rejection evidence), so getCoralAvailability
+// carries the unstable_cache wrap (revalidate 300, key carries toggle state)
+// per the CTK-046 /vendor/[slug] precedent — the page-level revalidate
+// governs bare-URL ISR while the wrap governs the data cache.
 export const revalidate = 300;
 
 interface PageProps {
@@ -37,9 +40,9 @@ interface PageProps {
   }>;
 }
 
-function parseIncludeOOS(raw: string | undefined): boolean {
-  return raw === '1';
-}
+// parseIncludeOOS imported from lib/queries/listing-params.ts (CTK-128 (b)
+// dedup — the CTK-127 promotion left a hand-copy here; /vendor/[slug] had
+// already swapped).
 
 export async function generateStaticParams(): Promise<{ slug: string }[]> {
   return getAllNamedCoralSlugs();
@@ -117,7 +120,15 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
   const coral = await getNamedCoralBySlug(slug);
   if (!coral) notFound();
 
-  const listings = await getCoralAvailability(coral.id, includeOOS);
+  // CTK-128 (g) (CTK-126 re-run F3): availability + the second-signal count
+  // fire concurrently. The count was a serial await on the all-OOS default
+  // render — exactly the third-state surface — and it's a cheap COUNT behind
+  // its own 300s unstable_cache, so the speculative fire on the populated
+  // majority path costs at most one extra cached query per coral per window.
+  const [listings, inWindowVendorCount] = await Promise.all([
+    getCoralAvailability(coral.id, includeOOS),
+    getCoralInWindowVendorCount(coral.id),
+  ]);
   const lineageFields = buildLineageFields(coral);
   const hasListings = listings.length > 0;
 
@@ -132,13 +143,15 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
   // N = distinct vendors across the in-window (all-OOS) set: derived from
   // the rendered rows when toggled on, from the stock-unfiltered count query
   // when the default view excludes them (/lead-backend call — separate cheap
-  // signal, do NOT widen the default availability query).
+  // signal, do NOT widen the default availability query). The count fires
+  // unconditionally in the Promise.all above (CTK-128 (g)); its value is
+  // CONSUMED only on this branch.
   const hasInStockRow = listings.some((l) => l.inStock);
   const oosVendorCount = hasInStockRow
     ? 0
     : hasListings
       ? new Set(listings.map((l) => l.vendorSlug)).size
-      : await getCoralInWindowVendorCount(coral.id);
+      : inWindowVendorCount;
   const isAllOOS = !hasInStockRow && oosVendorCount > 0;
 
   const sectionHeader = hasInStockRow

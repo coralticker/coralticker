@@ -84,11 +84,15 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // rows behind an INCLUDE OUT OF STOCK toggle, and parity is measured against
 // the destination's DEFAULT (bare-URL) render, not the toggled-on view: a
 // coral whose only in-window listing is OOS drops off the index until it
-// restocks. Parity holds at query time, not continuously: this cache
-// revalidates at 600s, the destination's at 300s, so a coral that sells out
-// can hold its index row for up to ~10 min and route to the all-OOS third
-// state in that window (/code-review 2026-06-05 #3; skew disposition
-// DEFERRED to CTK-128, the D-2 hygiene bundle).
+// restocks. Parity holds at query time, not continuously: this cache and
+// the destination's both revalidate at 300s (CTK-128 (d) retuned this one
+// 600 → 300, resolving the skew the 2026-06-05 /code-review #3 named — a
+// sold-out coral could hold its index row up to ~10 min and route to the
+// all-OOS third state). Caches still expire independently, so a sold-out
+// coral can hold its row for up to one ~300s window — accepted; equal
+// cadence is the floor, not atomicity. Deliberate divergence from the
+// /vendors index's 600: vendor rows aren't stock-gated, so no skew class
+// exists there.
 // The VENDOR-side lateral guards (active + sentinel-slug, CTK-095 Axis 3
 // belt-and-suspenders; ESCAPE '!' — backslash collapses in JS template cooking
 // and would invert the filter) are deliberately STRICTER than the destination:
@@ -96,9 +100,11 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // in-window listings belong to a deactivated or sentinel vendor stays off the
 // index by design rather than advertising retired inventory. That
 // destination-side asymmetry (the detail page would still render such rows)
-// is CTK-125 (Tier 4 trigger-gated). Window evaluates at query time inside
-// the cached fn; drift ≤ 10 min on a 7-day window per getVendorInventory
-// precedent.
+// is CTK-125 (Tier 4 trigger-gated). Reciprocal coupling note (core triple
+// + both deliberate asymmetries) at getCoralAvailability's header, CTK-128
+// (a) — edit the lateral's predicate → check there, and vice versa. Window
+// evaluates at query time inside the cached fn; drift ≤ 5 min on a 7-day
+// window per getVendorInventory precedent.
 // Single inner JOIN LATERAL (CTK-140; equivalence to the retired EXISTS +
 // LEFT LATERAL pair ratified by the CTK-139 /code-review D1 verifier —
 // dormancy gate, thumbnail pick, no-image case all checked): the lateral is
@@ -116,7 +122,8 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // shape-widen, V4 the CTK-140 coral_type/origin_vendor shape-widen — Data
 // Cache persists across deploys (feedback_unstable_cache_shape_change), and
 // stale-shape entries would deserialize new fields as undefined for up to
-// the 600s window.
+// the revalidate window. The CTK-128 (d) 600 → 300 retune took NO bump:
+// cadence change, not shape change — V4 entries stay valid.
 interface CoralIndexRow {
   slug: string;
   canonical_name: string;
@@ -161,7 +168,9 @@ export async function getAllNamedCoralsWithListings(): Promise<
       return rows;
     },
     ['getAllNamedCoralsWithListingsV4'],
-    { revalidate: 600, tags: ['corals-index'] },
+    // 300 since CTK-128 (d) — tandem with the /corals page const, matching
+    // the /coral/[slug] destination cadence (skew note at the header).
+    { revalidate: 300, tags: ['corals-index'] },
   )();
 }
 
