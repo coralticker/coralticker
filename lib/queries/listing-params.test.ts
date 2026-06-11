@@ -120,3 +120,14 @@ test('parseIncludeOOS: only literal "1" toggles', () => {
   assert.equal(parseIncludeOOS('true'), false);
   assert.equal(parseIncludeOOS('0'), false);
 });
+
+test('duplicate-key arrays: first value wins across all three parsers (CTK-128 fold)', () => {
+  // Next.js delivers string[] for ?sort=a&sort=b URLs — the first value
+  // must win, matching parseSearchQuery's guard, not silently default.
+  assert.equal(parseSort(['price-asc', 'newest']), 'price-asc');
+  assert.equal(parseSort(['bogus', 'price-asc']), 'newest'); // first wins, then allowlist
+  assert.equal(parseCategory(['lps', 'sps']), 'lps');
+  assert.equal(parseIncludeOOS(['1', '0']), true);
+  assert.equal(parseIncludeOOS(['0', '1']), false);
+  assert.equal(parseIncludeOOS([]), false);
+});

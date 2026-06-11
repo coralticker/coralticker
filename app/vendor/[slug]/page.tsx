@@ -34,10 +34,13 @@ import { VendorInventoryRow } from './_components/vendor-inventory-row';
 import { PaginationNav } from './_components/pagination-nav';
 
 // CTK-047 B-2 cascade — medal-bearing surface; cadence equalized to 5min per
-// /lead-architect re-disposition 2026-06-02. Wrapped data-fetch in
-// getVendorInventory's unstable_cache also drops 600 → 300 in tandem at
-// lib/queries/listings.ts so the data cache doesn't outlast the page cache.
-// /vendors index (no medal) is unaffected.
+// /lead-architect re-disposition 2026-06-02. The real cadence lives in
+// getVendorInventory's unstable_cache (300, lib/queries/listings.ts): the
+// searchParams await makes this route fully dynamic — no static HTML is
+// emitted for its paths despite generateStaticParams (prerender-manifest
+// check, CTK-128 close review) — so the const below is inert for serving
+// today; kept so the cadence intent survives if the route ever regains
+// static prerendering. /vendors index (no medal) is unaffected.
 export const revalidate = 300;
 
 interface PageProps {

@@ -266,11 +266,12 @@ export async function getRecentDrops(limit = 10): Promise<Listing[]> {
 // CTK-126 D-2 (2026-06-05): in-stock default — default RESTRICTS to
 // in_stock = true; includeOOS=true drops the predicate and restores the
 // inventory-recon mixed render (CTK-098 semantic, same constant-folding
-// predicate shape as getVendorInventory). The ?include-oos searchParams read
-// makes query-bearing /coral/[slug] requests render dynamically (bare URLs
-// stay SSG/ISR via generateStaticParams — route table ●, CTK-126 #8
-// evidence), so the fetch gains the
-// unstable_cache wrap per the CTK-046 /vendor/[slug] precedent — key carries
+// predicate shape as getVendorInventory). The searchParams await makes
+// /coral/[slug] fully dynamic — the build emits no static HTML for its
+// paths despite generateStaticParams (prerender-manifest check, CTK-128
+// close review; supersedes the route-table-glyph reading at CTK-126 #8) —
+// so this wrap IS the load-bearing cache for every request, per the
+// CTK-046 /vendor/[slug] precedent — key carries
 // (namedCoralId, includeOOS); V1 prefix is this function's first cached
 // generation (no pre-wrap Data Cache entries exist; bump on any future shape
 // change per feedback_unstable_cache_shape_change). revalidate 300 matches
@@ -387,11 +388,9 @@ export async function getCoralAvailability(
 // query-widening). N = distinct vendors per the locked eyebrow shape
 // (`N VENDORS · ALL OUT OF STOCK`, branding-guide §"Eyebrow shape + slot").
 // Deliberately no vendor guards, matching getCoralAvailability — CTK-125
-// adjacency; both gain them together if CTK-125 fires. Fired by the page
-// unconditionally in a Promise.all alongside getCoralAvailability (CTK-128
-// (g) — it was a serial await on the all-OOS default render); the value is
-// consumed only when no in-stock row rendered (the toggled-on view derives
-// N from its own rows instead).
+// adjacency; both gain them together if CTK-125 fires. Cheap enough to fire
+// speculatively (one COUNT behind a 300s per-coral cache) — call-shape
+// rationale lives at the consumer (app/coral/[slug]/page.tsx, CTK-128 (g)).
 export async function getCoralInWindowVendorCount(
   namedCoralId: number,
 ): Promise<number> {
@@ -416,16 +415,15 @@ export async function getCoralInWindowVendorCount(
 // Filtered by vendor_id AND last_seen_at > now() - interval '14 days'.
 // CTK-046: paginated via LIMIT PAGE_SIZE OFFSET ((page - 1) * PAGE_SIZE); default page = 1
 // keeps non-paginated callers untouched. unstable_cache wrap (ISR-regression
-// fold 2026-05-18): the searchParams read makes query-bearing requests
-// render dynamically — bare URLs still prerender via generateStaticParams
-// (route table ●, the CTK-126 #8-rejection build evidence; "flipped
-// pure-dynamic" was this comment's old overclaim, corrected CTK-128 (e)) —
-// so the wrap keeps those dynamic renders' data fetch on Data-Cache cadence.
-// Key is the V5 tuple below: (vendorId, page, sort, category, includeOOS).
-// revalidate = 300 since CTK-047 B-2 (this header's stale 600 corrected in
-// the same CTK-128 pass), tandem with the page const. fourteenDaysAgo
-// computed inside the cached fn — drifts up to 5 min within TTL window
-// (mathematically acceptable on a 14-day window).
+// fold 2026-05-18): the searchParams await makes /vendor/[slug] fully
+// dynamic — the build emits no static HTML for its paths despite
+// generateStaticParams (prerender-manifest check, CTK-128 close review) —
+// so this wrap is the load-bearing cache for every request, not an
+// ISR supplement. Key is the V5 tuple below: (vendorId, page, sort,
+// category, includeOOS). revalidate = 300 since CTK-047 B-2 (this header's
+// stale 600 corrected at CTK-128 (e)). fourteenDaysAgo computed inside the
+// cached fn — drifts up to 5 min within TTL window (mathematically
+// acceptable on a 14-day window).
 //
 // CTK-053: sort + category + inStock params. Default sort 'newest' preserves
 // the pre-CTK-053 ORDER BY first_seen_at DESC. price-asc / price-desc use

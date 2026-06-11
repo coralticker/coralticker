@@ -53,22 +53,36 @@ export function chromeCategoryLabel(category: ListingCategory): string {
   return CATEGORY_LABELS[category];
 }
 
-export function parseSort(raw: string | undefined): ListingSort {
-  if (!raw) return 'newest';
-  return (SORT_ALLOWLIST as readonly string[]).includes(raw)
-    ? (raw as ListingSort)
+// Duplicate-key guard (CTK-128 close-review fold): Next.js delivers
+// string[] when a URL carries the same query key twice (forum-quote
+// manglers, tracking rewriters) — the pages' searchParams interfaces type
+// these as string | undefined, which is a lie at runtime, and an array
+// silently failed every allowlist check (default-wins where the visible
+// URL says otherwise). First value wins, same as parseSearchQuery's guard.
+function firstValue(raw: string | string[] | undefined): string | undefined {
+  return Array.isArray(raw) ? raw[0] : raw;
+}
+
+export function parseSort(raw: string | string[] | undefined): ListingSort {
+  const single = firstValue(raw);
+  if (!single) return 'newest';
+  return (SORT_ALLOWLIST as readonly string[]).includes(single)
+    ? (single as ListingSort)
     : 'newest';
 }
 
-export function parseCategory(raw: string | undefined): ListingCategory | null {
-  if (!raw) return null;
-  return (CATEGORY_ALLOWLIST as readonly string[]).includes(raw)
-    ? (raw as ListingCategory)
+export function parseCategory(
+  raw: string | string[] | undefined,
+): ListingCategory | null {
+  const single = firstValue(raw);
+  if (!single) return null;
+  return (CATEGORY_ALLOWLIST as readonly string[]).includes(single)
+    ? (single as ListingCategory)
     : null;
 }
 
-export function parseIncludeOOS(raw: string | undefined): boolean {
-  return raw === '1';
+export function parseIncludeOOS(raw: string | string[] | undefined): boolean {
+  return firstValue(raw) === '1';
 }
 
 // /search query normalizer (CTK-058 D-058-4). Mirrors the §3.3 runtime

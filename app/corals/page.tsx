@@ -8,9 +8,8 @@
 // in-window in-stock listing — rendered rows route to a populated
 // /coral/[slug] DEFAULT render per the Default-render parity rule
 // (branding-guide §"State markers", CTK-126 D-2). Cadence matched to the
-// destination's 300 at CTK-128 (d), closing the former 600/300 TTL-skew
-// window (history at the helper's header); vendor-side deliberately
-// stricter (see the helper's header comment).
+// destination's 300 at CTK-128 (d) — skew bound + rationale live at the
+// helper's header; vendor-side deliberately stricter (same header).
 //
 // CTK-126: "About this list." block below the row stack — scope caveat +
 // two-layer match provenance + request-a-coral/correction invite, one block
@@ -38,11 +37,11 @@
 // data row keeps the destination's text-sm regular register (canon register
 // split), so neither the link's bold nor its hover underline may reach it.
 //
-// ISR revalidate = 300 (CTK-128 (d) retune, from the site.md §1.2 /vendors-
-// precedent 600) — tandem with getAllNamedCoralsWithListings' unstable_cache
-// so the page cache never outlasts the data cache. Deliberate divergence
-// from /vendors' 600: vendor index rows aren't stock-gated, so no
-// index-vs-destination skew class exists there.
+// ISR revalidate = 300 (CTK-128 (d) retune) — tandem with
+// CORALS_INDEX_REVALIDATE_S at lib/queries/named-corals.ts; this literal
+// can't import it (Next statically analyzes segment config), so
+// scripts/coral-predicate-coupling.test.ts pins the pair. Skew bound +
+// /vendors-divergence rationale at the helper's header.
 
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
@@ -188,10 +187,9 @@ function CoralListSkeleton() {
 // channel invite. DISCORD_DROPS_INVITE_URL stays valid for drop-watching
 // surfaces (no consumer today).
 //
-// Throw-on-missing via getRequiredEnv (lib/env.ts, CTK-128 (f) extraction
-// of the neon.ts idiom; originally CTK-126 fold, /code-review #2 Tier 1B):
-// a missing var fails the build loudly instead of shipping a dead Discord
-// anchor (href={undefined} renders a non-link).
+// getRequiredEnv: a missing var fails the build loudly instead of shipping
+// a dead Discord anchor (href={undefined} renders a non-link — the
+// CTK-126 /code-review #2 defect).
 const discordInviteUrl = getRequiredEnv('DISCORD_FEEDBACK_INVITE_URL');
 
 function AboutThisList() {

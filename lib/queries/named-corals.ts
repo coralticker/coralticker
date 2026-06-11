@@ -84,15 +84,18 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // rows behind an INCLUDE OUT OF STOCK toggle, and parity is measured against
 // the destination's DEFAULT (bare-URL) render, not the toggled-on view: a
 // coral whose only in-window listing is OOS drops off the index until it
-// restocks. Parity holds at query time, not continuously: this cache and
-// the destination's both revalidate at 300s (CTK-128 (d) retuned this one
-// 600 → 300, resolving the skew the 2026-06-05 /code-review #3 named — a
-// sold-out coral could hold its index row up to ~10 min and route to the
-// all-OOS third state). Caches still expire independently, so a sold-out
-// coral can hold its row for up to one ~300s window — accepted; equal
-// cadence is the floor, not atomicity. Deliberate divergence from the
-// /vendors index's 600: vendor rows aren't stock-gated, so no skew class
-// exists there.
+// restocks. Parity holds at query time, not continuously: CTK-128 (d)
+// retuned this cache 600 → 300 (CORALS_INDEX_REVALIDATE_S below; tandem
+// with the /corals page const, pinned by scripts/coral-predicate-coupling
+// .test.ts), halving the skew the 2026-06-05 /code-review #3 named. The
+// honest residual bound: /corals is genuinely ISR, so its page cache
+// STACKS on this data cache — an index row can lag the DB by up to ~two
+// 300s windows (~10 min worst case, page regenerated at data-cache age
+// ~299s), while the destination (fully dynamic, data cache only) lags at
+// most ~one. Accepted: equal cadence is the floor, not atomicity —
+// closing the class outright needs revalidateTag-on-write, wrong weight
+// for this surface. Deliberate divergence from the /vendors index's 600:
+// vendor rows aren't stock-gated, so no skew class exists there.
 // The VENDOR-side lateral guards (active + sentinel-slug, CTK-095 Axis 3
 // belt-and-suspenders; ESCAPE '!' — backslash collapses in JS template cooking
 // and would invert the filter) are deliberately STRICTER than the destination:
@@ -123,7 +126,16 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // Cache persists across deploys (feedback_unstable_cache_shape_change), and
 // stale-shape entries would deserialize new fields as undefined for up to
 // the revalidate window. The CTK-128 (d) 600 → 300 retune took NO bump:
-// cadence change, not shape change — V4 entries stay valid.
+// cadence change, not shape change — V4 entries stay valid. One residual:
+// a pre-deploy entry written under the 600 cadence can serve once more in
+// the first post-deploy window before the 300 cadence takes — self-healing.
+// CTK-128 (d) — single source for the /corals index data-cache cadence.
+// The page-side `export const revalidate` (app/corals/page.tsx) MUST stay a
+// literal (Next statically analyzes segment config), so the tandem can't be
+// import-coupled there; scripts/coral-predicate-coupling.test.ts pins the
+// page literal to this value instead.
+export const CORALS_INDEX_REVALIDATE_S = 300;
+
 interface CoralIndexRow {
   slug: string;
   canonical_name: string;
@@ -170,7 +182,7 @@ export async function getAllNamedCoralsWithListings(): Promise<
     ['getAllNamedCoralsWithListingsV4'],
     // 300 since CTK-128 (d) — tandem with the /corals page const, matching
     // the /coral/[slug] destination cadence (skew note at the header).
-    { revalidate: 300, tags: ['corals-index'] },
+    { revalidate: CORALS_INDEX_REVALIDATE_S, tags: ['corals-index'] },
   )();
 }
 

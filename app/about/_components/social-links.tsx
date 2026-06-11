@@ -14,8 +14,6 @@ import { getRequiredEnv } from '@/lib/env';
 // permanent replacement 2026-06-05). Per-surface vars are DELIBERATE —
 // Discord's native invite tracking gives per-surface join attribution; do
 // NOT consolidate with the /corals invite (DISCORD_FEEDBACK_INVITE_URL).
-// Throw-on-missing via getRequiredEnv (lib/env.ts, CTK-128 (f) extraction
-// of the neon.ts idiom — /code-review CTK-126 #2 class).
 const DISCORD_ABOUT_INVITE_URL = getRequiredEnv('DISCORD_ABOUT_INVITE_URL');
 
 type SocialLink = {
