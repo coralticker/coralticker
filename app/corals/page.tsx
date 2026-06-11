@@ -52,6 +52,7 @@ import { getRequiredEnv } from '@/lib/env';
 import { buildLineageFields } from '@/lib/format/lineage-fields';
 import { DataRow } from '@/components/ui/data-row';
 import { ThumbSlot, THUMB_SLOT_BOX } from '@/components/ui/thumb-slot';
+import { PageShell } from '@/components/ui/page-shell';
 
 export const revalidate = 300;
 
@@ -227,12 +228,12 @@ function AboutThisList() {
 
 export default function CoralsPage() {
   return (
-    <main className="px-6 py-12 max-w-3xl mx-auto">
+    <PageShell as="section">
       <h1 className="text-3xl md:text-4xl font-bold mb-8">Corals.</h1>
       <Suspense fallback={<CoralListSkeleton />}>
         <CoralList />
       </Suspense>
       <AboutThisList />
-    </main>
+    </PageShell>
   );
 }

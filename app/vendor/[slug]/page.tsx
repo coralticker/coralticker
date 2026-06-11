@@ -28,6 +28,7 @@ import {
 import { getLatestScrapeFinishedAt } from '@/lib/queries/scraper-runs';
 import { DataRowSkeleton } from '@/components/ui/data-row-skeleton';
 import { PageEyebrow } from '@/components/ui/page-eyebrow';
+import { PageShell } from '@/components/ui/page-shell';
 import { SortFilterBar } from '@/components/ui/sort-filter-bar';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { pluralize } from '@/lib/format/pluralize';
@@ -101,9 +102,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
+// Not-found-shaped chrome kept INLINE rather than via <NotFoundShell>: this is
+// a retired-vendor gap surface (vendor.active === false), distinct 404
+// semantics with its own back-link target (/new, not /vendors), so it consumes
+// <PageShell> with inline children instead of the 404 specialization. py-16
+// drift normalized to py-12 by the shared chrome (CTK-077 /brand-manager
+// Element 1).
 function RetiredVendorView({ vendor }: { vendor: Vendor }) {
   return (
-    <main className="max-w-3xl mx-auto px-6 py-16">
+    <PageShell as="section">
       <h1 className="text-3xl md:text-4xl font-bold mb-6">
         {vendor.display_name}
       </h1>
@@ -115,7 +122,7 @@ function RetiredVendorView({ vendor }: { vendor: Vendor }) {
           &larr; back to new arrivals
         </Link>
       </p>
-    </main>
+    </PageShell>
   );
 }
 
@@ -241,7 +248,7 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
   const nextHref = pageHref(page + 1);
 
   return (
-    <main className="px-6 py-12 max-w-3xl mx-auto">
+    <PageShell as="article">
       {page > 1 && <link rel="prev" href={prevHref} />}
       {page < totalPages && <link rel="next" href={nextHref} />}
       {eyebrowChunks && <PageEyebrow chunks={eyebrowChunks} />}
@@ -288,6 +295,6 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
           includeOOS={includeOOS}
         />
       </div>
-    </main>
+    </PageShell>
   );
 }

@@ -13,6 +13,7 @@ import {
 import { parseIncludeOOS } from '@/lib/queries/listing-params';
 import { DataRow } from '@/components/ui/data-row';
 import { PageEyebrow } from '@/components/ui/page-eyebrow';
+import { PageShell } from '@/components/ui/page-shell';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { latestTimestamp } from '@/lib/format/latest-timestamp';
 import { buildLineageFields } from '@/lib/format/lineage-fields';
@@ -194,7 +195,7 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
         : ['NOT LISTED', `LAST SEEN ${formatRelativeTime(lastSeenAt, now).toUpperCase()}`];
 
   return (
-    <main className="px-6 py-12 max-w-3xl mx-auto">
+    <PageShell as="article">
       <PageEyebrow chunks={eyebrowChunks} />
       <h1 className="text-3xl md:text-4xl font-bold mb-4">
         {coral.canonical_name}
@@ -276,6 +277,6 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
           </ul>
         </footer>
       ) : null}
-    </main>
+    </PageShell>
   );
 }

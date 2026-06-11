@@ -13,8 +13,8 @@
 // Folded in 2026-05-21 per /brand-manager INV-02 pre-first-implementation-session
 // gate for CTK-015 (coordination-invariants.md INV-02 checkpoint 1 of 3).
 
-import Link from 'next/link';
 import type { Metadata } from 'next';
+import { NotFoundShell } from '@/components/ui/not-found-shell';
 
 export const metadata: Metadata = {
   title: 'Page not found', // suffix via root title.template
@@ -24,19 +24,11 @@ export const metadata: Metadata = {
 
 export default function NotFound() {
   return (
-    <main className="px-6 py-12 max-w-3xl mx-auto">
-      <h1 className="text-3xl md:text-4xl font-bold mb-6">
-        That page isn&apos;t here.
-      </h1>
-      <p className="text-base leading-relaxed mb-8">
-        I don&apos;t have anything at that address &mdash; probably a mistyped
-        or stale link.
-      </p>
-      <p className="text-base">
-        <Link href="/new" className="underline">
-          &larr; back to new arrivals
-        </Link>
-      </p>
-    </main>
+    <NotFoundShell
+      title="That page isn't here."
+      body="I don't have anything at that address — probably a mistyped or stale link."
+      backHref="/new"
+      backLabel="← back to new arrivals"
+    />
   );
 }

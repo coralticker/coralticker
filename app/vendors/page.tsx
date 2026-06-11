@@ -13,6 +13,7 @@ import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { getAllActiveVendors } from '@/lib/queries/vendors';
+import { PageShell } from '@/components/ui/page-shell';
 
 export const revalidate = 600;
 
@@ -75,11 +76,11 @@ function VendorListSkeleton() {
 
 export default function VendorsPage() {
   return (
-    <main className="px-6 py-12 max-w-3xl mx-auto">
+    <PageShell as="section">
       <h1 className="text-3xl md:text-4xl font-bold mb-8">Vendors.</h1>
       <Suspense fallback={<VendorListSkeleton />}>
         <VendorList />
       </Suspense>
-    </main>
+    </PageShell>
   );
 }

@@ -21,6 +21,7 @@
 
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { PageShell } from '@/components/ui/page-shell';
 
 // Metadata wording verbatim from site.md §6.1 line 1711. Description is
 // empty because robots: noindex means the surface never appears in SERP —
@@ -34,7 +35,7 @@ export const metadata: Metadata = {
 
 export default function SignupConfirmed() {
   return (
-    <main className="px-6 py-12 max-w-3xl mx-auto">
+    <PageShell as="section">
       <h1 className="text-3xl md:text-4xl font-bold mb-6">
         You&apos;re subscribed.
       </h1>
@@ -53,6 +54,6 @@ export default function SignupConfirmed() {
         </Link>
         .
       </p>
-    </main>
+    </PageShell>
   );
 }

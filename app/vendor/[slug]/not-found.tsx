@@ -16,8 +16,8 @@
 // rather than admitting limitation) caught by Jon site-eyeball; replaced with
 // scope-honest framing per L15 reframe-limitations-as-scope rule.
 
-import Link from 'next/link';
 import type { Metadata } from 'next';
+import { NotFoundShell } from '@/components/ui/not-found-shell';
 
 // 404 copy duplicated at ../page.tsx generateMetadata null-branch — edit both
 // or neither. This export is the authority (paints the rendered head; the
@@ -30,18 +30,11 @@ export const metadata: Metadata = {
 
 export default function VendorNotFound() {
   return (
-    <main className="max-w-3xl mx-auto px-6 py-16">
-      <h1 className="text-3xl md:text-4xl font-bold mb-6">
-        That vendor isn&apos;t on CoralTicker yet.
-      </h1>
-      <p className="text-base leading-relaxed mb-8">
-        I don&apos;t cover every reef vendor. See the ones I do.
-      </p>
-      <p className="text-base">
-        <Link href="/vendors" className="underline">
-          &larr; back to vendors
-        </Link>
-      </p>
-    </main>
+    <NotFoundShell
+      title="That vendor isn't on CoralTicker yet."
+      body="I don't cover every reef vendor. See the ones I do."
+      backHref="/vendors"
+      backLabel="← back to vendors"
+    />
   );
 }

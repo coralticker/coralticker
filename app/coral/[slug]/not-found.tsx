@@ -9,8 +9,8 @@
 // per CTK-040 Session 5 directive + branding-guide.md line 98 carve-out
 // ("dormancy-not-found" added to the "I" voice surface list).
 
-import Link from 'next/link';
 import type { Metadata } from 'next';
+import { NotFoundShell } from '@/components/ui/not-found-shell';
 
 // 404 copy duplicated at ../page.tsx generateMetadata null-branch — edit both
 // or neither. This export is the authority (paints the rendered head; the
@@ -24,19 +24,11 @@ export const metadata: Metadata = {
 
 export default function CoralNotFound() {
   return (
-    <main className="px-6 py-12 max-w-3xl mx-auto">
-      <h1 className="text-3xl md:text-4xl font-bold mb-6">
-        This coral isn&apos;t in the seed list yet.
-      </h1>
-      <p className="text-base leading-relaxed mb-8">
-        I&apos;m working through the long tail; check the new arrivals to see
-        what&apos;s listed today.
-      </p>
-      <p className="text-base">
-        <Link href="/new" className="underline">
-          &larr; back to new arrivals
-        </Link>
-      </p>
-    </main>
+    <NotFoundShell
+      title="This coral isn't in the seed list yet."
+      body="I'm working through the long tail; check the new arrivals to see what's listed today."
+      backHref="/new"
+      backLabel="← back to new arrivals"
+    />
   );
 }

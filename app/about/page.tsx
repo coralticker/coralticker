@@ -14,6 +14,7 @@
 
 import type { Metadata } from 'next';
 import { SocialLinks } from './_components/social-links';
+import { PageShell } from '@/components/ui/page-shell';
 
 // Metadata wording verbatim from site.md §6.1 line 1709. Voice rule per
 // site.md §6.1 line 1717: no "Jon" at metadata altitude — product-voice
@@ -29,7 +30,7 @@ export const metadata: Metadata = {
 
 export default function About() {
   return (
-    <main className="px-6 py-12 max-w-3xl mx-auto">
+    <PageShell as="section">
       <h1 className="text-3xl md:text-4xl font-bold mb-8">
         About CoralTicker.
       </h1>
@@ -65,6 +66,6 @@ export default function About() {
         </p>
         <SocialLinks />
       </div>
-    </main>
+    </PageShell>
   );
 }
