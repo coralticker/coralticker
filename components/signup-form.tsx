@@ -37,7 +37,7 @@ const EXPECTATION_TEXT =
 const PLACEHOLDER = 'you@example.com';
 const SUBMIT_LABEL = 'Subscribe';
 const SUCCESS_TEXT =
-  'Thanks. Check your email — spam folder too, while the domain is new. Dragging it to your inbox teaches the filter.';
+  "Thanks. Check your email — spam folder too. If it's there, drag it to your inbox so the next one isn't.";
 const ALREADY_SUBSCRIBED_TEXT =
   'Already on the list. Check your email for the next digest.';
 
