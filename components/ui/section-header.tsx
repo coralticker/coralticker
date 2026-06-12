@@ -7,7 +7,7 @@
 // IS baked here — the served under-rule-to-content gap is identical across all
 // 4 sites (Element 3), so the margin is canon-neutral and lives in the
 // primitive. border-line is the single hairline tone (CTK-129 served-neutral
-// re-spec; the plan's border-ink/20-vs-/30 risk is moot — both resolved to it).
+// re-spec; the plan's hairline opacity-modifier risk is moot — both resolved to it).
 //
 // Copy passes through verbatim as children — copy-agnostic, no register prop
 // (incl. the state-dynamic {sectionHeader} at /coral/[slug]). The sentence-case
