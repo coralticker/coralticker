@@ -76,10 +76,12 @@ TSA_CATEGORY_FILTER = {
     # this axis entirely (stale vs. CTK-107's title-axis additions); brought to
     # full parity here so the CTK-112 "Late Fees" reject + false-kill guard tests
     # exercise the same predicate the production YAML carries. Entries: CTK-107
-    # placeholder + chaeto/macroalgae belt-and-suspenders, CTK-112 store-credit SKU.
+    # placeholder + chaeto/macroalgae belt-and-suspenders, CTK-112 store-credit
+    # SKU, CTK-141 bare 'shipping' service-class forward-bind (2026-06-12).
     "title_denylist": [
         "Test Livestock", "Chaeto", "Cheato", "Macroalgae", "Macro Algae",
         "Late Fees",
+        "shipping",
     ],
 }
 
@@ -592,6 +594,50 @@ def test_filter_keeps_coral_with_fee_substring(products):
         )
 
 
+# ─── CTK-141: bare 'shipping' entry rejects the Hide-tagged service class ─────
+def test_filter_rejects_shipping_service_class(products):
+    """CTK-141 scope-add (2026-06-12) — both live service rows reject on the
+    title axis from inside the allowlisted 'Livestock' PT. Titles verbatim
+    from the live feed; tags held at ['Hide'] to mirror the real rows and to
+    document that the tag axis does NOT carry this reject (the Hide tag is
+    deliberately not denied — 232 live carriers, overwhelmingly real OOS
+    corals; see the YAML rationale). Third synthetic pins a future carrier
+    rotation."""
+    for title in (
+        "Overnight Shipping",               # id=38175, the live leak
+        "Live Sale Discounted Shipping",    # id=132583, already OOS; forward-bind
+        "2 Day Shipping Upgrade",           # synthetic future rotation
+    ):
+        product = {
+            "title": title,
+            "product_type": "Livestock",
+            "tags": ["Hide"],
+            "variants": [{"available": True}],
+        }
+        assert _should_keep(product, TSA_CATEGORY_FILTER) is False, (
+            f"service title {title!r} should reject via the shipping entry; product passed"
+        )
+
+
+# ─── CTK-141 false-kill guard: Hide-tagged coral survives the shipping entry ──
+def test_filter_keeps_hide_tagged_coral(products):
+    """CTK-141 FP-guard — executable rationale for the title axis over a
+    'Hide' tag-deny. A real OOS coral TSA hides from its storefront (the
+    dominant Hide-carrier shape, ~230 live rows) must survive intake so the
+    catalog-rotation recovery path keeps working; a regression that adds
+    'Hide' to the tag_denylist false-kills the lot and breaks this test."""
+    coral = {
+        "title": "TSA Bill Murray Acropora",
+        "product_type": "Livestock",
+        "tags": ["Hide", "SPS"],
+        "variants": [{"available": False}],
+    }
+    assert _should_keep(coral, TSA_CATEGORY_FILTER) is True, (
+        "Hide-tagged coral false-killed — the Hide tag must never enter the "
+        "tag_denylist; the shipping reject is title-axis only"
+    )
+
+
 # ─── Test 19 (CTK-037 Session 5.5): predicate normalization keeps None/absent ─
 def test_filter_normalizes_none_product_type_to_empty_string(products):
     """CTK-037 Session 5.5 — None or key-absent product_type normalizes to "" so
@@ -647,6 +693,8 @@ def main() -> int:
         test_filter_rejects_equipment_tag_under_blank_pt,
         test_filter_rejects_late_fees_store_credit_sku,
         test_filter_keeps_coral_with_fee_substring,
+        test_filter_rejects_shipping_service_class,
+        test_filter_keeps_hide_tagged_coral,
         test_filter_normalizes_none_product_type_to_empty_string,
         test_filter_rejects_none_product_type_when_empty_not_in_allowlist,
     ]

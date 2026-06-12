@@ -245,3 +245,15 @@ category_filter:
     - MagSleeve
     - Panta Rhei
     - SeeClear
+    # CTK-141 scope-add (2026-06-12, Jon-ratified): bare 'shipping' —
+    # forward-bind ONLY at UC, no active leak and no bridge. Same rationale
+    # class as the DaStaCo entry above: belt-and-suspenders against PT-drift
+    # into the allowlisted '' bucket. Two-lens FP audit at execution
+    # 2026-06-12: live full feed (701 products) = 10 hits, all non-coral
+    # (6 PT='shipping' service/FlashSale units, 2 'live rock', 2 'Drygoods'
+    # incl. the Triton lab test), every one already allowlist-denied by PT;
+    # DB-wide UC ILIKE = 8 rows, all already OOS. Same accepted
+    # FREE-SHIPPING residual as WWC/TSA — and the suffix shape is live at
+    # UC today on 3 PT-denied non-coral rows ('FREE SHIPPING!' live rock /
+    # ARID filter), zero coral instances either lens.
+    - shipping              # service/FlashSale rows; fleet entry parity with BC/WWC/TSA

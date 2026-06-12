@@ -29,7 +29,9 @@ from scrapers.common.parse_shopify import _should_keep
 
 # UC YAML shape at CTK-096 ship: PT allowlist permissive on empty bucket +
 # CORAL + Coral. tag_denylist 11 entries. title_denylist 7 walk-grounded
-# entries per CTK-096 D-1 / D-3.
+# entries per CTK-096 D-1 / D-3, plus the CTK-141 bare 'shipping'
+# forward-bind (2026-06-12). (The CTK-107 fleet chaeto/macroalgae entries
+# remain unmirrored here — CTK-096-scoped suite, pre-existing state.)
 UC_FILTER = {
     "product_type_allowlist": ["", "CORAL", "Coral"],
     "tag_denylist": [
@@ -44,6 +46,7 @@ UC_FILTER = {
         "MagSleeve",
         "Panta Rhei",
         "SeeClear",
+        "shipping",
     ],
 }
 
@@ -110,6 +113,34 @@ def test_uc_drops_panta_rhei_illumagic_dalua():
 
 # --- Keep: FP-discipline controls + baseline coral ---
 
+def test_uc_drops_shipping_pt_drift_class():
+    """CTK-141 forward-bind (2026-06-12) — UC has NO active shipping leak:
+    all 10 live shipping-titled rows ride PT-denied buckets ('shipping' /
+    'live rock' / 'Drygoods') and all 8 DB rows are already OOS. The entry
+    exists for the PT-drift case (the DaStaCo rationale class): a service
+    row landing in the allowlisted '' bucket with no denied tag. Synthetics
+    model exactly that drift — live titles verbatim, PT='', tags=[]."""
+    for title in [
+        "Overnight Shipping",
+        "FlashSale Shipping Module, Receive on Wed 12/17",
+        "Saturday Overnight Shipping",
+    ]:
+        p = _p(title, product_type="", tags=[])
+        assert _should_keep(p, UC_FILTER) is False, title
+
+
+def test_uc_drops_free_shipping_residual_control():
+    """CTK-141 FP-guard (accepted-residual pin, CTK-132 convention) — a
+    coral title carrying a 'FREE SHIPPING!' suffix DROPS on the bare entry.
+    Accepted: the suffix shape is live at UC today on 3 PT-denied non-coral
+    rows (live rock / ARID filter), zero coral instances either lens at
+    lock. If a real coral row starts dropping at intake, the recovery is a
+    close-monitor amendment — flip this pin consciously, don't shorten the
+    entry."""
+    p = _p("UC Holy Grail Torch - FREE SHIPPING!", product_type="CORAL", tags=[])
+    assert _should_keep(p, UC_FILTER) is False
+
+
 def test_uc_keeps_arida_suffix_fp_control():
     """Trailing-space `ARID ` substring discipline pins SUFFIX collisions only.
     A hypothetical coral titled `Aridana Cyclamen` (substring `arid` followed
@@ -151,6 +182,8 @@ def main() -> int:
         test_uc_drops_seeclear_magsleeve,
         test_uc_drops_arid_brand,
         test_uc_drops_panta_rhei_illumagic_dalua,
+        test_uc_drops_shipping_pt_drift_class,
+        test_uc_drops_free_shipping_residual_control,
         test_uc_keeps_arida_suffix_fp_control,
         test_uc_keeps_regular_coral,
         test_uc_keeps_empty_pt_real_coral,

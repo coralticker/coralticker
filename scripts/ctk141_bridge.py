@@ -12,6 +12,12 @@ from the YAML; keep in step on any entry change (CTK-119 /code-review
 fold #1 precedent):
   BC  (vendor_id=5): raw_title ILIKE '%cleaning head%' OR '%replacement roll%'
   WWC (vendor_id=2): raw_title ILIKE '%shipping%'
+  TSA (vendor_id=3): raw_title ILIKE '%shipping%'   [scope-add, Jon-ratified 2026-06-12]
+
+--vendors takes a comma-separated slug list (default: all). Needed because
+the legs land at different times — a vendor whose bridge already executed
+re-derives an EMPTY in-stock set, which the expected-ID rail correctly
+rejects; filter to the leg being landed.
 
 Shape divergence from scripts/ctk119_d3_bridge.py: NO dead-route HEAD rail.
 The CTK-119 class was available-with-dead-link (routes had to be non-200);
@@ -61,6 +67,16 @@ VENDORS = [
         "ilike_entries": ["shipping"],
         "expected_ids": {16300},
     },
+    # Scope-add, Jon-ratified 2026-06-12. The second TSA shipping row
+    # ('Live Sale Discounted Shipping', id 132583) is already OOS — covered
+    # by the denylist as forward-bind, deliberately NOT in this in-stock
+    # bridge set.
+    {
+        "slug": "tsa",
+        "vendor_id": 3,
+        "ilike_entries": ["shipping"],
+        "expected_ids": {38175},
+    },
 ]
 
 
@@ -102,19 +118,28 @@ def main() -> int:
                         help="Fire UPDATE + INSERTs in a single transaction per vendor (default: dry-run).")
     parser.add_argument("--snapshot-out",
                         help="Path for the pre-bridge snapshot artifact (required with --execute).")
+    parser.add_argument("--vendors",
+                        help="Comma-separated vendor slugs to bridge (default: all).")
     args = parser.parse_args()
     if args.execute and not args.snapshot_out:
         parser.error("--execute requires --snapshot-out (pre-bridge snapshot artifact)")
+    vendors = VENDORS
+    if args.vendors:
+        wanted = {s.strip() for s in args.vendors.split(",")}
+        unknown = wanted - {v["slug"] for v in VENDORS}
+        if unknown:
+            parser.error(f"unknown vendor slug(s): {sorted(unknown)}")
+        vendors = [v for v in VENDORS if v["slug"] in wanted]
     mode = "EXECUTE" if args.execute else "DRY-RUN"
 
     print("=" * 78)
-    print(f"CTK-141 — bridge UPDATE, BC equipment + WWC service rows (mode: {mode})")
+    print(f"CTK-141 — bridge UPDATE, vendors: {', '.join(v['slug'] for v in vendors)} (mode: {mode})")
     print("=" * 78)
 
     with get_conn() as conn:
         # Rail 1+2: derive + check every vendor BEFORE any write.
         staged = []
-        for vendor in VENDORS:
+        for vendor in vendors:
             print(f"{vendor['slug']} (vendor_id={vendor['vendor_id']}):")
             rows = derive_in_list(conn, vendor)
             ids = {r["id"] for r in rows}

@@ -174,3 +174,16 @@ category_filter:
     # (own excluded PT) + the "Platinum Credit Card" scraper / "NP-Bacto-Balance"
     # supplement are Aquarium Supplies, allowlist-denied — no additional entries.
     - Late Fees           # store-credit/penalty SKU; 0 coral false-kills at live pull (CTK-112 2026-06-03)
+    # CTK-141 scope-add (2026-06-12, Jon-ratified): bare 'shipping' — same
+    # service-class forward-bind as BC/WWC. Live leak: 'Overnight Shipping'
+    # (DB id 38175, in_stock=true, PT='Livestock', tag 'Hide' not denied,
+    # NULL price). Two-lens FP audit re-confirmed at execution 2026-06-12:
+    # live full feed (4,371 products) = 2 hits, both Hide-tagged service
+    # rows under PT 'Livestock'; DB-wide TSA ILIKE = same 2 rows (38175 +
+    # the already-OOS 'Live Sale Discounted Shipping' 132583, covered here
+    # as forward-bind, no bridge needed). Rejected axis: denying the 'Hide'
+    # tag instead — 232 live carriers, overwhelmingly real OOS corals TSA
+    # hides from its storefront while keeping them in the feed; a tag-deny
+    # would false-kill the lot at intake and fight the catalog-rotation
+    # recovery path. Title axis is the surgical cut.
+    - shipping            # service rows 'Overnight Shipping' + 'Live Sale Discounted Shipping'; matches BC/WWC fleet entries
