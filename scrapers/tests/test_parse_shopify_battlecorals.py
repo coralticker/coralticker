@@ -25,7 +25,8 @@ from scrapers.common.parse_shopify import _should_keep
 # entries; we only use a subset relevant to test pivot — empty PT bucket where
 # the merch leaks live, plus a coral PT for the keep cases). tag_denylist
 # empty. title_denylist holds the 5 walk-grounded entries per CTK-096 D-1
-# plus the 2 CTK-132 gag-listing exact-compounds (2026-06-07).
+# plus the 2 CTK-132 gag-listing exact-compounds (2026-06-07) plus the 2
+# CTK-141 filter-roller equipment compounds (2026-06-12).
 BC_FILTER = {
     "product_type_allowlist": [
         "", "Acropora", "Acropora sp.", "Acropora Tenuis", "Montipora",
@@ -39,6 +40,8 @@ BC_FILTER = {
         "Shirt",
         "Fairy Food",
         "In a pigs eye",
+        "Cleaning Head",
+        "Replacement Roll",
     ],
 }
 
@@ -109,6 +112,20 @@ def test_bc_drops_gag_listings():
     assert _should_keep(_p("Fairy Food", product_type="Acropora sp."), BC_FILTER) is False
 
 
+def test_bc_drops_cleaning_equipment_class():
+    """CTK-141 filter-roller equipment class: all three 2026-06-12 walk
+    members drop from the PT='' empty bucket. Titles verbatim from the live
+    feed (`Manual Cleaning heads` carries lowercase `heads`, caught
+    case-insensitively; `Replacement Rolls` plural caught by the singular
+    substring entry)."""
+    for title in [
+        "Auto Cleaning Head",
+        "Manual Cleaning heads",
+        "Replacement Rolls",
+    ]:
+        assert _should_keep(_p(title), BC_FILTER) is False, title
+
+
 # --- Keep: FP-discipline controls + baseline coral ---
 
 def test_bc_keeps_hypothetical_imprint_coral():
@@ -135,6 +152,21 @@ def test_bc_keeps_empty_pt_real_coral():
     assert _should_keep(p, BC_FILTER) is True
 
 
+def test_bc_keeps_multi_head_and_roll_corals():
+    """CTK-141 FP-discipline control: the equipment entries are full
+    compounds (`Cleaning Head` / `Replacement Roll`) precisely because the
+    bare nouns collide with real coral title shapes — `Head` with multi-head
+    LPS counts, `Roll` with rock-n-roll-family names. Pins the reason the
+    entries must never be shortened."""
+    for title in [
+        "3 Head Duncan Colony",
+        "Medusa Head Euphyllia",
+        "Rock n Roll Acro",
+    ]:
+        p = _p(title, product_type="Acropora sp.")
+        assert _should_keep(p, BC_FILTER) is True, title
+
+
 def test_bc_keeps_fairy_compound_corals():
     """CTK-132 FP-discipline control: the gag entry is the full compound
     `Fairy Food` precisely because bare `Fairy` collides with ~50 real coral
@@ -159,9 +191,11 @@ def main() -> int:
         test_bc_drops_delivery_fee,
         test_bc_drops_shipping,
         test_bc_drops_gag_listings,
+        test_bc_drops_cleaning_equipment_class,
         test_bc_keeps_hypothetical_imprint_coral,
         test_bc_keeps_regular_acropora,
         test_bc_keeps_empty_pt_real_coral,
+        test_bc_keeps_multi_head_and_roll_corals,
         test_bc_keeps_fairy_compound_corals,
     ]
     failed = 0

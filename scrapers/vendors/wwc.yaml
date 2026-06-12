@@ -126,6 +126,20 @@ category_filter:
     # Accepted residual: substring also matches word-final '...build a'
     # shapes ('Rebuild Acro...') — zero instances, feed + DB, 2026-06-06.
     - Build A
+    # CTK-141 (2026-06-12): bare 'shipping' — service-class forward-binding.
+    # WWC has twice rotated non-coral SKUs into allowlisted PTs (hot sauce
+    # into 'Live Sale Coral' per CTK-121; 'Southwest Cargo Shipping (per
+    # box)' riding 'Wholesale Frag' here), so the surgical 'Cargo Shipping'
+    # compound loses to the class entry; matches BC's existing fleet
+    # 'shipping' entry. Two-lens FP audit re-confirmed at execution
+    # 2026-06-12: live full feed (2,235 products) = 7 hits, all non-coral
+    # service/drygoods rows (4 ride PT 'Shipping Unit', 2 'Dry Goods' —
+    # both PTs already allowlist-denied; only the cargo row rides an
+    # allowlisted PT); DB-wide WWC ILIKE = 1 hit (id 16300, the target).
+    # Accepted residual: a future coral title carrying a 'FREE SHIPPING!'
+    # suffix would drop — zero instances live + DB at lock; pinned as an
+    # FP-guard test per CTK-132 convention.
+    - shipping
   # CTK-119 D-1 (2026-06-04): WWC wholesale/live-sale channel prefix — 56 of
   # 523 user-facing rows carried title-initial 'WS - ' with dead retail routes
   # (in-feed + in_stock=true + storefront HEAD-404; published via a non-retail

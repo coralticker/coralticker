@@ -263,3 +263,15 @@ category_filter:
     # both entries verified 1-hit-exact live + DB-wide ILIKE 2026-06-07.
     - Fairy Food            # gag listing $1,000,000 / compare-at $2M, PT='Acropora sp.' (OOS at entry-add; defensive against an availability flip)
     - In a pigs eye         # gag listing $999,999 / compare-at $2M, PT='' (the live /deals price-desc anchor; DB id 67583 bridged OOS per CTK-119 shape)
+    # CTK-141 (2026-06-12): 5th BC leak class — filter-roller equipment rows
+    # in the PT='' empty bucket (Auto Cleaning Head $599 / Manual Cleaning
+    # heads $89 compare-at $99 / Replacement Rolls $59; the compare-at row
+    # anchored the /deals markdown arm). Two-lens FP audit re-confirmed at
+    # execution 2026-06-12: 'Cleaning Head' live 2-hit-exact across 498
+    # titles + DB-wide ILIKE 2 hits (both targets); 'Replacement Roll' live
+    # 1-hit-exact + DB 1 hit. No coral-noun collision either lens. Full
+    # compounds deliberate: bare 'Head' would false-kill multi-head LPS
+    # title shapes ('3 Head Duncan'); bare 'Roll' invites 'Rock n Roll'-
+    # family coral collisions.
+    - Cleaning Head         # Auto Cleaning Head + Manual Cleaning heads (case-insensitive substring catches both)
+    - Replacement Roll      # Replacement Rolls (substring catches the plural)

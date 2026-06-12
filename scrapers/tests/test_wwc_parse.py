@@ -52,12 +52,14 @@ WWC_CATEGORY_FILTER = {
     # BOGO dead-route tail (6 exact-compound after /code-review fold #5
     # removed the shadowed May $25 entry, 2026-06-06) + CTK-119 D-2 'Build A'
     # family lock (1, 2026-06-06 — subsumes the May $25 exact entry +
-    # id=15783).
+    # id=15783) + CTK-141 bare 'shipping' service-class forward-bind
+    # (1, 2026-06-12).
     "title_denylist": [
         "Chaeto", "Cheato", "Macroalgae", "Macro Algae",
         "Acro Frag POS", "Special Sale - Frag", "BOGO Beginner SPS Frag",
         "$10 GSP Frag", "Favia/Favites BOGO",
         "Rainbow Hammer January Special", "Build A",
+        "shipping",
     ],
     # CTK-119 D-1 anchored wholesale/live-sale channel-prefix axis.
     "title_denylist_prefix": ["WS - "],
@@ -338,7 +340,7 @@ def test_filter_rejects_promo_tail_exact_titles(products):
 # CTK-119 Test 21: coral false-kill guard across the real-shape fixture surface
 def test_filter_keeps_corals_post_ctk119(products):
     """CTK-119 D-1 false-kill guard — the 3 real-shape coral fixtures pass the
-    full post-CTK-119 mirror (11 title entries + prefix axis). Pins the new
+    full post-CTK-141 mirror (12 title entries + prefix axis). Pins the new
     entries against the coral surface the same way CTK-104's guard pinned the
     reef-safety family on TSA."""
     for title in (
@@ -413,6 +415,56 @@ def test_filter_rejects_build_a_family(products):
         )
 
 
+# CTK-141 Test 25: bare 'shipping' entry rejects the service class inside an
+# allowlisted PT
+def test_filter_rejects_shipping_service_class(products):
+    """CTK-141 (2026-06-12) — 'shipping' locked as a bare substring entry
+    after WWC twice rotated non-coral SKUs into allowlisted PTs (hot sauce
+    into 'Live Sale Coral' per CTK-121; Southwest Cargo Shipping into
+    'Wholesale Frag' here). PT held at allowlisted 'Wholesale Frag' to
+    isolate the title axis — the live cargo row rides exactly this PT with
+    no denied tag, so the title entry is the only thing standing. Second
+    synthetic pins a future rotation shape (different carrier, different
+    allowlisted PT); third pins lowercase drift."""
+    for title in (
+        "Southwest Cargo Shipping (per box)",   # id=16300, the live leak
+        "Delta Cargo Shipping (per box)",       # synthetic next-rotation shape
+        "pay shipping balance",                 # lowercase drift
+    ):
+        product = {
+            "title": title,
+            "product_type": "Wholesale Frag",
+            "tags": ["no-points", "Wholesale", "YBlocklist"],
+            "variants": [{"available": True}],
+        }
+        assert _should_keep(product, WWC_CATEGORY_FILTER) is False, (
+            f"service title {title!r} should reject via the shipping entry; product passed"
+        )
+
+
+# CTK-141 Test 26: the accepted FREE-SHIPPING residual, pinned executable
+def test_filter_shipping_accepted_residual_free_shipping_suffix(products):
+    """CTK-141 FP-guard (CTK-132 accepted-residual convention) — a coral
+    title carrying a 'FREE SHIPPING!' marketing suffix DROPS on the bare
+    'shipping' entry. This is the ACCEPTED residual, not a bug: zero
+    instances live (2,235-product feed) + DB-wide ILIKE at lock 2026-06-12,
+    and the class entry was chosen over a surgical 'Cargo Shipping' compound
+    because the rotation risk outweighs it. If this test starts mattering
+    (a real coral row drops at intake), the recovery path is a vendor
+    close-monitor amendment, not silently shortening the entry — flip this
+    pin consciously."""
+    product = {
+        "title": "WWC Rainbow Splice Acro - FREE SHIPPING!",
+        "product_type": "Frag",
+        "tags": [],
+        "variants": [{"available": True}],
+    }
+    assert _should_keep(product, WWC_CATEGORY_FILTER) is False, (
+        "FREE-SHIPPING-suffix coral kept — the accepted-residual semantics changed; "
+        "re-derive the entry decision before shipping this"
+    )
+
+
 # CTK-041 Test 17: auction_detection=None is no-op (permissive default)
 def test_auction_detection_none_is_noop(products):
     """Per-vendor opt-in shape — vendors without auction_detection block in
@@ -451,6 +503,8 @@ def main() -> int:
         test_filter_rejects_dry_goods_tag_in_allowlisted_pt,
         test_filter_keeps_live_sale_coral_without_dry_goods_tag,
         test_filter_rejects_build_a_family,
+        test_filter_rejects_shipping_service_class,
+        test_filter_shipping_accepted_residual_free_shipping_suffix,
         test_auction_detection_none_is_noop,
     ]
 
