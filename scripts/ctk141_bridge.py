@@ -130,8 +130,10 @@ def main() -> int:
 
         if not args.execute:
             print()
-            print("DRY-RUN complete. Confirm each anchor above is a POST-denylist-push "
-                  "run, then re-run with --execute --snapshot-out <path>.")
+            print("DRY-RUN complete. Anchors are the latest success runs — pre-push "
+                  "git_sha is EXPECTED (plan ordering: bridge immediately after the "
+                  "denylist push, before any post-push fire; the anchor is an audit "
+                  "pointer, not a gate). Re-run with --execute --snapshot-out <path>.")
             return 0
 
         # Rail 3: snapshot BEFORE any write.
