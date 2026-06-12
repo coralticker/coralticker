@@ -1,6 +1,7 @@
-"""CTK-141 — bridge UPDATE for the BC equipment + WWC service leak rows.
+"""CTK-141 — bridge UPDATE for the BC equipment + WWC/TSA service leak rows.
 
-Flips the four leaked non-coral rows to in_stock=false AFTER the CTK-141
+Flips the five leaked non-coral rows across three vendors to
+in_stock=false AFTER the CTK-141
 denylist entries are live on origin/main (ordering locked per CTK-132:
 denylist-first strands the rows in filtered intake where the cohort
 absent-pass can't flip them, so this script IS the flip; bridge-first
@@ -25,15 +26,16 @@ the CTK-141 rows are live vendor products being delisted from OUR catalog
 as wrong-category — their routes are expected 200, and a liveness probe
 proves nothing here. The replacement rail is the expected-ID-set check:
 the derived IN-list must equal the plan-time sets (BC {67701, 67719,
-67720}, WWC {16300}) or the script aborts — catalog churn between plan and
-execution means re-audit, not bridge-anyway.
+67720}, WWC {16300}, TSA {38175}) or the script aborts — catalog churn
+between plan and execution means re-audit, not bridge-anyway.
 
 Safety rails, in order:
   1. Expected-ID-set check per vendor (abort on drift).
   2. Audit anchor per vendor = most-recent status='success' run, printed
      with git_sha so the operator can confirm it is a post-denylist run.
-  3. Pre-bridge snapshot: both vendors' executed IN-lists + prior state
-     written to --snapshot-out BEFORE any write.
+  3. Pre-bridge snapshot: every selected vendor's executed IN-list + prior
+     state written to --snapshot-out BEFORE any write (exclusive-create —
+     refuses to overwrite an earlier leg's rollback artifact).
   4. Single transaction PER VENDOR: UPDATE + price_history audit INSERTs
      (CTK-104/107/119/132 bridge shape — last-known price preserved).
   5. Post-verify: re-fetch, all rows in_stock=false.
@@ -182,7 +184,7 @@ def main() -> int:
                 for vendor, rows, anchor in staged
             },
         }
-        with open(args.snapshot_out, "w", encoding="utf-8") as f:
+        with open(args.snapshot_out, "x", encoding="utf-8") as f:
             json.dump(snapshot, f, indent=2)
         n_rows = sum(len(rows) for _, rows, _ in staged)
         print(f"pre-bridge snapshot written: {args.snapshot_out} ({n_rows} rows, {len(staged)} vendors)")
