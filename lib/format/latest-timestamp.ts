@@ -1,5 +1,4 @@
-// Max-timestamp accessor for eyebrow LATEST chunks (CTK-127 /code-review
-// fold #1/#10). Surfaces that once read index 0 for "latest" relied on
+// Max-timestamp accessor for eyebrow LATEST chunks. Reading index 0 relied on
 // recency ordering; price-sorted feeds (/new, /deals) and the /coral/[slug]
 // buy-intent ladder broke that assumption — LATEST must be max over the set
 // regardless of render order.

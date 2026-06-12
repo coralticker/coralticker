@@ -1,14 +1,3 @@
-// Branch coverage for resolveOriginVendor() per branding-guide.md §"Originator
-// full names" + §"Compound-attribution shape" + sentinel render policy.
-//
-// Covers the three render branches (sentinel exact-match, compound split,
-// single-value lookup) plus the unknown-component passthrough fallback and
-// the precedence rule (sentinel takes precedence over compound parsing
-// because the literal contains a slash).
-//
-// Runs via Node's built-in test runner with native TypeScript type stripping:
-//   node --test --experimental-strip-types lib/format/*.test.ts
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveOriginVendor } from './origin-vendor.ts';
@@ -51,9 +40,8 @@ test('resolveOriginVendor: single-value Battlecorals → Battlecorals (one-word 
 });
 
 test('resolveOriginVendor: single-value ORA → ORA (self-branded-abbreviation carve-out)', () => {
-  // Per branding-guide.md L144 carve-out — ORA IS the brand; full expansion
-  // "Oceans, Reefs and Aquariums" is reserved for /about-class formal
-  // contexts, not daily-use display.
+  // ORA IS the brand; full expansion "Oceans, Reefs and Aquariums" is reserved
+  // for /about-class formal contexts, not daily-use display.
   assert.deepEqual(resolveOriginVendor('ORA'), { display: 'ORA' });
 });
 
@@ -68,22 +56,20 @@ test('resolveOriginVendor: single-value Reeffarmers → Reeffarmers', () => {
 });
 
 test('resolveOriginVendor: single-value Pro Corals → Pro Corals (CTK-126 drift-add, plain full-name)', () => {
-  // branding-guide.md L143 — "PC" is in-name shorthand only, too ambiguous
-  // standalone for the carve-out; plain full-name default applies.
+  // "PC" is in-name shorthand only, too ambiguous standalone for the carve-out;
+  // plain full-name default applies.
   assert.deepEqual(resolveOriginVendor('Pro Corals'), { display: 'Pro Corals' });
 });
 
 test('resolveOriginVendor: single-value GARF → GARF (CTK-126 drift-add, self-branded-abbreviation carve-out)', () => {
-  // branding-guide.md L144 — GARF IS the brand (ORA pattern); expansion
-  // "Geothermal Aquaculture Research Foundation" reserved for /about contexts.
+  // GARF IS the brand (ORA pattern); expansion "Geothermal Aquaculture
+  // Research Foundation" reserved for /about contexts.
   assert.deepEqual(resolveOriginVendor('GARF'), { display: 'GARF' });
 });
 
 test('resolveOriginVendor: compound Tyree/Reeffarmers → "Steve Tyree / Reeffarmers"', () => {
-  // Compound-attribution per branding-guide.md L141 + §"Compound-attribution
-  // shape" — split on /, per-component lookup, join with ' / ' (space-slash-
-  // space). Exercises the Reeffarmers component-render branch + satisfies
-  // SC-2 compound row criterion.
+  // Compound-attribution: split on /, per-component lookup, join with ' / '
+  // (space-slash-space). Exercises the Reeffarmers component-render branch.
   assert.deepEqual(resolveOriginVendor('Tyree/Reeffarmers'), {
     display: 'Steve Tyree / Reeffarmers',
   });
@@ -97,8 +83,7 @@ test('resolveOriginVendor: compound whitespace-tolerant — "Tyree / Reeffarmers
 
 test('resolveOriginVendor: unknown single-value passthrough — UnknownOriginator → UnknownOriginator', () => {
   // Drift-add discipline — unknown component values fall back to raw
-  // passthrough; /code-review flags for /brand-manager canon-extension at
-  // first-exercise.
+  // passthrough.
   assert.deepEqual(resolveOriginVendor('UnknownOriginator'), {
     display: 'UnknownOriginator',
   });

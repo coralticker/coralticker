@@ -1,12 +1,3 @@
-// lib/format/pluralize.test.ts
-//
-// CTK-130 #10a — count-noun selection with an explicit plural form. Pins the
-// exactly-1-is-singular boundary and the multi-word-head case that motivated
-// the explicit (not suffix-based) plural arg.
-//
-// Runs via Node's built-in test runner with native TypeScript type stripping:
-//   node --test --experimental-strip-types lib/format/*.test.ts
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { pluralize } from './pluralize.ts';

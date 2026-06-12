@@ -1,40 +1,32 @@
 // §"Mono uppercase register" — Plex Mono uppercase letterspaced ~0.08em chrome
-// above the row stack on paginated inventory surfaces. Brand-canon shape
-// locked at /brand-manager session 2026-05-19 (CTK-053 INV-02 pre-first-
-// implementation-session gate §Q-1 / §Q-2 / §Q-3); third-axis label flipped
-// at /brand-manager session 2026-05-31 (CTK-098 INV-02 gate §Q-1):
+// above the row stack on paginated inventory surfaces:
 //
 //   SORT:   NEWEST · PRICE ↑ · PRICE ↓
 //   FILTER: LPS · SPS · ZOA · MUSHROOM · CHALICE · CLAM · ANEMONE · SOFTIE
 //           INCLUDE OUT OF STOCK
 //
-// Stacked axis-rows. Each option is bare Plex Mono uppercase text with
-// forest mid-dot separators per <PaginationNav> precedent (register-chrome
-// binder, not a sixth forest job). Underline-on-active marks current
-// selection; underline-on-hover signals "interactive." Click-active-to-clear
-// returns to default state via canonical-chain ?param= omission (same
-// discipline as <PaginationNav> page=1 → bare-route at hrefForPage()
-// pagination-nav.tsx:31-33).
+// Stacked axis-rows. Each option is bare Plex Mono uppercase text with forest
+// mid-dot separators. Underline-on-active marks current selection;
+// underline-on-hover signals "interactive." Click-active-to-clear returns to
+// default state via canonical-chain ?param= omission (same discipline as
+// <PaginationNav> page=1 → bare-route).
 //
-// CTK-098 (2026-05-31): toggle inverted — default state is in-stock-only;
-// active state ?include-oos=1 drops the in_stock predicate. Label tracks the
-// active semantic (vocabulary-coherent with row-level OUT OF STOCK marker
-// per branding-guide.md L228) instead of the prior IN STOCK ONLY framing.
+// OOS toggle is inverted — default state is in-stock-only; active state
+// ?include-oos=1 drops the in_stock predicate. Label tracks the active semantic
+// (vocabulary-coherent with the row-level OUT OF STOCK marker) instead of an
+// IN STOCK ONLY framing.
 //
 // Filter-change href construction omits the ?page= query param entirely —
 // changing sort or filter resets pagination to page=1 (which routes bare per
-// canonical-chain). CTK-046 upper-clamp Math.min(rawPage, totalPages) at
+// canonical-chain). The upper-clamp Math.min(rawPage, totalPages) at
 // app/vendor/[slug]/page.tsx is defense-in-depth for manual URL tampering
 // like ?category=sps&page=999.
 //
-// CTK-127 promotion (2026-06-05): the CTK-053 cross-surface reuse trigger
-// fired — promoted from app/vendor/[slug]/_components/ with an axis-subset
-// API. /vendor/[slug] renders all three axes (includeOOS: boolean); /new +
-// /deals render SORT + FILTER only (includeOOS omitted — feeds filter
-// in_stock = true at the query layer per branding-guide §"State markers"
-// deal-buyer query-filter lock; no OOS axis on feed surfaces). /coral/[slug]'s
-// single-axis toggle stays a local variant per the CTK-126 chrome-scope
-// ruling — not a consumer of this component.
+// Axis-subset API: /vendor/[slug] renders all three axes (includeOOS: boolean);
+// /new + /deals render SORT + FILTER only (includeOOS omitted — feeds filter
+// in_stock = true at the query layer; no OOS axis on feed surfaces).
+// /coral/[slug]'s single-axis toggle stays a local variant — not a consumer of
+// this component.
 
 import Link from 'next/link';
 import type { ListingCategory, ListingSort } from '@/lib/queries/listings';
@@ -48,16 +40,14 @@ interface SortFilterBarProps {
   // undefined = OOS axis not rendered (feed surfaces); boolean = axis
   // rendered with that toggle state (inventory-recon surfaces).
   includeOOS?: boolean;
-  // CTK-127 fold #7: feeds pass "Sort and filter listings"; the default
-  // keeps the CTK-053 inventory wording on /vendor/[slug].
+  // Feeds pass "Sort and filter listings"; the default keeps the inventory
+  // wording on /vendor/[slug].
   ariaLabel?: string;
 }
 
 // Option rows derive from the label records in lib/queries/listing-params.ts
-// (CTK-127 fold #4 single-source rule) — record insertion order carries the
-// brand-locked display order (sort per CTK-053 §Q-2 symbol-register lock;
-// categories per §Q-1 LPS-lead spec). Add a chip by editing the record, not
-// this file.
+// — record insertion order carries the brand-locked display order. Add a chip
+// by editing the record, not this file.
 const SORT_OPTIONS = (
   Object.entries(SORT_LABELS) as [ListingSort, string][]
 ).map(([value, label]) => ({ value, label }));
@@ -97,13 +87,13 @@ export function SortFilterBar({
 
   // Mid-dot uses non-breaking space BEFORE the dot so it stays glued to the
   // preceding label as an unbreakable unit. Trailing regular space remains a
-  // wrap opportunity. CTK-053 Session 3: trailing-dot JSX shape alone wasn't
-  // enough — browser greedy line-break at MUSHROOM's preceding-space at 375px
-  // still produced a leading-dot line-2 start. nbsp-before-dot forces the
-  // break to land at the post-dot space, keeping the dot with the prior label.
-  // CTK-127 fold #2: NBSP + mid-dot written as \u00A0\u00B7 escapes — the literal char was
-  // silently flattened to a regular space in the promotion rewrite; the
-  // escape is grep- and review-visible.
+  // wrap opportunity. Trailing-dot JSX shape alone wasn't enough — a browser's
+  // greedy line-break at a preceding-space at 375px still produced a leading-dot
+  // line-2 start; nbsp-before-dot forces the break to land at the post-dot
+  // space, keeping the dot with the prior label.
+  // NBSP + mid-dot written as \u00A0\u00B7 escapes — the literal char is
+  // silently flattened to a regular space, so the escape stays grep- and
+  // review-visible.
   const midDot = (
     <span aria-hidden="true" className="text-forest">
       {'\u00A0\u00B7 '}
@@ -125,8 +115,7 @@ export function SortFilterBar({
           const isLast = i === SORT_OPTIONS.length - 1;
           // Mid-dot TRAILS the preceding option so wrap-breaks keep the dot
           // at end-of-line-N with the previous label, not at start-of-line-N+1
-          // before the next label. CTK-053 Session 3 verify: leading-dot on
-          // 375px-viewport FILTER row wrap confirmed via Jon DevTools pass.
+          // before the next label.
           return (
             <span key={opt.value}>
               <Link

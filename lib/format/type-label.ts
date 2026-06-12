@@ -10,10 +10,10 @@
 // convention); the resolver maps raw → display + italic flag without losing
 // information.
 //
-// Unknown values fall through to a raw-passthrough branch flagged at
-// /code-review per the drift-add discipline in branding-guide.md §"Drift-add
-// discipline for originator values" (same pattern applies here — new type
-// values land at first-exercise via /brand-manager class assignment).
+// Unknown values fall through to a raw-passthrough branch per the drift-add
+// discipline in branding-guide.md §"Drift-add discipline for originator values"
+// (same pattern applies here — new type values get a class assignment when
+// first seen).
 
 export interface TypeLabelRender {
   display: string;

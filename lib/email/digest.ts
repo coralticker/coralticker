@@ -1,56 +1,25 @@
-// lib/email/digest.ts
+// The query -> render -> send body for the email daily digest.
 //
-// CTK-136 — v1 email daily digest. The in-route query -> render -> send body
-// for app/api/cron/email-digest/route.ts. No GH-Actions relay (email has no
-// legacy script, unlike the CTK-011 Discord digest this is adapted from).
+// Source: get_listing_lead_event(NULL, 24, NULL, NULL) — fleet-wide 24h window,
+// one row per listing, lead event only. Lead-event precedence (price-dropped >
+// back-in-stock > just-listed) is inherited from the RPC's ranking; nothing here
+// re-derives it. OOS rows never arrive: all three RPC arms filter in_stock = true.
 //
-// Source: get_listing_lead_event(NULL, 24, NULL, NULL) — migration 0030,
-// fleet-wide 24h window, one row per listing, lead event only. Lead-event
-// precedence (price-dropped > back-in-stock > just-listed) is inherited from
-// the RPC's ranking; nothing here re-derives it (Q-1 lean: reuse as-is for
-// INV-01 parity with the Discord digest). OOS rows never arrive: all three RPC
-// arms filter in_stock = true (deal-buyer canon, branding-guide.md §"State
-// markers" — the OOS adapter shape is cited in plan.md if a variant ever
-// renders one).
+// INV-01 channel parity: each listing line renders through formatDataRow() —
+// same field order, same labels, same em-dash separator as the web <DataRow> and
+// the Discord embed. This file is the HTML channel-adapter on top: <strong> on
+// the coral name, semantic <del> on the was-value and bold-forest on the now-value
+// of price-drop-new / vendor-markdown fields, applied at field construction so
+// the canonical shape still flows through the shared primitive.
 //
-// INV-01 channel parity: each listing line renders through formatDataRow()
-// (lib/format/data-row.ts) — same field order, same labels, same em-dash
-// separator as the web <DataRow> and the Discord embed. This file is the HTML
-// channel-adapter on top: <strong> on the coral name, semantic <del> on the
-// was-value and bold-forest on the now-value of price-drop-new / vendor-markdown
-// fields (decision #75, mirroring components/ui/data-row.tsx RenderValue),
-// applied at field construction so the canonical shape still flows through the
-// shared primitive.
+// The Price precedence chain (price-drop-new > vendor-markdown at >=5%
+// epsilon-guarded > bare) and the 'price on request' null-price (auction) shape
+// are a KNOWING interim duplicate of scripts/discord-digest.ts:buildFields();
+// both re-point to a shared lib/format/ builder once it lands.
 //
-// HAND-PORT (CTK-123 soft dependency): the field-derivation logic — the Price
-// precedence chain (price-drop-new > vendor-markdown at >=5% epsilon-guarded >
-// bare) and the 'price on request' null-price (auction) shape — is hand-ported
-// from scripts/discord-digest.ts:buildFields(), itself a port of
-// components/ui/data-row.tsx. This is a KNOWING interim duplicate (two copies of
-// the precedence chain), the same one the Discord script carries. When CTK-123
-// lands the shared lib/format/ buildFields(), this adapter re-points to it; the
-// first-ship side-by-side smoke (INV-01 check-cadence 2) is the backstop until
-// then. See plan.md Risks.
-//
-// SCAFFOLD (landed CTK-136, co-signed against CTK-136/email-scaffold-spec.md):
-// wrapDigestDoc() below is the real branded HTML email document — table layout
-// for mail-client compat, a wordmark-alone masthead (spec §3 weigh-in resolved
-// 2026-06-09: tagline dropped on the daily surface per Jon + /reef-lead), a 600px
-// centered column, styled vendor-group headers + listing lines (§4), and the
-// CAN-SPAM-complete, product-voice footer (§5). Brand tokens (INK, FOREST,
-// PAGE_BG, the SANS stack, wordmark sizing) mirror lib/email/templates/
-// confirm-email.ts so the two emails read as one brand. The FIELD-LEVEL render
-// (buildFields/buildLine — the `**name** — Price. … — Listed. …` content) is
-// INV-01-locked and untouched; the scaffold owns only the surrounding chrome
-// (document, masthead, header/line styling, footer). Both Jon weigh-ins are now
-// resolved: PAGE_BG = white (§6) and wordmark-alone masthead (§3).
-//
-// Testability: the pure builders (buildFields, buildLine, groupByVendor,
-// buildListingsHtml, buildFooter, listUnsubscribeHeaders, buildSubject,
-// wrapDigestDoc) import clean with no env. The DB fetches and the Resend send
-// use a dynamic import for lib/db/neon.ts (module-scope env throw) and call-time
-// getResend(), so they never run under `node --test`. Mirrors the Discord
-// script's dynamic-import-for-db pattern.
+// Testability: the pure builders import clean with no env. The DB fetches and the
+// Resend send use a dynamic import for lib/db/neon.ts (module-scope env throw) and
+// call-time getResend(), so they never run under `node --test`.
 
 import { formatDataRow } from '../format/data-row.ts';
 import type { DataRowField } from '@/components/ui/data-row';
@@ -67,9 +36,8 @@ export interface DigestRow {
   event_at: string;
   first_seen_at: string;
   vendor_display_name: string;
-  // The vendor's product page (the buy link). Already returned by
-  // get_listing_lead_event (migration 0030); the coral name links to it. Nullable
-  // — a row without a URL renders the name unlinked (graceful fallback).
+  // The vendor's product page (the buy link); the coral name links to it.
+  // Nullable — a row without a URL renders the name unlinked (graceful fallback).
   product_url: string | null;
 }
 
@@ -81,22 +49,19 @@ export interface Recipient {
 // Resend batch endpoint caps at 100 messages per call.
 const BATCH_SIZE = 100;
 
-// Brand tokens, mirrored verbatim from lib/email/templates/confirm-email.ts (the
-// Jon-ratified 2026-06-09 precedent) so the two emails render as one brand.
-// FOREST stays the field-level now-value accent (decision #75); the rest are the
-// scaffold's masthead + chrome tokens.
+// Brand tokens, mirrored from confirm-email.ts so the two emails render as one
+// brand. FOREST is the field-level now-value accent.
 const INK = '#1A1A1A';
 const FOREST = '#1B5E20';
 // branding-guide §"Served-neutral re-spec": #E5E7EB is the single hairline /
 // under-rule / border tone (the vendor-header rule + footer top-border).
 const LINE = '#E5E7EB';
-// confirm-email shipped white; §"Color system" canon is cream #F5F1EA. Built to
-// the spec §6 lean (white — cross-email consistency + inbox-render reliability);
-// OPEN Jon weigh-in (guide-amendment class — do not silently lock cream here).
+// White, not the §"Color system" cream — chosen for cross-email consistency +
+// inbox-render reliability.
 const PAGE_BG = '#FFFFFF';
 
 // IBM Plex Sans isn't installed in inboxes; degrade to the closest system stack
-// rather than ship a stripped @font-face (verbatim from confirm-email.ts).
+// rather than ship a stripped @font-face.
 const SANS =
   "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
 
@@ -105,16 +70,12 @@ const WORDMARK_PX = 32;
 // MASTHEAD — wordmark alone, no tagline. The daily digest is a utility, not a
 // welcome moment: a slogan seen every morning goes to wallpaper and drifts toward
 // the hype register the brand avoids, so the nameplate carries the brand presence
-// and the tagline is dropped here (Jon + /reef-lead, 2026-06-09 — exercising the
-// spec §3 wordmark-alone weigh-in; supersedes the confirm-email full-lockup reuse
-// on THIS surface only; the confirm email keeps its tagline as a first-impression
-// asset). /brand-manager folds spec §3 to match. Left-aligned, same WORDMARK_PX as
-// the confirm email so the nameplate is pixel-identical across both emails.
-// The wordmark links home (newspaper-masthead pattern — the nameplate IS the site
-// link). NOT underlined: it's the brand mark, not a text link; the L"links are
-// underlined" rule is for in-copy text links, and underlining the wordmark would
-// fight the colored-full-stop mark. color:INK keeps it from turning link-blue; the
-// forest dot's inner span overrides.
+// and the tagline is dropped here (the confirm email keeps its tagline as a
+// first-impression asset). Same WORDMARK_PX as the confirm email so the nameplate
+// is pixel-identical across both emails. The wordmark links home (newspaper-
+// masthead pattern). NOT underlined: it's the brand mark, not a text link, and
+// underlining would fight the colored-full-stop mark. color:INK keeps it from
+// turning link-blue; the forest dot's inner span overrides.
 const SITE_URL = 'https://coralticker.com';
 const MASTHEAD = `<div style="font-family:${SANS};font-size:${WORDMARK_PX}px;line-height:1;color:${INK};">` +
   `<a href="${SITE_URL}" style="color:${INK};text-decoration:none;">` +
@@ -122,8 +83,7 @@ const MASTHEAD = `<div style="font-family:${SANS};font-size:${WORDMARK_PX}px;lin
   `</a>` +
   `</div>`;
 
-// CAN-SPAM requires a physical postal address on every commercial send. Jon's
-// registered mailbox, landed 2026-06-09 — the first-ship CAN-SPAM gate clears.
+// CAN-SPAM requires a physical postal address on every commercial send.
 const POSTAL_ADDRESS = 'PO Box 115, 221 Najoles Road, Millersville, MD 21108';
 
 // RPC precedence ranks, mirrored for within-vendor display order only — the
@@ -135,8 +95,8 @@ const PRECEDENCE: Record<DigestRow['event'], number> = {
 };
 
 // Escape HTML metacharacters in vendor-controlled text (coral names, vendor
-// names) before it touches markup. Mirrors app/unsubscribe/route.ts:htmlEscape.
-// The styling tags this module adds are trusted; the data values are not.
+// names) before it touches markup. The styling tags this module adds are
+// trusted; the data values are not.
 export function htmlEscape(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -146,10 +106,9 @@ export function htmlEscape(text: string): string {
     .replace(/'/g, '&#39;');
 }
 
-// Verbatim port of scripts/discord-digest.ts:formatPrice — null price is the
-// auction parse-time shape ('price on request', never a fake buy price per
-// project canon). Neon's HTTP driver returns numerics as strings. Output is
-// purely numeric/literal, so it carries no HTML-unsafe characters.
+// Null price is the auction parse-time shape ('price on request', never a fake
+// buy price per project canon). Neon's HTTP driver returns numerics as strings.
+// Output is purely numeric/literal, so it carries no HTML-unsafe characters.
 function formatPrice(value: number | string | null): string {
   if (value === null) return 'price on request';
   return `$${Number(value).toFixed(2)}`;
@@ -159,14 +118,13 @@ function asNumber(value: number | string | null): number | null {
   return value === null ? null : Number(value);
 }
 
-// Mirrors scripts/discord-digest.ts:buildFields() Price precedence chain:
-// price-drop-new > vendor-markdown (>=5% epsilon-guarded) > bare. The OOS
-// 'invalidated' branch is intentionally absent — the RPC filters in_stock =
-// true on all arms, so no OOS row can reach this adapter. HTML styling (semantic
-// <del> on the was-value, bold-forest <strong> on the now-value) lands here at
-// field construction; formatValue()'s channel-neutral adjacency shape (struck
-// old + new, no connective words — card-parity, 2026-06-09) then carries it
-// through the shared primitive.
+// Price precedence chain: price-drop-new > vendor-markdown (>=5% epsilon-guarded)
+// > bare. The OOS 'invalidated' branch is intentionally absent — the RPC filters
+// in_stock = true on all arms, so no OOS row can reach this adapter. HTML styling
+// (semantic <del> on the was-value, bold-forest <strong> on the now-value) lands
+// here at field construction; formatValue()'s channel-neutral adjacency shape
+// (struck old + new, no connective words) then carries it through the shared
+// primitive.
 export function buildFields(row: DigestRow): DataRowField[] {
   const fields: DataRowField[] = [];
   const currentPrice = asNumber(row.current_price);
@@ -185,8 +143,8 @@ export function buildFields(row: DigestRow): DataRowField[] {
   } else if (
     compareAtPrice !== null &&
     currentPrice !== null &&
-    // Subtract-then-compare with epsilon per discord-digest.ts / data-row.tsx
-    // (IEEE754 misses ~29% of clean integer-dollar 5% markdowns otherwise).
+    // Subtract-then-compare with epsilon (IEEE754 misses ~29% of clean
+    // integer-dollar 5% markdowns otherwise).
     compareAtPrice - currentPrice >= currentPrice * 0.05 - 1e-9
   ) {
     fields.push({
@@ -201,10 +159,8 @@ export function buildFields(row: DigestRow): DataRowField[] {
     fields.push({ label: 'Price', value: formatPrice(currentPrice) });
   }
 
-  // Mirrors discord-digest.ts 'Listed'/'Back' field (event_at ?? first_seen_at).
   // back-in-stock rows get the 'Back' label so the restock reads on the line
-  // without a lead sentence — /brand-manager-ratified 2026-06-06 on lead-less
-  // channel compositions.
+  // without a lead sentence.
   fields.push({
     label: row.event === 'back-in-stock' ? 'Back' : 'Listed',
     value: {
@@ -220,13 +176,12 @@ export function buildFields(row: DigestRow): DataRowField[] {
 // buy link — new tab, neutral ink + underline per branding-guide §"Color system"
 // link rule), em-dash, then the formatDataRow() render. raw_title + product_url
 // are vendor-controlled, so both are HTML-escaped; the <strong>/<a> are ours. A
-// null product_url renders the name unlinked (graceful fallback). Same destination
-// as the web feed (listing-row-frame.tsx — whole card -> product_url, new tab).
+// null product_url renders the name unlinked (graceful fallback).
 export function buildLine(row: DigestRow, now: Date): string {
   const name = `<strong>${htmlEscape(row.raw_title)}</strong>`;
-  // https-only on the vendor-controlled URL (CTK-136 /code-review F3): htmlEscape
-  // already closes the attribute-breakout, and the scheme allowlist drops
-  // javascript:/data: schemes — a non-https product_url renders the name unlinked.
+  // https-only on the vendor-controlled URL: htmlEscape already closes the
+  // attribute-breakout, and the scheme allowlist drops javascript:/data: schemes
+  // — a non-https product_url renders the name unlinked.
   const named =
     row.product_url && /^https:\/\//i.test(row.product_url)
       ? `<a href="${htmlEscape(row.product_url)}" target="_blank" rel="noopener noreferrer" style="color:${INK};text-decoration:underline;">${name}</a>`
@@ -239,9 +194,8 @@ interface VendorGroup {
   rows: DigestRow[];
 }
 
-// Verbatim port of discord-digest.ts:groupByVendor — vendors busiest-first
-// (count desc, name asc tiebreak); within a vendor, precedence rank then
-// newest-first.
+// Vendors busiest-first (count desc, name asc tiebreak); within a vendor,
+// precedence rank then newest-first.
 export function groupByVendor(rows: DigestRow[]): VendorGroup[] {
   const byVendor = new Map<string, DigestRow[]>();
   for (const row of rows) {
@@ -266,17 +220,13 @@ export function groupByVendor(rows: DigestRow[]): VendorGroup[] {
 }
 
 // The listings content block — the recipient-INDEPENDENT body, rendered once.
-// Unlike the Discord embed (4096-char cap, N=3 per-vendor cap), email has no
-// length ceiling, so every line renders: vendor header + one line per listing.
-// Chrome styling per spec §4: the vendor <h2> is a content section header
-// (sentence-case SANS, bold vendor name + regular-weight `— N drops` count, ink,
-// 1px #E5E7EB under-rule) — NOT mono-uppercase chrome. The listing <p> lines are
-// SANS/ink; the field-level brand render (bold name, em-dash, struck/forest
+// Email has no length ceiling, so every line renders: vendor header + one line
+// per listing. The field-level brand render (bold name, em-dash, struck/forest
 // prices) flows untouched through buildLine() -> formatDataRow() per INV-01.
 // Inline styles only — email clients strip <head><style>. Values render SANS
 // (not MONO): formatDataRow() emits one channel-neutral string and re-segmenting
 // it to inject MONO would re-format, violating the wrap-don't-reformat lock
-// (INV-01) — flagged to /brand-manager at co-sign.
+// (INV-01).
 export function buildListingsHtml(rows: DigestRow[], now: Date): string {
   const groups = groupByVendor(rows);
   return groups
@@ -298,17 +248,16 @@ export function buildListingsHtml(rows: DigestRow[], now: Date): string {
     .join('\n');
 }
 
-// CAN-SPAM footer (spec §5): product-voice, FULL-INK (not de-emphasized — the
-// CTK-129 sweep retired the low-emphasis register and legally-required text must
-// stay legible). Subjectless "why you're getting this" sentence (no "I"/"Jon"/
-// "we" — branding-guide §"Surface boundary" names email digests in the no-`I`
-// list; §1), the working per-recipient one-click unsubscribe link (the ONLY
-// per-recipient element, Q-5 shape), the physical postal address (CAN-SPAM,
-// landed 2026-06-09), and the standing "Not affiliated with vendors." disclaimer.
-// `Last scrape: {timestamp}` is dropped — the subject date + per-line relative
-// times already carry freshness. Links render neutral ink + underline per
-// §"Color system" (color carries no affordance). The Hunter-waitlist CTA slot is
-// reserved but ships no copy at v1 (no public paid-tier name, no destination).
+// CAN-SPAM footer: product-voice, FULL-INK (legally-required text must stay
+// legible). Subjectless "why you're getting this" sentence (no "I"/"Jon"/"we" —
+// branding-guide §"Surface boundary" names email digests in the no-`I` list),
+// the working per-recipient one-click unsubscribe link (the ONLY per-recipient
+// element), the physical postal address (CAN-SPAM), and the standing "Not
+// affiliated with vendors." disclaimer. `Last scrape: {timestamp}` is dropped —
+// the subject date + per-line relative times already carry freshness. Links
+// render neutral ink + underline per §"Color system" (color carries no
+// affordance). The Hunter-waitlist CTA slot is reserved but ships no copy at v1
+// (no public paid-tier name, no destination).
 export function buildFooter(token: string): string {
   const base = `font-family:${SANS};font-size:13px;line-height:1.6;color:${INK};`;
   return (
@@ -322,10 +271,10 @@ export function buildFooter(token: string): string {
   );
 }
 
-// RFC 8058 bulk-sender one-click headers (Q-4, locked). List-Unsubscribe carries
-// the per-recipient https target in angle brackets; List-Unsubscribe-Post opts
-// the message into one-click. The token rides in the ?t= query because
-// app/unsubscribe/route.ts:POST reads ?t= FIRST — the one-click bot POSTs
+// RFC 8058 bulk-sender one-click headers. List-Unsubscribe carries the
+// per-recipient https target in angle brackets; List-Unsubscribe-Post opts the
+// message into one-click. The token rides in the ?t= query because the
+// unsubscribe route's POST reads ?t= FIRST — the one-click bot POSTs
 // `List-Unsubscribe=One-Click` to this exact URL.
 export function listUnsubscribeHeaders(token: string): Record<string, string> {
   return {
@@ -334,9 +283,8 @@ export function listUnsubscribeHeaders(token: string): Record<string, string> {
   };
 }
 
-// ET-anchored subject date, mirroring discord-digest.ts:buildTitle (/code-review
-// #9 fold): a late fire near the UTC day boundary must not date-skip. en-CA
-// renders ISO-shaped YYYY-MM-DD.
+// ET-anchored subject date: a late fire near the UTC day boundary must not
+// date-skip. en-CA renders ISO-shaped YYYY-MM-DD.
 export function buildSubject(now: Date): string {
   const date = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/New_York',
@@ -344,11 +292,11 @@ export function buildSubject(now: Date): string {
   return `CoralTicker — daily drops ${date}`;
 }
 
-// The branded digest document (spec §3-§6): white body, a centered 600px column
-// holding the hero-lockup masthead, the listings body (rendered once), and the
-// per-recipient CAN-SPAM footer. Table layout + inline styles only — the only
-// shape email clients render reliably. Mirrors confirm-email.ts's outer/inner
-// table structure verbatim so the two emails share one frame.
+// The branded digest document: white body, a centered 600px column holding the
+// masthead, the listings body (rendered once), and the per-recipient CAN-SPAM
+// footer. Table layout + inline styles only — the only shape email clients render
+// reliably. Mirrors confirm-email.ts's outer/inner table structure so the two
+// emails share one frame.
 export function wrapDigestDoc(listingsHtml: string, footerHtml: string, subject: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -386,9 +334,9 @@ export function wrapDigestDoc(listingsHtml: string, footerHtml: string, subject:
 </html>`;
 }
 
-// --- Live path (DB + Resend). Dynamic import for neon keeps its module-scope
-// env throw out of test runs; getResend() is call-time, so importing this file
-// is env-clean. None of the below runs under `node --test`. ---
+// Dynamic import for neon keeps its module-scope env throw out of test runs;
+// getResend() is call-time, so importing this file is env-clean. None of the
+// below runs under `node --test`.
 
 async function fetchRows(): Promise<DigestRow[]> {
   const { getNeonSql } = await import('../db/neon.ts');
@@ -433,8 +381,7 @@ export interface DigestResult {
 // Orchestrator the cron route calls inside its try/catch. Throws on any send
 // failure (prod-keyless, Resend in-band error) so the route alerts the operator
 // channel and returns 500 — loud failure, no silent partial send. The 0-event
-// and 0-recipient no-ops return normally (route -> 200), mirroring the Discord
-// digest's 0-row skip.
+// and 0-recipient no-ops return normally (route -> 200).
 export async function runEmailDigest(now: Date): Promise<DigestResult> {
   const rows = await fetchRows();
   if (rows.length === 0) {
@@ -451,7 +398,7 @@ export async function runEmailDigest(now: Date): Promise<DigestResult> {
   }
 
   // Render the listings body ONCE (recipient-independent). The footer
-  // unsubscribe link is the only per-recipient element (Q-5 shape).
+  // unsubscribe link is the only per-recipient element.
   const listingsHtml = buildListingsHtml(rows, now);
   const subject = buildSubject(now);
 
@@ -473,11 +420,8 @@ export async function runEmailDigest(now: Date): Promise<DigestResult> {
   }
 
   // Live send. Resend's batch endpoint takes an array of distinct messages and
-  // (resend 6.12.4) carries per-message headers — so the per-recipient footer
-  // and per-recipient List-Unsubscribe header both ride one request per 100.
-  // Q-5: this uses getResend().batch.send directly rather than looping
-  // sendEmail(); the alternative (loop the single-message sendEmail wrapper) is
-  // surfaced for /lead-backend. Either way the body is rendered once above.
+  // carries per-message headers — so the per-recipient footer and per-recipient
+  // List-Unsubscribe header both ride one request per 100.
   const { getResend } = await import('./client.ts');
   const resend = getResend();
 
@@ -494,9 +438,7 @@ export async function runEmailDigest(now: Date): Promise<DigestResult> {
     // the route's catch alerts + 500s — no single-batch failure is silently
     // swallowed. Across MULTIPLE batches (>100 recipients) this is NOT atomic:
     // a throw on batch N leaves batches 1..N-1 already sent with no resume
-    // cursor. That partial-send-then-500 is Tier-4, trigger-gated on recipient
-    // volume (no continuation at v1 — see plan.md Risks); moot at v1's single
-    // chunk.
+    // cursor. Moot at v1's single chunk; no continuation built.
     const { error } = await resend.batch.send(messages);
     if (error) {
       throw new Error(`Resend batch error: ${error.name}: ${error.message}`);

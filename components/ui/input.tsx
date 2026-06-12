@@ -1,29 +1,20 @@
-// §3.4.1 <Input> — neutral primitive
-// Cream/ink palette. `name` + `aria-label` required (per §3.4.1 — Server Action
-// FormData key + a11y floor). `type` discriminator widens at second consumer.
-// `id` is optional — surfaced at Q-040-9 disposition (CTK-040 Session 2) per
-// the "first consumer surfaces the API" pattern from <Button>'s onClick at
-// Session 1b; first consumer is <SignupForm>'s <label htmlFor="signup-email">
-// click-to-focus association.
+// Neutral primitive. Cream/ink palette. `name` + `aria-label` required
+// (Server Action FormData key + a11y floor). `type` discriminator widens at
+// the second consumer.
 //
-// CTK-058: second consumer (<SearchBar>) widens `type` with 'search' and
-// surfaces a `variant` discriminator per the same first-consumer-surfaces-
-// the-API pattern. 'box' is the original chrome verbatim; 'nav-underline' is
-// the INV-02 round-2 variant A lock (branding-guide §"Mono uppercase
-// register" <SearchBar> entry, L286): 2px `line` underline at rest;
-// focus flips to 1px full ink with pb compensated 4px->5px so total box
-// height is constant (rest/focus weights superseded at Jon live-eyeball
-// 2026-06-05; thick-quiet rest / thin-sharp focus is the ratified pair) —
-// no box/chip/fill, transparent over the nav's surface, mono text at
-// nav-chrome size, placeholder `mute` letterspaced (the literal-uppercase
+// 'box' is the original chrome; 'nav-underline' (branding-guide §"Mono
+// uppercase register" <SearchBar> entry): 2px `line` underline at rest; focus
+// flips to 1px full ink with pb compensated 4px->5px so total box height is
+// constant. No box/chip/fill, transparent over the nav's surface, mono text
+// at nav-chrome size, placeholder `mute` letterspaced (the literal-uppercase
 // placeholder string is the caller's job — CSS text-transform doesn't
-// reliably reach placeholders), no forest in any state, bounded width so
-// the input wraps as a unit on narrow viewports. WebKit's native
-// search-cancel decoration is suppressed — it would be the only non-bare
-// control chrome in the system. `line`/`mute` per the CTK-129
-// served-neutral re-spec (branding-guide §"Served-neutral re-spec") — the
-// adopted served values; the nominal ink/NN forms never compiled, and the
-// eyeball that ratified this pair was looking at these exact tones.
+// reliably reach placeholders), no forest in any state, bounded width so the
+// input wraps as a unit on narrow viewports. WebKit's native search-cancel
+// decoration is suppressed — it would be the only non-bare control chrome in
+// the system. `line`/`mute` per the served-neutral re-spec (branding-guide
+// §"Served-neutral re-spec") — these served tones are authoritative and
+// deliberately diverge from the nominal spec: the nominal ink/NN forms never
+// compiled, so don't revert to them.
 
 interface InputProps {
   name: string;

@@ -1,39 +1,28 @@
-// lib/email/templates/confirm-email.ts
+// The double-opt-in confirm email body — a pure body-builder carrying NO
+// transport concern and NO row-format logic (this email is transactional and
+// INV-01-exempt).
 //
-// CTK-016 Leg 3 — the double-opt-in confirm email body. A pure body-builder:
-// confirmEmail(token) -> { subject, html }. It carries NO transport concern
-// (sendEmail() in ../send.ts owns that) and NO row-format logic (INV-01 is a
-// digest concern; this email is transactional and INV-01-exempt, Q-2). The
-// signup action (app/signup/actions.ts) calls this, then hands {subject, html}
-// to sendEmail() best-effort.
-//
-// Copy locked by Jon 2026-06-09 (plan Q-1 / Q-2):
+// Copy rationale:
 //   - H1            "Confirm your email."  (NOT "You're subscribed." — false
 //                   until the click sets confirmed_at)
 //   - Single CTA -> confirmUrl(token). NO /new link, NO unsubscribe link: any
 //                   non-confirm click is a confirm-rate leak, and there is no
 //                   active subscription to unsubscribe from pre-click.
 //   - Footer       "Didn't sign up? Ignore this — you won't hear from me again."
-//                   (true ONLY because v1 sends no confirm-reminder nudge — see
-//                   plan.md forward-binding constraint.)
+//                   (true ONLY because v1 sends no confirm-reminder nudge.)
 // Transactional => no List-Unsubscribe header (set by the caller, not here).
 //
-// VISUAL: the brand hero lockup (wordmark + em-dash rule + tagline), hand-
-// translated from components/ui/wordmark.tsx variant="hero" into email-safe
-// HTML — table layout + inline styles, no Tailwind/external CSS (email clients
-// can't use them). The React component is deliberately NOT imported. Brand
-// tokens mirrored verbatim:
+// VISUAL: the brand hero lockup hand-translated into email-safe HTML — table
+// layout + inline styles, no Tailwind/external CSS (email clients can't use
+// them). The React component is deliberately NOT imported. Brand tokens:
 //   - wordmark   "coral" 700 + "ticker" 400 + "." forest #1B5E20 700, on ink
 //                #1A1A1A, IBM Plex Sans (web-safe sans fallback in inboxes)
 //   - rule       1px ink em-dash motif, spanning the lockup width
 //   - tagline    "Never miss the drop." IBM Plex Mono, 700, uppercase, 0.08em
-//                tracking, ink — wordmark 1.60× tagline (CTK-052 dominant lock)
-// Mobile-inbox caveats (rule vertical-centering ~ cap-height/2; local Plex
-// fonts unavailable -> system fallback) are flagged for /brand-manager review.
+//                tracking, ink — wordmark 1.60× tagline
 
 import { confirmUrl } from '../token.ts';
 
-// Brand tokens (tailwind.config.ts: ink var #1A1A1A, forest #1B5E20).
 const INK = '#1A1A1A';
 const FOREST = '#1B5E20';
 const PAGE_BG = '#FFFFFF';
@@ -44,17 +33,16 @@ const SANS =
   "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
 const MONO = "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 
-// Wordmark 1.60× tagline (CTK-052 wordmark-dominant lock). Scaled down from the
-// site hero (38/24) for inbox comfort; ratio preserved.
+// Wordmark 1.60× tagline (wordmark-dominant lock). Scaled down from the site
+// hero (38/24) for inbox comfort; ratio preserved.
 const WORDMARK_PX = 32;
 const TAGLINE_PX = 20;
 
 const SUBJECT = 'Confirm your email.';
 
-// Content is H1 + CTA + footer only (Q-1/Q-2 ratified). No supporting body line
-// is shipped — adding one would be unratified copy on a Tier-1B trust surface,
-// and the spare H1 -> button reads on-voice. A connective line is a
-// /brand-manager option, not an engineer default.
+// Content is H1 + CTA + footer only — no supporting body line: the spare
+// H1 -> button reads on-voice and a connective line would be unratified copy on
+// a Tier-1B trust surface.
 const FOOTER_LINE = "Didn't sign up? Ignore this — you won't hear from me again.";
 
 export function confirmEmail(token: string): { subject: string; html: string } {
@@ -62,10 +50,9 @@ export function confirmEmail(token: string): { subject: string; html: string } {
 
   // The hero lockup as a 3-cell table row (wordmark | spanning rule | tagline),
   // valign="middle" — the rule + tagline vertically center against the wordmark.
-  // (Jon's call 2026-06-09: the centered version reads cleaner in-inbox than the
-  // baseline-aligned/rule-lift translation of the site lockup, which fought
-  // email clients' inconsistent vertical metrics.) The rule cell is width:100%
-  // so it absorbs slack first (the flex-auto analogue).
+  // The centered version reads cleaner in-inbox than a baseline-aligned/rule-lift
+  // translation, which fought email clients' inconsistent vertical metrics. The
+  // rule cell is width:100% so it absorbs slack first (the flex-auto analogue).
   const lockup = `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
       <tr>

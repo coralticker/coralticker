@@ -1,21 +1,13 @@
-// CTK-011 cron-reliability amendment (2026-06-07): Vercel cron -> GitHub
-// workflow_dispatch relay for the daily Discord digest.
-//
-// GH Actions schedule events are best-effort; the digest's first two
-// scheduled fires landed +2h49m and +1h33m late (open-items.md
-// "Discord-digest cron-delay watch", escalation fired 2026-06-06). Vercel
-// cron hits this route in-window; the route dispatches the existing
-// discord-digest.yml workflow via the GitHub API. The digest script itself
-// is untouched -- this is trigger relocation only.
-//
-// Auth: Vercel cron sends `Authorization: Bearer ${CRON_SECRET}` when the
-// CRON_SECRET env var is set on the project. Anything else gets a 401.
+// Vercel-cron -> GitHub workflow_dispatch relay for the daily Discord digest:
+// GH Actions schedule events are best-effort and fired hours late, so Vercel
+// cron hits this route in-window and the route dispatches the existing
+// discord-digest.yml workflow via the GitHub API. The digest script itself is
+// untouched -- this is trigger relocation only.
 //
 // Failure posture: one attempt, no retry loop. A non-204 from GitHub (or a
-// thrown fetch) alerts the Slack operator channel (decision #39
-// operator/user split) and returns 500 so the failure is visible in the
-// Vercel cron log too. The digest's 24h lookback anchors at run time, so a
-// missed day self-heals at the next fire -- same posture as the GH cron era.
+// thrown fetch) alerts the Slack operator channel and returns 500 so the failure
+// is visible in the Vercel cron log too. The digest's 24h lookback anchors at
+// run time, so a missed day self-heals at the next fire.
 
 export const dynamic = 'force-dynamic';
 

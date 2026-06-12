@@ -1,16 +1,8 @@
-// §3.5.2 <HeroLockup>
-//
-// Homepage hero wrapper around <Wordmark variant="hero">. The horizontal-rule
-// + tagline lockup itself renders inside <Wordmark variant="hero"> per §3.1;
-// this composition is the layout positioning for the homepage placement.
-// No children, no eyebrow, no CTA — content is closed per Decision E + §3.5.2
-// composition rules.
-//
-// CTK-056 S2: mx-auto dropped from section per branding-guide.md L310
-// "Left-aligned is the lock." Centered section framed the lockup as
-// center-balanced relative to viewport despite the lockup itself being
-// left-aligned within the section. Section now left-anchors against the
-// page-frame px-6 padding; max-w-3xl bounds the inner reading width.
+// mx-auto is deliberately absent per branding-guide §"Left-aligned is the
+// lock": a centered section frames the lockup as center-balanced relative to
+// viewport despite the lockup being left-aligned within the section. The
+// section left-anchors against the page-frame px-6 padding; max-w-3xl bounds
+// the inner reading width.
 
 import { Wordmark } from '@/components/ui/wordmark';
 

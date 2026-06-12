@@ -1,11 +1,3 @@
-// Branch coverage for buildPriceValue() — the shared standing-listing
-// Price-field decision tree (CTK-103 F3 consolidation). Locks the precedence
-// chain (OOS > price-drop-new > vendor-markdown > bare), the float-imprecision-
-// corrected ≥5% vendor-markdown predicate (/code-review 2026-06-03), and the
-// CTK-103 F1 `currentPrice > 0` guard against regression.
-//
-// Runs via Node's built-in test runner with native TypeScript type stripping:
-//   node --test --experimental-strip-types lib/format/*.test.ts
 // listing-price.ts has only type-only imports (erased by strip-types), so this
 // pulls no '@/' aliases at runtime.
 
@@ -40,7 +32,7 @@ function listing(overrides: Partial<Listing>): Listing {
 }
 
 test('OOS → invalidated (precedence over markdown)', () => {
-  // Both OOS and marked down — OOS shape wins (Lock 3).
+  // Both OOS and marked down — OOS shape wins.
   assert.deepEqual(
     buildPriceValue(listing({ inStock: false, currentPrice: 245, compareAtPrice: 360 })),
     { kind: 'invalidated', value: '$245.00' },

@@ -1,10 +1,3 @@
-// lib/email/token.test.ts
-//
-// Pure-function tests for the CTK-016 token generator + URL builders.
-//
-// Runs via Node's built-in test runner with native TypeScript type stripping:
-//   node --test --experimental-strip-types lib/email/*.test.ts
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generate, confirmUrl, unsubscribeUrl } from './token.ts';
@@ -40,8 +33,8 @@ test('unsubscribeUrl builds an absolute apex link with the token in ?t=', () => 
 });
 
 test('URL builders accept the UUID-format DB-default token unescaped', () => {
-  // The 0037 gen_random_uuid()::text backfill is [0-9a-f-] — URL-safe, so the
-  // builders pass it through verbatim (both token encodings are query-safe).
+  // The UUID-default backfill is [0-9a-f-] — URL-safe, so the builders pass it
+  // through verbatim (both token encodings are query-safe).
   const uuid = 'dbe7f164-31ec-4c0a-9a1b-2f3e4d5c6b7a';
   assert.equal(confirmUrl(uuid), `https://coralticker.com/confirm?t=${uuid}`);
 });

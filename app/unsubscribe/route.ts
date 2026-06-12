@@ -1,24 +1,19 @@
-// /unsubscribe?t=<token> — CTK-016 Leg 4.
-//
-// GET/POST split (plan §Leg 4) to survive prefetch bots — Gmail's image proxy,
-// Apple Mail Privacy Protection, and link scanners GET-prefetch every link in a
-// message. A GET that wrote unsubscribed_at would silently unsubscribe people
-// whose client merely previewed the email. So:
+// GET/POST split to survive prefetch bots — Gmail's image proxy, Apple Mail
+// Privacy Protection, and link scanners GET-prefetch every link in a message. A
+// GET that wrote unsubscribed_at would silently unsubscribe people whose client
+// merely previewed the email. So:
 //
 //   GET  ?t=<token>  -> render the confirm-button page. NO DB write.
 //   POST (t in query or body) -> set unsubscribed_at, serve the done page.
 //
-// One URL serves both because RFC 8058 List-Unsubscribe one-click (CTK-136's
-// digest footer header) POSTs `List-Unsubscribe=One-Click` to the SAME https
-// URL the List-Unsubscribe header carries — with the token in the ?t= query.
-// Reading the token query-first covers both the one-click bot and the human
-// button (whose form action preserves ?t=).
+// One URL serves both because RFC 8058 List-Unsubscribe one-click POSTs
+// `List-Unsubscribe=One-Click` to the SAME https URL the List-Unsubscribe header
+// carries — with the token in the ?t= query. Reading the token query-first
+// covers both the one-click bot and the human button (whose form action
+// preserves ?t=).
 //
-// These are email-utility surfaces: hand-rendered HTML, not React pages under
-// app/layout. A page.tsx can't accept POST, and the one-click POST must hit this
-// exact URL — so a route handler owns both verbs. Copy is /signup/confirmed-
-// class, ratified by Jon 2026-06-09 (plan §Leg 4). Brand fonts fall back to
-// system stacks here (no @font-face); flagged for /brand-manager review.
+// A page.tsx can't accept POST, and the one-click POST must hit this exact URL —
+// so a route handler owns both verbs.
 
 import { getNeonSql } from '@/lib/db/neon';
 

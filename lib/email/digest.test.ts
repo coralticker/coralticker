@@ -1,14 +1,3 @@
-// lib/email/digest.test.ts
-//
-// Pure-builder coverage for the CTK-136 email daily digest — field derivation
-// (Price precedence chain, parity with scripts/discord-digest.ts), HTML adapter
-// styling (semantic <del> + bold-forest), vendor grouping/ordering, the
-// formatDataRow() INV-01 line shape, the CAN-SPAM footer + per-recipient
-// unsubscribe link, the RFC 8058 List-Unsubscribe headers, and the ET-anchored
-// subject. No DB, no Resend — fetchRows/fetchRecipients/runEmailDigest are out
-// of test scope (the RPC is smoke-tested at migration apply; the batch send at
-// first-ship per INV-01 check-cadence 2).
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -95,7 +84,8 @@ test('vendor-markdown at >=5%: was-value struck, now-value bold-forest', () => {
 });
 
 test('vendor-markdown epsilon: clean integer-dollar 5% markdown qualifies', () => {
-  // 3.15 vs 3.00 is exactly 5% — the IEEE754 multiply form misses it.
+  // 3.15 vs 3.00 is exactly 5% — the IEEE754 multiply form misses it; the
+  // subtract-then-epsilon form catches it.
   const fields = buildFields(row({ compare_at_price: '3.15', current_price: '3.00' }));
   assert.equal((fields[0]!.value as { kind: string }).kind, 'vendor-markdown');
 });
@@ -160,7 +150,6 @@ test('listings html: vendor header (pluralized) + one <p> line per listing, no c
     row({ id, raw_title: `Coral ${id}`, event_at: `2026-06-09T0${id}:00:00Z` }),
   );
   const html = buildListingsHtml(rows, NOW);
-  // Vendor name bold, `— N drops` count regular weight, on one styled <h2> (§4).
   assert.match(html, /<span style="font-weight:700;">WWC<\/span> — 5 drops/);
   // Email has no per-vendor cap (unlike the Discord N=3) — all 5 lines render.
   assert.equal((html.match(/<p style=/g) ?? []).length, 5);
@@ -177,14 +166,12 @@ test('empty rows produce empty listings html (caller skips the send)', () => {
 
 test('footer: subjectless why-line + per-recipient one-click unsub + postal address + disclaimer', () => {
   const footer = buildFooter('tok_abc-123');
-  // Subjectless product-voice why-line (§1 / §5 — no first person).
   assert.match(footer, /You confirmed your email for daily coral drops at coralticker\.com\./);
   assert.match(footer, /href="https:\/\/coralticker\.com\/unsubscribe\?t=tok_abc-123"/);
   assert.match(footer, /Unsubscribe\.<\/a>/);
-  // CAN-SPAM physical postal address (landed 2026-06-09 — first-ship gate clears).
+  // CAN-SPAM requires a physical postal address.
   assert.match(footer, /PO Box 115, 221 Najoles Road, Millersville, MD 21108/);
   assert.match(footer, /Not affiliated with vendors\./);
-  // `Last scrape` is dropped from the email footer (§5).
   assert.ok(!/Last scrape/i.test(footer));
 });
 
@@ -201,13 +188,11 @@ test('wrapDigestDoc: branded document — wordmark-alone masthead, white bg, sub
     buildFooter('tok_abc-123'),
     buildSubject(NOW),
   );
-  // Wordmark nameplate — coral(bold) + ticker(regular) + forest dot.
   assert.match(doc, /<span style="font-weight:700;">coral<\/span><span style="font-weight:400;">ticker<\/span>/);
-  // The wordmark links home (newspaper-masthead pattern), not underlined.
+  // Wordmark links home, not underlined (newspaper-masthead pattern).
   assert.match(doc, /<a href="https:\/\/coralticker\.com" style="color:#1A1A1A;text-decoration:none;">/);
-  // Tagline dropped on the daily surface (§3 resolved 2026-06-09).
+  // Tagline dropped on the daily surface.
   assert.ok(!/Never miss the drop/.test(doc), 'no tagline on the daily digest masthead');
-  // White page bg (spec §6) and the ET-anchored subject in <title>.
   assert.match(doc, /background:#FFFFFF/);
   assert.match(doc, /<title>CoralTicker — daily drops 2026-06-09<\/title>/);
 });

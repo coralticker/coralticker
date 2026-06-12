@@ -22,21 +22,11 @@ import { buildLineageFields } from '@/lib/format/lineage-fields';
 import { pluralize } from '@/lib/format/pluralize';
 import { VendorAvailabilityRow } from './_components/vendor-availability-row';
 
-// CTK-047 B-2 — medal-bearing surface; cadence equalized to 5min with /deals
-// + /vendor/[slug] + homepage strip per /lead-architect 2026-06-02.
-//
-// CTK-126 D-2 (2026-06-05): availability defaults to in-stock rows; the
-// INCLUDE OUT OF STOCK toggle (?include-oos=1) restores the inventory-recon
-// mixed render — single-axis variant of the CTK-098 <SortFilterBar> third
-// axis, toggle ONLY per the 2026-06-05 chrome-scope ruling (no SORT/FILTER
-// axes at 1-6 rows). The searchParams await suppresses prerender for the
-// WHOLE route: despite generateStaticParams and the build table's ● glyph,
-// the build emits no /coral/<slug> static HTML (prerender-manifest carries
-// none, dynamicRoutes empty — CTK-128 close-review build-artifact check;
-// this supersedes the route-table-glyph reading recorded at the CTK-126 #8
-// rejection). Every request server-renders; getCoralAvailability's
-// unstable_cache wrap (revalidate 300, key carries toggle state, CTK-046
-// precedent) is the load-bearing cache. The const below is inert for
+// The searchParams await suppresses prerender for the WHOLE route: despite
+// generateStaticParams and the build table's ● glyph, the build emits no
+// /coral/<slug> static HTML. Every request server-renders;
+// getCoralAvailability's unstable_cache wrap (revalidate 300, key carries
+// toggle state) is the load-bearing cache. The const below is inert for
 // serving today — kept so the cadence intent survives if the route ever
 // regains static prerendering.
 export const revalidate = 300;
@@ -57,8 +47,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const coral = await getNamedCoralBySlug(slug);
   if (!coral) {
     // 404 copy duplicated at ./not-found.tsx metadata export — edit both or
-    // neither. This null-branch is RSC-flight-only (verified next@15.5.18);
-    // not-found.tsx paints the rendered head and is the keeper if one ever goes.
+    // neither. This null-branch is RSC-flight-only; not-found.tsx paints the
+    // rendered head and is the keeper if one ever goes.
     return {
       title: 'Coral not in seed list', // suffix via root title.template
       description:
@@ -68,8 +58,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title: `${coral.canonical_name} — current vendor availability`, // suffix via root title.template
     description: `Current vendor availability and pricing for ${coral.canonical_name}. Drop alerts across reef coral vendors.`,
-    // Canonical = bare route per the /vendor/[slug] precedent — the
-    // ?include-oos=1 toggle variant resolves to the bare-route SERP card.
+    // Canonical = bare route — the ?include-oos=1 toggle variant resolves to
+    // the bare-route SERP card.
     alternates: {
       canonical: `/coral/${slug}`,
     },
@@ -86,11 +76,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 const EMPTY_FALLBACK =
   "Nothing in stock right now. I'll surface it when it lists.";
 
-// CTK-126 D-2 — single-axis toggle chrome per the CTK-098 <SortFilterBar>
-// third-axis pattern (mono uppercase register, underline-on-active,
-// click-active-to-clear via canonical-chain bare-route). Toggle ONLY — no
-// SORT/FILTER axes per the 2026-06-05 chrome-scope ruling. Always rendered
-// (consistent chrome across populated/empty states, same as SortFilterBar).
+// Always rendered — consistent chrome across populated/empty states.
 function IncludeOOSToggle({
   slug,
   includeOOS,
@@ -124,17 +110,12 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
   const coral = await getNamedCoralBySlug(slug);
   if (!coral) notFound();
 
-  // CTK-128 (g) (CTK-126 re-run F3): availability + the second-signal count
-  // fire concurrently. The count was a serial await on the all-OOS default
-  // render — exactly the third-state surface, and every request here is a
-  // live server render (no prerender; see the header) — and it's a cheap
-  // COUNT behind its own 300s unstable_cache, so the speculative fire on
-  // the populated majority path costs at most one extra cached query per
-  // coral per window. Accepted coupling: a count failure now rejects the
-  // whole render even when the value goes unconsumed — same Neon, same
-  // request; the marginal exposure (count fails while availability
-  // succeeds) is narrow, and pre-change the consuming branch threw on
-  // count failure anyway.
+  // Availability + the second-signal count fire concurrently. The count is a
+  // cheap COUNT behind its own 300s unstable_cache, so the speculative fire on
+  // the populated majority path costs at most one extra cached query per coral
+  // per window. Accepted coupling: a count failure now rejects the whole render
+  // even when the value goes unconsumed — same Neon, same request; the marginal
+  // exposure (count fails while availability succeeds) is narrow.
   const [listings, inWindowVendorCount] = await Promise.all([
     getCoralAvailability(coral.id, includeOOS),
     getCoralInWindowVendorCount(coral.id),
@@ -142,23 +123,21 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
   const lineageFields = buildLineageFields(coral);
   const hasListings = listings.length > 0;
 
-  // CTK-126 fold (/code-review #1, Tier 1A) — three availability states per
-  // branding-guide §"Eyebrow shape + slot" + §"Section transitions" (third
-  // state locked /brand-manager 2026-06-05). Branch order: populated (ANY
-  // in-stock row) → all-OOS (in-window rows exist, none in stock) → empty
-  // (zero in-window listings; NOT LISTED / "Currently unavailable." now
-  // reserved for this state — they were false over an all-OOS set, the live
-  // defect). State classifies by stock, not by rendered-row count, so the
-  // toggled-on view of an all-OOS set also reads "Currently out of stock."
-  // N = distinct vendors across the in-window (all-OOS) set: derived from
-  // the rendered rows when toggled on, from the stock-unfiltered count query
-  // when the default view excludes them (/lead-backend call — separate cheap
-  // signal, do NOT widen the default availability query). The count fires
-  // unconditionally in the Promise.all above (CTK-128 (g)); its value is
-  // CONSUMED only on the innermost leaf (no in-stock row AND zero rendered
-  // rows). The rendered-rows derivation on the middle arm is load-bearing:
-  // the eyebrow N must match the rows the user is looking at, not a count
-  // from a second cache entry that can skew within its own 300s window.
+  // Three availability states per branding-guide §"Eyebrow shape + slot" +
+  // §"Section transitions". Branch order: populated (ANY in-stock row) →
+  // all-OOS (in-window rows exist, none in stock) → empty (zero in-window
+  // listings; NOT LISTED / "Currently unavailable." reserved for this state —
+  // they were false over an all-OOS set). State classifies by stock, not by
+  // rendered-row count, so the toggled-on view of an all-OOS set also reads
+  // "Currently out of stock." N = distinct vendors across the in-window
+  // (all-OOS) set: derived from the rendered rows when toggled on, from the
+  // stock-unfiltered count query when the default view excludes them (separate
+  // cheap signal, do NOT widen the default availability query). The count fires
+  // unconditionally in the Promise.all above; its value is CONSUMED only on the
+  // innermost leaf (no in-stock row AND zero rendered rows). The rendered-rows
+  // derivation on the middle arm is load-bearing: the eyebrow N must match the
+  // rows the user is looking at, not a count from a second cache entry that can
+  // skew within its own 300s window.
   const hasInStockRow = listings.some((l) => l.inStock);
   const oosVendorCount = hasInStockRow
     ? 0
@@ -178,10 +157,9 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
     hasInStockRow || isAllOOS ? null : await getCoralLastSeenAt(coral.id);
   // All-OOS eyebrow: count chunk keeps continuity with the populated state;
   // freshness chunk omitted ("last seen" is ambiguous across an all-OOS set;
-  // per-row Listed. carries it once toggled on) per the eyebrow-slot lock.
-  // CTK-127 fold #1 (Tier 1A): LATEST = max(firstSeenAt) over the set — the
-  // buy-intent ladder orders cheapest-first, so index 0 is no longer the
-  // newest row.
+  // per-row Listed. carries it once toggled on).
+  // LATEST = max(firstSeenAt) over the set — the buy-intent ladder orders
+  // cheapest-first, so index 0 is no longer the newest row.
   const eyebrowChunks = hasInStockRow
     ? [
         `${listings.length} ${pluralize(listings.length, 'VENDOR', 'VENDORS')}`,
@@ -226,10 +204,10 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
           ))}
         </div>
       ) : isAllOOS ? (
-        // Locked one-line hint per branding-guide §"Section transitions"
-        // third state — without it the state is a dead end (eyebrow says N
-        // vendors carry it, default view shows no rows). Mono-uppercase
-        // phrase names the literal toggle label.
+        // One-line hint per branding-guide §"Section transitions" third state —
+        // without it the state is a dead end (eyebrow says N vendors carry it,
+        // default view shows no rows). Mono-uppercase phrase names the literal
+        // toggle label.
         <p role="status" className="text-base text-ink py-6">
           All listings are out of stock right now &mdash;{' '}
           <span className="font-mono text-sm uppercase tracking-[0.08em]">
@@ -243,11 +221,8 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
         </p>
       )}
 
-      {/* CTK-126 — match-provenance pointer. One line; the canonical copy
-          lives in the /corals "About this list." block (links, never
-          duplicates). Link rides the phrase per the rev1 lock, underlined
-          at rest per branding-guide L196 link default (the /corals row-stack
-          hover-only carve-out doesn't reach prose links). */}
+      {/* The canonical match-provenance copy lives in the /corals "About this
+          list." block — link, never duplicate. */}
       <p className="mt-4 text-sm">
         Matched by name to{' '}
         <Link href="/corals#about-this-list" className="underline">

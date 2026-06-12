@@ -1,7 +1,5 @@
-// §3.3 <AccentDot>
-// Renders the literal forest #1B5E20 bullet character (U+25CF).
-// Forest jobs 3 (wishlist-match) + 5 (scraper-status) per branding-guide.md §"Color system".
-// No color prop; variant is exhaustive against the brand-guide jobs.
+// No color prop; variant is exhaustive against forest's jobs (wishlist-match
+// + scraper-status per branding-guide §"Color system").
 
 type AccentDotVariant = 'wishlist-match' | 'scraper-status';
 

@@ -1,21 +1,12 @@
 // §"Mono uppercase register" — Plex Mono uppercase letterspaced ~0.08em chrome
-// terminating the row stack on paginated inventory surfaces. Brand-canon shape
-// locked at /brand-manager session 2026-05-18 §Q-5 (CTK-040 close-sweep):
+// terminating the row stack on paginated inventory surfaces:
 //
 //   PREV · PAGE 2 OF 7 · NEXT
 //
-// Forest mid-dot separators bind the three segments as a single chrome unit
-// (eyebrow precedent — branding-guide.md §"Mono uppercase register" line 206);
+// Forest mid-dot separators bind the three segments as a single chrome unit;
 // bare PREV / NEXT text with underline-on-hover (no arrows; no color shift on
-// hover per §"Color system" line 175 anti-dilution rule); disabled state at
-// boundary pages = opacity 0.4 + no underline (no color shift); vertical
-// rhythm pt-7 (28px above, separates from final row) + pb-4 (16px below,
-// signals list-bottom) per §"Group dividers" line 287 precedent.
-//
-// Single-view co-located per CTK-046 plan §Decision D inclusion bar — only
-// /vendor/[slug] consumes at v1. Promotes to components/ui/pagination-nav.tsx
-// when a second view adopts pagination (live trigger: CTK-015 first-ship
-// Lighthouse audit on /new or /deals reopening their LIMIT 100 caps).
+// hover per the §"Color system" anti-dilution rule); disabled state at
+// boundary pages = opacity 0.4 + no underline (no color shift).
 
 import Link from 'next/link';
 import type { ListingCategory, ListingSort } from '@/lib/queries/listings';
@@ -24,22 +15,18 @@ interface PaginationNavProps {
   currentPage: number;
   totalPages: number;
   slug: string;
-  // CTK-053: filter/sort state preserved across pagination — clicking NEXT
-  // on /vendor/wwc?category=sps routes to /vendor/wwc?category=sps&page=2,
-  // not /vendor/wwc?page=2. Defaults match the no-filter/no-sort case so
-  // pre-CTK-053 callers (none currently — single-view co-located) stay
-  // untouched.
+  // Filter/sort state preserved across pagination — clicking NEXT on
+  // /vendor/wwc?category=sps routes to /vendor/wwc?category=sps&page=2, not
+  // /vendor/wwc?page=2. Defaults match the no-filter/no-sort case.
   sort?: ListingSort;
   category?: ListingCategory | null;
   includeOOS?: boolean;
 }
 
-// Page 1 routes to bare URL per site.md §6 SEO discipline (canonical = bare
-// route, no ?page query) — keeps prev/next href shape consistent with the
-// canonical chain. CTK-053: sort + category + in-stock params preserved on
-// every prev/next href so pagination stays inside the filtered subset.
-// CTK-098 (2026-05-31): in-stock param renamed ?in-stock=1 → ?include-oos=1
-// per /brand-manager INV-02 lock; semantic flipped to default-in-stock-only.
+// Page 1 routes to bare URL (canonical = bare route, no ?page query) — keeps
+// prev/next href shape consistent with the canonical chain. Sort + category +
+// in-stock params preserved on every prev/next href so pagination stays inside
+// the filtered subset.
 function hrefForPage(
   slug: string,
   page: number,

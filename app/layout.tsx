@@ -8,10 +8,9 @@ import { Footer } from '@/components/footer';
 import { RelativeTimeProvider } from '@/components/ui/relative-time';
 
 // Per-page openGraph blocks repeat siteName/type/locale deliberately — Next
-// replaces a parent segment's openGraph wholesale (no field merge, next@15.5.18
-// resolve-metadata), so hoisting the shared fields to this root export would
-// silently strip og:* from every page. Shared-helper consolidation deferred to
-// CTK-017.
+// replaces a parent segment's openGraph wholesale (no field merge), so
+// hoisting the shared fields to this root export would silently strip og:*
+// from every page.
 export const metadata: Metadata = {
   metadataBase: new URL('https://coralticker.com'),
   title: { template: '%s — CoralTicker', default: 'CoralTicker' },

@@ -1,28 +1,16 @@
-// lib/email/send.ts
+// Body-agnostic email transport. Carries ZERO row-format logic — transport
+// neither knows nor cares what's in `html`.
 //
-// Body-agnostic email transport with the D-3 failure-alert posture. This is the
-// shared send wrapper CTK-136's digest reuses UNCHANGED — it carries ZERO row-
-// format logic. INV-01 (the formatDataRow() render contract) is a body-builder
-// concern: CTK-136 builds finished HTML from formatDataRow() and hands it to
-// sendEmail(); the CTK-016 confirm email is transactional and INV-01-exempt.
-// Transport neither knows nor cares what's in `html`.
-//
-// D-3 failure posture: try/catch the Resend call; on failure console.error
-// (Vercel function log) AND POST the operator Slack channel — decision #39's
-// operator/user split, extended from #39's GH-Actions curl to a server-side
-// fetch. The signup action IGNORES the {sent} return for control flow: the row
-// is already written, capture is the contract, so a send failure never fails the
-// signup (Leg 3). The return exists for callers that want to observe send state.
-//
-// alertSlack is COPIED verbatim from app/api/cron/discord-digest/route.ts.
-// Folding both copies into a shared lib/ helper is a Tier-3 cleanup deferred per
-// CTK-016 plan out-of-scope — explicitly NOT this ticket.
+// Failure posture: try/catch the Resend call; on failure console.error (Vercel
+// function log) AND POST the operator Slack channel. The signup action IGNORES
+// the {sent} return for control flow: the row is already written, capture is the
+// contract, so a send failure never fails the signup. The return exists for
+// callers that want to observe send state.
 //
 // Dry-run: with RESEND_API_KEY unset (local / CI), sendEmail logs the envelope
 // and returns {sent:false} WITHOUT calling Resend or alerting — a keyless path
 // is not a failure. Production always has the key in Vercel env, so keyless only
-// happens off-prod where dry-run is the intent (CTK-016 dependency note: the
-// local dry-run path must not require RESEND_API_KEY).
+// happens off-prod where dry-run is the intent.
 
 import { getResend } from './client.ts';
 import { FROM } from './from.ts';
@@ -34,9 +22,7 @@ export interface SendEmailArgs {
   headers?: Record<string, string>;
 }
 
-// COPIED verbatim from app/api/cron/discord-digest/route.ts (Tier-3 extraction
-// deferred — see module header). Self-catching: an alert failure must not mask
-// the send failure it is reporting.
+// Self-catching: an alert failure must not mask the send failure it is reporting.
 async function alertSlack(text: string): Promise<void> {
   const webhook = process.env.SLACK_WEBHOOK_URL;
   if (!webhook) {

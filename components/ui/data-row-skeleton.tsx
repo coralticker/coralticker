@@ -1,19 +1,7 @@
-// §3.2.1 <DataRowSkeleton> — paired loading-state primitive
-// "The skeleton is the voice" — labels render as static text, values as animated
-// pulse-bar placeholders. Same DataRowField[] shape inherited from <DataRow>.
-//
-// Brand discipline (per Decision M + Decision F):
-//   - Pulse-bar placeholder color is NEUTRAL GRAY, not forest. Pulse is not one of
-//     forest's 5 jobs (branding-guide.md §"Color system").
-//   - Labels stay Plex Sans bold (same register as <DataRow> labels).
-//   - role="status" + aria-busy="true"; aria-label synthesized from field labels.
-//   - prefers-reduced-motion: reduce → static structural skeleton (Tailwind
-//     animate-pulse honors the media query via app/globals.css block).
-//   - No width/pulse/count/density props — no escape hatch.
-//
-// Ships against text spec only at Session 1a (no design-tool PDF render);
-// /brand-manager coherence-sweep fires at Session 3 `/new` first-feed-render
-// per Gate-1 flag 2.
+// Pulse-bar placeholder color is NEUTRAL GRAY, not forest — pulse is not one
+// of forest's 5 jobs (branding-guide §"Color system"). prefers-reduced-motion:
+// reduce → static structural skeleton (Tailwind animate-pulse honors the media
+// query via app/globals.css block).
 
 import { Fragment } from 'react';
 import type { DataRowField } from '@/components/ui/data-row';

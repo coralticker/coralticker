@@ -1,15 +1,6 @@
-// Em-dash auto-collapse + class-casing + sentinel-suppression coverage at the
-// data boundary, where the field-array contract lands. <DataRow> emits a
-// separator only between bound fields (components/ui/data-row.tsx L60-61),
-// so testing that a suppressed Origin field is OMITTED from the array
-// proves the em-dash collapse without needing a JSX render harness.
-//
-// Per feedback_review_results_spec_flow_trace.md — diff-at-consumer ≠
-// behavior-at-DOM. buildLineageFields() is the boundary; the primitive's
-// already-tested interleaving contract carries the rest.
-//
-// Runs via Node's built-in test runner with native TypeScript type stripping:
-//   node --test --experimental-strip-types lib/format/*.test.ts
+// <DataRow> emits a separator only between bound fields, so testing that a
+// suppressed Origin field is OMITTED from the array proves the em-dash collapse
+// without needing a JSX render harness.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -86,9 +77,8 @@ test('buildLineageFields: type + single-value origin → 2 fields, originator ex
 });
 
 test('buildLineageFields: type + compound origin Tyree/Reeffarmers → 2 fields, compound display joined', () => {
-  // SC-2 compound-row exercise — Tyree/Reeffarmers exercises both the
-  // compound-split branch AND the Reeffarmers standalone-component-render
-  // branch in one row.
+  // Tyree/Reeffarmers exercises both the compound-split branch AND the
+  // Reeffarmers standalone-component-render branch in one row.
   const fields = buildLineageFields(
     coral({ coral_type: 'LPS', origin_vendor: 'Tyree/Reeffarmers' }),
   );

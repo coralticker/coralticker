@@ -6,11 +6,10 @@
 // order, same labels, same em-dash separator, same value-kind text.
 
 import type { DataRowField } from '@/components/ui/data-row';
-// Sibling-relative with explicit .ts extension (tsconfig has
-// allowImportingTsExtensions) so this module loads under plain
+// Sibling-relative with explicit .ts extension so this module loads under plain
 // `node --experimental-strip-types` — the `@/` alias is a bundler-only
-// resolution and breaks the CTK-011 standalone digest script, which is
-// this primitive's first non-Next consumer.
+// resolution and breaks the standalone digest script, this primitive's first
+// non-Next consumer.
 import { formatRelativeTime } from './relative-time.ts';
 
 export function formatDataRow(fields: DataRowField[], now: Date): string {
@@ -36,14 +35,12 @@ function formatValue(value: DataRowField['value'], now: Date): string {
       // No connective words: the struck old value + the emphasized new value
       // already carry "old -> new" (branding-guide.md §"State markers": "the eye
       // reads the state without copy"). Adjacency-with-a-space mirrors the web
-      // <DataRow> card (components/ui/data-row.tsx — <del>old</del>{' '}<new>), so
-      // email / Discord / push render card-identical. (Was `was X, now Y` until
-      // 2026-06-09 — dropped per Jon; /brand-manager folds the canon line.)
+      // <DataRow> card, so email / Discord / push render card-identical.
       return `${value.oldValue} ${value.newValue}`;
     case 'vendor-markdown':
-      // Shared shape with price-drop-new per /brand-manager Lock 1 (CTK-100):
-      // reefer-facing semantic is identical at the field level, so INV-01
-      // channel-adapters inherit one rendering shape for both value-kinds.
+      // Shared shape with price-drop-new: reefer-facing semantic is identical at
+      // the field level, so INV-01 channel-adapters inherit one rendering shape
+      // for both value-kinds.
       return `${value.oldValue} ${value.newValue}`;
     case 'italic':
       // DOM-only emphasis (<em>). Non-DOM channels carry the bare text;

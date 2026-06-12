@@ -1,11 +1,5 @@
-// §3.5.7 <GroupDivider> — feed-shape day-bucket separator
-//
-// Forest single-pixel hairline + mono uppercase letterspaced label rendered at
-// the row's Ref-field left edge + 28px above / 16px below padding. The
-// composition encapsulates all four (hairline, label render, label register,
-// padding). The label string is caller-formatted (per branding-guide.md
-// §"Group dividers" line 260 ladder); view loops compute the boundary
-// transition and label via lib/format/group-bucket.ts.
+// The label string is caller-formatted (branding-guide §"Group dividers"
+// ladder); view loops compute the boundary transition and label.
 
 interface GroupDividerProps {
   label: string;

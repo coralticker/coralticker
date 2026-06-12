@@ -1,21 +1,14 @@
 'use client';
 
-// §3.5.8 <SignupForm> — embedded email-signup composition.
-//
-// Composes <Input type="email"> + <Button type="submit"> per §3.4.1. Hidden
-// <input name="source"> threads attribution to the Server Action. Copy is
-// hardcoded internally per Decision F + site.md §3.5.8 form-copy-hardcoded
-// rule — placeholder / button / errors / success all live here.
+// Hidden <input name="source"> threads attribution to the Server Action.
 //
 // Submit-pending: button stays disabled with the "Subscribe" label unchanged
-// (silent loading per branding-guide.md §"Loading-state copy"). Success and
+// (silent loading per branding-guide §"Loading-state copy"). Success and
 // already-subscribed states replace the form inline (no navigation); errors
 // surface inline in the aria-live region with the form mounted for retry.
 //
-// showLabel prop (default true) controls whether the internal
-// "New arrivals in your inbox." section label renders. Standalone consumers
-// where a page-H1 already carries that hierarchy (e.g., /signup direct route
-// per site.md §4.6) pass showLabel={false} to suppress the duplicate. The
+// showLabel suppresses the duplicate internal section label for standalone
+// consumers where a page-H1 already carries that hierarchy. The
 // <Input aria-label="Email"> retains accessible-name coverage when the
 // <label> is suppressed.
 

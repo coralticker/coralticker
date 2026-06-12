@@ -1,21 +1,5 @@
 'use server';
 
-// §4.6 — /signup Server Action.
-//
-// Receives FormData from <SignupForm>; validates email format + source ENUM;
-// writes into email_signups per architecture-v1.md §1.9.1 with re-subscribe
-// semantics for previously-unsubscribed rows.
-//
-// Returns SignupActionResult discriminated union — site.md §4.6 contract is
-// payload-only conceptually, but useActionState's wire-shape threads
-// prev-state as first arg.
-//
-// CTK-043 cut-4 (2026-05-16): migrated from supabase-js to
-// @neondatabase/serverless. The 3-statement INSERT → SELECT (on 23505) →
-// UPDATE flow is preserved verbatim; pg surfaces the unique_violation
-// SQLSTATE as `err.code === '23505'` the same way supabase-js did. Folding
-// to ON CONFLICT DO UPDATE is out of scope this cut (recoverable later).
-
 import { after } from 'next/server';
 import { getNeonSql } from '@/lib/db/neon';
 import { isEmailSignupSource } from '@/types/email-signups';
@@ -31,11 +15,11 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const VALIDATION_ERROR = "That doesn't look like an email address.";
 const DB_ERROR = "Something's off. Try again in a moment.";
 
-// Best-effort confirm send (D-3), shared by the fresh-INSERT and re-subscribe
-// paths. sendEmail is self-catching and never throws — a Resend failure logs +
-// alerts the operator channel internally but never fails the capture. Deferred
-// via after() at the call sites so it runs post-response, off the Tier-1B
-// signup hot path; {sent} is ignored either way (capture is the contract).
+// Best-effort confirm send, shared by the fresh-INSERT and re-subscribe paths.
+// sendEmail is self-catching and never throws — a Resend failure logs + alerts
+// the operator channel internally but never fails the capture. Deferred via
+// after() at the call sites so it runs post-response, off the signup hot path;
+// {sent} is ignored either way (capture is the contract).
 async function sendConfirm(email: string, token: string): Promise<void> {
   const { subject, html } = confirmEmail(token);
   await sendEmail({ to: email, subject, html });
@@ -62,13 +46,12 @@ export async function signupAction(
 
   const sql = getNeonSql();
 
-  // Statement 1: INSERT. App-mints the per-row token (CTK-016 D-1), overriding
-  // the 0037 gen_random_uuid()::text default (the default is RETAINED as the
-  // live-path safety net — never dropped). RETURNING token reads back what
-  // actually landed. On unique_violation (23505) the row already exists; fall
-  // through to the re-subscribe SELECT/UPDATE. Only DB work lives in this try —
-  // the confirm-email send happens after it resolves so a (self-catching) send
-  // can never be mistaken for a DB error.
+  // App-mints the per-row token, overriding the gen_random_uuid()::text default
+  // (the default is RETAINED as the live-path safety net — never dropped).
+  // RETURNING token reads back what actually landed. On unique_violation (23505)
+  // the row already exists; fall through to the re-subscribe SELECT/UPDATE. Only
+  // DB work lives in this try — the confirm-email send happens after it resolves
+  // so a (self-catching) send can never be mistaken for a DB error.
   const token = generate();
   let insertedToken: string | null = null;
   try {
@@ -96,10 +79,10 @@ export async function signupAction(
     return { ok: true, alreadySubscribed: false };
   }
 
-  // Statement 2: SELECT existing row to branch on subscription status. Projects
-  // confirmed_at + token (beyond unsubscribed_at) so the active-row branch below
-  // can distinguish a genuinely-subscribed row from a pending-confirmation one
-  // and re-send the confirm where needed (CTK-136 /code-review F2).
+  // SELECT existing row to branch on subscription status. Projects confirmed_at
+  // + token (beyond unsubscribed_at) so the active-row branch below can
+  // distinguish a genuinely-subscribed row from a pending-confirmation one and
+  // re-send the confirm where needed.
   let existing:
     | { id: number; unsubscribed_at: string | null; confirmed_at: string | null; token: string }
     | null = null;
@@ -124,7 +107,7 @@ export async function signupAction(
     return { ok: false, error: DB_ERROR };
   }
 
-  // Active row (not unsubscribed). Two sub-cases (CTK-136 /code-review F2):
+  // Active row (not unsubscribed). Two sub-cases:
   if (existing.unsubscribed_at === null) {
     if (existing.confirmed_at !== null) {
       // Genuinely subscribed + confirmed — true no-op.
@@ -141,10 +124,10 @@ export async function signupAction(
     return { ok: true, alreadySubscribed: false };
   }
 
-  // Statement 3: re-subscribe — clear unsubscribed_at + reset confirmed_at +
-  // bump subscribed_at. Resetting confirmed_at to NULL forces a fresh
-  // double-opt-in (Q-6, option (c)): a confirm→unsubscribe→re-subscribe address
-  // must re-confirm before re-entering the digest recipient set, which gates on
+  // Re-subscribe — clear unsubscribed_at + reset confirmed_at + bump
+  // subscribed_at. Resetting confirmed_at to NULL forces a fresh double-opt-in:
+  // a confirm→unsubscribe→re-subscribe address must re-confirm before
+  // re-entering the digest recipient set, which gates on
   // `confirmed_at IS NOT NULL AND unsubscribed_at IS NULL`. Without this reset,
   // clearing unsubscribed_at alone re-admits the address the instant the form is
   // submitted — re-mailing a previously-unsubscribed, unauthenticated address

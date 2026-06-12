@@ -1,11 +1,3 @@
-// getRequiredEnv coverage (CTK-128 (f)). Pins the contract the three
-// module-scope consumers (lib/db/neon.ts, app/corals/page.tsx,
-// app/about/_components/social-links.tsx) rely on: set → value through,
-// missing OR empty → throw, message names the var + .env.example.
-//
-// Runs via Node's built-in test runner with native TypeScript type stripping:
-//   node --test --experimental-strip-types lib/*.test.ts
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { getRequiredEnv } from './env.ts';

@@ -1,8 +1,7 @@
 // Originator full-name resolver per branding-guide.md §"Originator full names
-// (per the `origin_vendor` field on named corals)". DB values are display-form
-// (per migration 0012 + CTK-029 v1 A1 seed-curation convention); this resolver
-// expands the canon abbreviations to display strings per the 8-value table +
-// handles the sentinel + compound branches.
+// (per the `origin_vendor` field on named corals)". DB values are display-form;
+// this resolver expands the canon abbreviations to display strings per the
+// 8-value table + handles the sentinel + compound branches.
 //
 // Algorithm (branding-guide.md §"Compound-attribution shape"):
 //   1. Sentinel exact-match — `community/canonical` → { suppress: true }.
@@ -13,8 +12,7 @@
 //   3. Single-value lookup — degenerate 1-component compound; same algorithm.
 //
 // Unknown components passthrough to the raw component value per the drift-add
-// discipline in branding-guide.md §"Drift-add discipline for originator
-// values". /code-review flags unknown components at close-gate.
+// discipline in branding-guide.md §"Drift-add discipline for originator values".
 
 export type OriginVendorRender =
   | { display: string; suppress?: false }
@@ -22,9 +20,9 @@ export type OriginVendorRender =
 
 const SENTINEL_SUPPRESS = 'community/canonical';
 
-// 8-value canon table per branding-guide.md L132-142. Keys are the DB
-// values (display-form already, NOT normalized identifiers); values are the
-// expanded display strings rendered at lineage row + Lineage. field.
+// 8-value canon table per branding-guide.md §"Originator full names". Keys are
+// the DB values (display-form already, NOT normalized identifiers); values are
+// the expanded display strings rendered at lineage row + Lineage. field.
 const ORIGIN_VENDOR_DISPLAY: Record<string, string> = {
   WWC: 'World Wide Corals',
   TSA: 'Top Shelf Aquatics',
@@ -33,10 +31,9 @@ const ORIGIN_VENDOR_DISPLAY: Record<string, string> = {
   ORA: 'ORA',
   Tyree: 'Steve Tyree',
   Reeffarmers: 'Reeffarmers',
-  // CTK-126 seed-attribution drift-add (branding-guide L143-144). Both display
-  // as their own value: 'Pro Corals' is the plain full-name default ("PC" is
-  // in-name shorthand only); 'GARF' is the self-branded-abbreviation carve-out
-  // (ORA pattern, expansion reserved for /about-class contexts).
+  // Both display as their own value: 'Pro Corals' is the plain full-name default
+  // ("PC" is in-name shorthand only); 'GARF' is the self-branded-abbreviation
+  // carve-out (ORA pattern, expansion reserved for /about-class contexts).
   'Pro Corals': 'Pro Corals',
   GARF: 'GARF',
 };

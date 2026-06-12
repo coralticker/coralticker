@@ -1,12 +1,3 @@
-// Allowlist coverage for the <SortFilterBar> URL-state parsers (CTK-127
-// fold #9). Two branches per parser: allowlisted values round-trip; absent /
-// tampered inputs fall back to the bare default per canonical-chain
-// discipline. Allowlists derive from the label-record keys, so these tests
-// also pin the record memberships.
-//
-// Runs via Node's built-in test runner with native TypeScript type stripping:
-//   node --test --experimental-strip-types lib/queries/*.test.ts
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -65,8 +56,9 @@ test('parseCategory: label record carries the 8 locked chips in display order', 
   ]);
 });
 
-// CTK-058 D-058-4 — /search query normalizer. Mirror cases against the §3.3
-// runtime rules the stored normalized_title/normalized_name were built with.
+// /search query normalizer. Cases mirror the runtime rules the stored
+// normalized_title/normalized_name were built with — a query must reach the
+// same form or the match silently misses.
 
 test('parseSearchQuery: plain query round-trips lowercased', () => {
   assert.equal(parseSearchQuery('homewrecker'), 'homewrecker');
@@ -94,8 +86,8 @@ test('parseSearchQuery: empty / missing / whitespace-only fall back to null', ()
 });
 
 test('parseSearchQuery: array input (duplicate ?q= keys) takes the first value', () => {
-  // Next.js delivers string[] on ?q=a&q=b — guard per /code-review fold #1;
-  // pre-guard code threw in generateMetadata + the page body (500).
+  // Next.js delivers string[] on ?q=a&q=b — take the first value; pre-guard
+  // code threw in generateMetadata + the page body (500).
   assert.equal(parseSearchQuery(['a', 'b']), 'a');
   assert.equal(parseSearchQuery([]), null);
   assert.equal(parseSearchQuery(['', 'b']), null);
@@ -110,15 +102,14 @@ test('parseSearchQuery: caps at SEARCH_QUERY_MAX_LENGTH post-normalization', () 
 });
 
 test('parseSearchQuery: SQL metacharacters pass through for the pattern-builder to escape', () => {
-  // Escaping is buildIlikePatterns' job (lib/queries/search.ts) — the parser
-  // must not strip or double-handle % / _ / !.
+  // Escaping is buildIlikePatterns' job — the parser must not strip or
+  // double-handle % / _ / !.
   assert.equal(parseSearchQuery('50%_off!'), '50%_off!');
 });
 
-// CTK-130 #7/#8 — shared code-point-safe clamp. The former .slice(0, N) sites
-// (parseSearchQuery + the view-side echo) counted UTF-16 units and could split
-// a surrogate pair at the cap boundary; clampSearchLength truncates on whole
-// code points.
+// Shared code-point-safe clamp. The former .slice(0, N) sites (parseSearchQuery
+// + the view-side echo) counted UTF-16 units and could split a surrogate pair
+// at the cap boundary; clampSearchLength truncates on whole code points.
 
 test('clampSearchLength: BMP string truncates at the cap unchanged', () => {
   const long = 'a'.repeat(SEARCH_QUERY_MAX_LENGTH + 10);
@@ -148,7 +139,7 @@ test('parseSearchQuery: surrogate-pair query caps without a lone surrogate', () 
 
 test('clampSearchEcho: raw echo — first array value, trimmed, code-point clamped', () => {
   // Mirrors parseSearchQuery's array guard (first value wins) but echoes RAW,
-  // un-normalized text (CTK-058 locked decision).
+  // un-normalized text.
   assert.equal(clampSearchEcho('  Rainbow BOZO  '), 'Rainbow BOZO'); // un-lowercased
   assert.equal(clampSearchEcho(['first', 'second']), 'first');
   assert.equal(clampSearchEcho(undefined), '');

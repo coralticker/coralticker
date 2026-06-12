@@ -1,17 +1,12 @@
 'use client';
 
-// §0.2 #4 — Route-level error boundary.
+// Route-level error boundary — catches Server Component throws across all
+// views. App Router requires 'use client' for error boundaries. Retry click
+// swaps visible copy to "Retrying." before invoking reset() — the one loading
+// state that earns visible copy.
 //
-// Catches Server Component throws across all views. App Router requires
-// 'use client' for error boundaries. Initial fallback uses the "I'm fixing it"
-// downtime register per branding-guide.md §"Downtime / error copy"
-// (first-person carve-out at line 98). Retry click swaps visible copy to
-// "Retrying." before invoking reset() — the one loading state that earns
-// visible copy per §"Loading-state copy".
-//
-// {timestamp} surfaces last-successful-scrape time at runtime via
-// getLastScrapeTimestamp() helper landing in a downstream session. Session 1b
-// renders an em-dash literal as the placeholder seam.
+// The em-dash literal is a placeholder seam — last-successful-scrape time
+// wiring lands in a downstream session.
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';

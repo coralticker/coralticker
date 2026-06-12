@@ -26,9 +26,9 @@ import {
   type PriceDropListing,
 } from '@/lib/queries/listings';
 
-// CTK-127: the searchParams read below flips this route dynamic at runtime
-// (CTK-046/126 precedent); getRecentPriceDrops' unstable_cache wrap keyed on
-// (sort, category) carries the 300s data cadence.
+// The searchParams read below flips this route dynamic at runtime;
+// getRecentPriceDrops' unstable_cache wrap keyed on (sort, category) carries
+// the 300s data cadence.
 export const revalidate = 300;
 
 export const metadata: Metadata = {
@@ -46,19 +46,17 @@ interface PageProps {
 
 const SKELETON_ROW_COUNT = 6;
 
-// /deals user-facing window copy — derives from the exported constant the
-// RPC binds (CTK-124 D-1 one-constant pattern; branding-guide §"Eyebrow
-// shape + slot" CTK-124 Q-1 lock). Four consumers: downtime fallback,
-// filtered-empty line, filtered-zero eyebrow window chunk, populated-eyebrow
-// middle chunk. Singular-guarded against a hypothetical 1-day window.
+// User-facing window copy derives from the exported constant the RPC binds
+// (one-constant pattern), so it can't drift from the actual window.
+// Singular-guarded against a hypothetical 1-day window.
 const PRICE_DROP_WINDOW =
   DEALS_WINDOW_DAYS === 1 ? '1 day' : `${DEALS_WINDOW_DAYS} days`;
 
 const DOWNTIME_FALLBACK = `No price drops in the last ${PRICE_DROP_WINDOW}. I'll surface them as vendors update.`;
 
-// CTK-127: arg-taking per the /review-plan cache() re-key pin — a no-arg
-// wrapper would serve one cached shape for all filter states in a request
-// tree; React cache() keys per-request dedup by the (sort, category) args.
+// Arg-taking is load-bearing: a no-arg wrapper would serve one cached shape
+// for all filter states in a request tree; React cache() keys per-request
+// dedup by the (sort, category) args.
 const dropsCached = cache(
   (sort: ListingSort, category: ListingCategory | null) =>
     getRecentPriceDrops(sort, category),
@@ -71,11 +69,10 @@ const latestDropCached = cache((category: ListingCategory | null) =>
 );
 
 function priceDropToProps(d: PriceDropListing) {
-  // CTK-047 Session 5 / CTK-124 — <ListingCard> derives the lead from listing
-  // fields; no explicit event prop needed. Drop-arm rows: priorPrice non-null
-  // → price-drop-new render. Markdown-only union rows: priorPrice null,
-  // compareAtPrice carries the slash → vendor-markdown render + Q3 lead
-  // promotion. No kind-disclosure either way (canon: structural-not-visual).
+  // <ListingCard> derives the lead from listing fields; no explicit event prop
+  // needed. priorPrice non-null → price-drop-new render; priorPrice null with
+  // compareAtPrice slash → vendor-markdown render. No kind-disclosure either
+  // way (canon: structural-not-visual).
   return { listing: d };
 }
 
@@ -94,9 +91,8 @@ async function Eyebrow({
   if (drops.length === 0) {
     // Bare zero — eyebrow suppressed; the downtime fallback owns the surface.
     if (category === null) return null;
-    // Filtered zero (branding-guide §"Eyebrow shape + slot" filtered-eyebrows
-    // lock): qualified zero count + window chunk, freshness omitted — the
-    // window chunk earns the slot at zero where the freshness chunk is
+    // Filtered zero: qualified zero count + window chunk, freshness omitted —
+    // the window chunk earns the slot at zero where the freshness chunk is
     // impossible.
     return (
       <PageEyebrow
@@ -109,14 +105,12 @@ async function Eyebrow({
   }
 
   // LATEST reads the dedicated cap=1 newest-ladder fetch, NOT the rendered
-  // set (close-fold /code-review #1): post-0035 the wrapper cap truncates
-  // after the ladder sort, so under price sorts max(rendered.observedAt)
-  // reads the capped slice, not the window. Canon holds the chunk on every
-  // sort (branding-guide §"Eyebrow shape + slot": no eyebrow change under
-  // sort); the category arg keeps filtered eyebrows in-category-honest.
-  // Rendered-set fallback covers the fetch-race edge only (drops non-empty
-  // here, so a null latest means the window emptied between the two
-  // cached reads).
+  // set: the wrapper cap truncates after the ladder sort, so under price sorts
+  // max(rendered.observedAt) reads the capped slice, not the window. No
+  // eyebrow change under sort; the category arg keeps filtered eyebrows
+  // in-category-honest. Rendered-set fallback covers the fetch-race edge only
+  // (drops non-empty here, so a null latest means the window emptied between
+  // the two cached reads).
   const latestObservedAt =
     latestEventAt ?? latestTimestamp(drops, (d) => d.observedAt);
   const latestRelative = formatRelativeTime(latestObservedAt, new Date()).toUpperCase();
@@ -124,9 +118,7 @@ async function Eyebrow({
   // Filtered eyebrows qualify the count chunk — the filtered page covers the
   // category, not the market; a bare count under a filter silently overclaims
   // (disclosure-symmetry rule). Sort changes order, not coverage — no eyebrow
-  // change under sort. Count = union result length (CTK-124 canon — no
-  // kind-split); middle chunk is the window disclosure per branding-guide
-  // §"Eyebrow shape + slot" feed-views lock.
+  // change under sort.
   const countChunk =
     category === null
       ? `${drops.length} ${countNoun}`
@@ -152,11 +144,10 @@ async function PriceDropsFeed({
   const drops = await dropsCached(sort, category);
 
   if (drops.length === 0) {
-    // Filtered-empty line (branding-guide §"Short-copy assets", CTK-127): a
-    // filter miss is an honest zero, not a coverage gap — no I-voice second
-    // sentence, no promise. Category renders prose-register via the
-    // formatTypeLabel three-class resolver (SPS/LPS caps, Zoa/Clam Title
-    // Case). Bare-URL zero keeps DOWNTIME_FALLBACK.
+    // Filtered-empty line: a filter miss is an honest zero, not a coverage
+    // gap — no I-voice second sentence, no promise. Category renders
+    // prose-register via the formatTypeLabel three-class resolver. Bare-URL
+    // zero keeps DOWNTIME_FALLBACK.
     if (category !== null) {
       return (
         <p role="status" className="text-base text-ink py-6">
@@ -174,17 +165,14 @@ async function PriceDropsFeed({
 
   // Time-bucket dividers are chrome over a recency-ordered list; under
   // price-asc / price-desc they would interleave nonsensically. Dividers
-  // gate on the default sort — price-sorted feeds render flat (CTK-127).
+  // gate on the default sort — price-sorted feeds render flat.
   const withDividers = sort === 'newest';
 
   if (!withDividers || drops.length < DIVIDER_THRESHOLD) {
     return (
       <>
         {drops.map((d) => (
-          // CTK-124: bare id key — the 0033 union dedups to one row per
-          // listing (ROW_NUMBER, price-dropped precedence), retiring the
-          // CTK-127 fold #5 composite key the multi-event-per-listing
-          // zero-arg RPC required.
+          // Bare id key — the union dedups to one row per listing.
           <ListingCard key={d.id} {...priceDropToProps(d)} />
         ))}
       </>
@@ -197,7 +185,6 @@ async function PriceDropsFeed({
     if (label !== null) {
       out.push(<GroupDivider key={`div-${i}`} label={label} />);
     }
-    // Bare id key per the flat path — one row per listing under 0033.
     out.push(<ListingCard key={row.id} {...priceDropToProps(row)} />);
   });
   return <>{out}</>;
@@ -232,8 +219,7 @@ export default async function DealsPage({ searchParams }: PageProps) {
       <PageH1 className="mb-8">
         Price drops.
       </PageH1>
-      {/* Two axes only — no INCLUDE OUT OF STOCK on feed surfaces per
-          branding-guide §"State markers" deal-buyer query-filter lock
+      {/* Two axes only — no INCLUDE OUT OF STOCK on feed surfaces
           (includeOOS omitted → axis not rendered). */}
       <SortFilterBar
         basePath="/deals"

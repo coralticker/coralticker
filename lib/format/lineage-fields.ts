@@ -3,23 +3,18 @@
 // originator full-name resolution (resolveOriginVendor) + sentinel
 // suppression in one boundary.
 //
-// Em-dash auto-collapse — `<DataRow>` (components/ui/data-row.tsx) interleaves
-// em-dash separators between BOUND fields only, so a suppressed Origin field
-// (community/canonical sentinel) simply doesn't enter this array; no orphan
-// separator can render. Per branding-guide.md §"Sentinel render policy": with
-// only Type populated the lineage row renders bare `Type. SPS` — no trailing
-// em-dash, no Origin slot. With both Type and Origin populated it renders
+// Em-dash auto-collapse — `<DataRow>` interleaves em-dash separators between
+// BOUND fields only, so a suppressed Origin field (community/canonical sentinel)
+// simply doesn't enter this array; no orphan separator can render. Per
+// branding-guide.md §"Sentinel render policy": with only Type populated the
+// lineage row renders bare `Type. SPS` — no trailing em-dash, no Origin slot.
+// With both Type and Origin populated it renders
 // `Type. SPS — Origin. World Wide Corals`.
 //
-// Lifted from app/coral/[slug]/page.tsx during CTK-092 Session 2 so the
-// sentinel-suppression + class-casing + originator-resolution composition
-// has a pure-function test boundary per feedback_review_results_spec_flow_
-// trace.md (diff-at-consumer ≠ behavior-at-DOM).
-//
-// Param is the structural subset, not NamedCoral (CTK-140): the /corals
-// index row carries only the identity pair, and both consumers — the full
-// NamedCoral on /coral/[slug], the widened CoralIndexRow on /corals — must
-// satisfy it without forking the builder.
+// Param is the structural subset, not NamedCoral: the /corals index row carries
+// only the identity pair, and both consumers — the full NamedCoral on
+// /coral/[slug], the widened CoralIndexRow on /corals — must satisfy it without
+// forking the builder.
 
 import type { DataRowField } from '@/components/ui/data-row';
 import type { NamedCoral } from '@/lib/queries/named-corals';

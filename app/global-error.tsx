@@ -1,20 +1,12 @@
 'use client';
 
-// app/global-error.tsx — Root-layout-throw fallback.
+// Root-layout-throw fallback — fires when the root layout (app/layout.tsx)
+// itself throws, so this surface has to render its own <html lang="en"> +
+// <body>: it sits outside the layout tree and cannot inherit it. App Router
+// requires 'use client' for error boundaries.
 //
-// Fires when the root layout (app/layout.tsx) itself throws, so this surface
-// has to render its own <html lang="en"> + <body> — it sits outside the layout
-// tree and cannot inherit it. App Router requires 'use client' for error
-// boundaries.
-//
-// Copy verbatim from branding-guide.md L77-80 downtime template
-// ("Scrapers are down. I'm fixing it. Last update: {timestamp}."); em-dash
-// placeholder stands in until last-successful-scrape timestamp wiring lands
-// (downstream session, same seam as app/error.tsx). Retry button mirrors
-// app/error.tsx:39-42 shape — "Retrying." swap-state per branding-guide.md L88.
-//
-// Folded in 2026-05-21 per /brand-manager INV-02 pre-first-implementation-session
-// gate for CTK-015 (coordination-invariants.md INV-02 checkpoint 1 of 3).
+// The em-dash placeholder stands in until last-successful-scrape timestamp
+// wiring lands (same seam as app/error.tsx).
 
 import { useState } from 'react';
 import { plexSans, plexMono } from './fonts';

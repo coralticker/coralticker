@@ -1,26 +1,10 @@
-// /about — static brand surface per site.md §4.7.
-//
-// First product-side surface using the "Jon" literal per branding-guide.md
-// line 97 personal-voice scope. Static page — no revalidate, no Suspense, no
-// data fetching. Vendor full names per branding-guide.md line 119 (no "WWC"
-// or "PEA" shorthand in product-voice copy). Copy verbatim from
-// /brand-manager Session 7 pre-session sweep.
-//
-// Metadata vocabulary per site.md §6.1 / architecture-v1.md §6.1.
-//
-// CTK-136 round-3-final price-methodology disclosure (Surface 2): the "One more
-// thing, on prices…" paragraph wired below per the directive lock 2026-06-10
-// (copy/round-3/price-methodology-final.md). Static <p>, no data.
-
 import type { Metadata } from 'next';
 import { SocialLinks } from './_components/social-links';
 import { PageShell } from '@/components/ui/page-shell';
 import { PageH1 } from '@/components/ui/page-h1';
 
-// Metadata wording verbatim from site.md §6.1 line 1709. Voice rule per
-// site.md §6.1 line 1717: no "Jon" at metadata altitude — product-voice
-// register across all surfaces' meta. Personal-voice work lives at the
-// page body below, not at the SERP card.
+// No "Jon" at metadata altitude — product-voice register across all surfaces'
+// meta. Personal-voice work lives at the page body below, not at the SERP card.
 export const metadata: Metadata = {
   title: 'About', // suffix via root title.template
   description: 'Who runs CoralTicker, why, and what it is.',

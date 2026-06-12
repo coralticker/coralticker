@@ -1,27 +1,15 @@
-// /signup — direct-route fallback per site.md §4.6.
-//
-// Surface 2 LOCKED copy verbatim from /brand-manager Session 7 pre-session
-// sweep. Static page — no revalidate, no Suspense, no data fetching. Server
-// Component shell wraps the existing <SignupForm> client composition.
-//
-// Engineering call on the SignupForm prop API: the directive's literal
-// source="standalone" doesn't match the locked email_signup_source ENUM (6
-// values per architecture-v1.md §1.9.1 + types/email-signups.ts). Picked the
-// directive's second-option shape — optional showLabel?: boolean default true
-// — over extending source (which would require an ALTER TYPE migration that
-// is out of Session 7 scope). showLabel={false} suppresses the internal
-// "New arrivals in your inbox." <label> so the page H1 carries hierarchy;
-// <Input aria-label="Email"> retains accessible-name coverage. source="other"
-// is the catch-all DB value per plan.md task line 208 lock.
-//
-// Metadata vocabulary per site.md §6.1 / architecture-v1.md §6.1.
+// showLabel was chosen over a new source ENUM value: "standalone" doesn't match
+// the locked email_signup_source ENUM, and extending it would require an
+// ALTER TYPE migration. showLabel={false} suppresses the internal "New arrivals
+// in your inbox." <label> so the page H1 carries hierarchy; <Input
+// aria-label="Email"> retains accessible-name coverage. source="other" is the
+// catch-all DB value.
 
 import type { Metadata } from 'next';
 import { SignupForm } from '@/components/signup-form';
 import { PageShell } from '@/components/ui/page-shell';
 import { PageH1 } from '@/components/ui/page-h1';
 
-// Metadata wording verbatim from site.md §6.1 line 1710.
 export const metadata: Metadata = {
   title: 'Sign up', // suffix via root title.template
   description:

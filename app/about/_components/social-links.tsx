@@ -1,19 +1,9 @@
-// §4.7 <SocialLinks>
-// Single-view co-located primitive per site.md §1.1; /about-only at v1.
-// Layout A locked 2026-05-18 (CTK-040 Q-4): Discord + R2R, launch-confirmed.
-// Stroke-throughout Lucide-style icons at 20px, ink throughout (no forest);
-// underline-only label affordance on hover + focus-visible per
-// branding-guide.md §"Color system" link rule. Promotes to components/ui/
-// only when a second surface consumes (Phase 4 /signup/confirmed).
-
 import type { ReactNode } from 'react';
 import { getRequiredEnv } from '@/lib/env';
 
-// CTK-126 D-5(b) — hardcoded invite literal migrated to a per-surface env
-// var (the old DbGnQTfzC invite was expiring 2026-06-18; Jon minted a
-// permanent replacement 2026-06-05). Per-surface vars are DELIBERATE —
-// Discord's native invite tracking gives per-surface join attribution; do
-// NOT consolidate with the /corals invite (DISCORD_FEEDBACK_INVITE_URL).
+// Per-surface invite vars are DELIBERATE — Discord's native invite tracking
+// gives per-surface join attribution; do NOT consolidate with the /corals
+// invite (DISCORD_FEEDBACK_INVITE_URL).
 const DISCORD_ABOUT_INVITE_URL = getRequiredEnv('DISCORD_ABOUT_INVITE_URL');
 
 type SocialLink = {

@@ -1,12 +1,3 @@
-// lib/format/relative-time.test.ts
-//
-// Singular-boundary tests per site.md §3.6 fold-point A.
-// Captures /lead-frontend's commitment from 2026-05-01 brief — proves
-// the ladder emits "1 minute ago" not "1 minutes ago" at the boundaries.
-//
-// Runs via Node's built-in test runner with native TypeScript type stripping
-// (Node v22.6+; stable from v23.6 unflagged): `node --test lib/format/*.test.ts`.
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { formatRelativeTime } from './relative-time.ts';
@@ -35,9 +26,9 @@ test('604800s boundary → MMM D absolute format (< 7d → ≥ 7d transition)', 
 });
 
 test('future timestamp (SSR/client clock skew) → clamps to "1 minute ago"', () => {
-  // Per CTK-062 F-8: negative diffs clamp to 0 + minute-floor clamps to 1.
-  // Pins the intentional behavior; without these clamps a clock-skewed future
-  // timestamp would render "0 minutes ago" or a negative count.
+  // Negative diffs clamp to 0 + minute-floor clamps to 1. Without these clamps
+  // a clock-skewed future timestamp would render "0 minutes ago" or a negative
+  // count.
   const future = new Date(NOW.getTime() + 30_000).toISOString();
   assert.equal(formatRelativeTime(future, NOW), '1 minute ago');
 });

@@ -1,63 +1,41 @@
-// lib/queries/listings.ts
-//
 // Server-side query helpers consumed by Phase 2 view Server Components.
-// Listing shape mirrors site.md §3.5.1 — the read shape of architecture-v1.md
-// §1.4 vendor_listings + joined named_corals + vendors.
-//
-// Five helpers per site.md §4 contracts:
-//   getRecentDrops()        — homepage strip per §4.2 (plain JOIN + JS dedup)
-//   getRecentPriceDrops()   — /deals union per §4.3 + CTK-124 (RPC function 0033)
-//   getRecentArrivals()     — /new UNION two-arm per §4.4 (RPC function 0007)
-//   getCoralAvailability()  — /coral/[slug] per §4.1 (plain JOIN)
-//   getVendorInventory()    — /vendor/[slug] per §4.5 (plain JOIN)
-//
-// Migrated CTK-043 cut-4 (2026-05-16) from supabase-js PostgREST builders to
-// raw SQL via @neondatabase/serverless. Public types (Listing,
-// PriceDropListing, ArrivalListing) and the Rpc*Row cast-site interfaces are
-// preserved byte-for-byte — view components stay untouched.
+// Listing shape is the read shape of vendor_listings + joined named_corals +
+// vendors.
 
 import { unstable_cache } from 'next/cache';
 import { getNeonSql } from '@/lib/db/neon';
 
-// Spec-driven recency + pagination constants. Named per CTK-062 F-5 fold to
-// keep literal sites grep-able back to their site.md spec source.
-const PAGE_SIZE = 50; // site.md §4.5 — vendor-inventory pagination chunk.
-// Exported (CTK-057 code-review fold #2): getAllNamedCoralsWithListings +
-// the /corals empty-state copy derive from this constant directly, so the
-// index window and the user-facing "7 days" string move with it.
-export const CORAL_RECENCY_DAYS = 7; // site.md §4.1 — /coral/[slug] availability window.
-const VENDOR_RECENCY_DAYS = 14; // site.md §4.5 — /vendor/[slug] inventory window.
-// /new lead-event window (site.md §4.4) — passed to get_listing_lead_event()
-// below AND the source for app/new/page.tsx's user-facing window copy
-// (downtime fallback, filtered-empty line, filtered-zero eyebrow chunk), per
-// the CTK-124 Q-1 one-constant pattern (CTK-127 fold #3). Window drift stays
+// Named constants keep literal sites grep-able back to their spec source.
+const PAGE_SIZE = 50; // vendor-inventory pagination chunk.
+// Exported: getAllNamedCoralsWithListings + the /corals empty-state copy derive
+// from this constant directly, so the index window and the user-facing "7 days"
+// string move with it.
+export const CORAL_RECENCY_DAYS = 7; // /coral/[slug] availability window.
+const VENDOR_RECENCY_DAYS = 14; // /vendor/[slug] inventory window.
+// /new lead-event window — passed to get_listing_lead_event() below AND the
+// source for app/new/page.tsx's user-facing window copy (downtime fallback,
+// filtered-empty line, filtered-zero eyebrow chunk). Window drift stays
 // grep-able: query arg and label move together.
 export const ARRIVALS_WINDOW_HOURS = 24;
-// /new page cap (CTK-124 Session 3b, /new fold Jon-ratified) — graduates the
-// Q127-1 park: get_listing_lead_event's row_limit DEFAULT 100 (migration
-// 0030) truncated INSIDE the RPC, before the wrapper's category filter, so
-// filtered /new sampled the global newest-100. The bind now passes row_limit
-// NULL (uncapped — 0030 documents LIMIT NULL ≡ LIMIT ALL) and this cap
-// truncates wrapper-side, after filter/sort. Same relocation pattern as
-// DEALS_PAGE_CAP below.
+// /new page cap — get_listing_lead_event's row_limit DEFAULT 100 truncated
+// INSIDE the RPC, before the wrapper's category filter, so filtered /new sampled
+// the global newest-100. The bind now passes row_limit NULL (uncapped — LIMIT
+// NULL ≡ LIMIT ALL) and this cap truncates wrapper-side, after filter/sort. Same
+// relocation pattern as DEALS_PAGE_CAP below.
 export const ARRIVALS_PAGE_CAP = 100;
-// /deals union window (CTK-124 D-1, Jon-ratified 7d) — bound into
-// get_recent_price_drops(p_window_days) below AND the source for
-// app/deals/page.tsx's user-facing window copy (eyebrow middle chunk,
-// empty-state lines), same one-constant pattern as ARRIVALS_WINDOW_HOURS.
-// The RPC carries NO DB-side DEFAULT (migration 0033 header — overload
-// ambiguity + single-source discipline): this constant is the only copy.
-// Typed `number`, not the literal — the page-side singular-guard derivation
-// compares against 1, which TS rejects on a literal-7 type.
+// /deals union window — bound into get_recent_price_drops(p_window_days) below
+// AND the source for app/deals/page.tsx's user-facing window copy (eyebrow
+// middle chunk, empty-state lines). The RPC carries NO DB-side DEFAULT (overload
+// ambiguity + single-source discipline): this constant is the only copy. Typed
+// `number`, not the literal — the page-side singular-guard derivation compares
+// against 1, which TS rejects on a literal-7 type.
 export const DEALS_WINDOW_DAYS: number = 7;
-// /deals page cap (CTK-124 Session 3b) — relocated from the RPC's internal
-// LIMIT 250 (0033) to the view-layer wrapper (migration 0035 removes the
-// SQL LIMIT): the RPC-side cap truncated BEFORE the wrapper applied
-// filter/sort, so price-asc served "cheapest of the newest-250" and
-// category filters sampled the same global slice. Wrapper-side, the cap
-// truncates AFTER filter/sort — the right set every time. Not a render
-// input: the eyebrow count stays drops.length (the 250+ overflow-disclosure
-// canon Q stays parked).
+// /deals page cap — relocated from the RPC's internal LIMIT 250 to the
+// view-layer wrapper: the RPC-side cap truncated BEFORE the wrapper applied
+// filter/sort, so price-asc served "cheapest of the newest-250" and category
+// filters sampled the same global slice. Wrapper-side, the cap truncates AFTER
+// filter/sort — the right set every time. Not a render input: the eyebrow count
+// stays drops.length.
 export const DEALS_PAGE_CAP = 250;
 export const MS_PER_DAY = 86_400_000;
 
@@ -75,33 +53,29 @@ export interface Listing {
   matchConfidence: 'exact' | 'alias' | 'fuzzy' | 'manual' | null;
   namedCoralCanonicalName: string | null;
   namedCoralSlug: string | null;
-  // Lineage origin per site.md §3.5.1 Lineage field rendering — only populated
-  // when namedCoralCanonicalName is non-null (LEFT JOIN named_corals).
-  // year_introduced removed per CTK-092 / Q-040-11 hold-position path-a.
+  // Only populated when namedCoralCanonicalName is non-null (LEFT JOIN
+  // named_corals).
   namedCoralOriginVendor: string | null;
-  // CTK-047 B-3 cross-surface medal — populated by getListingDropContext()
-  // LEFT JOIN against get_listing_lead_event(..., ARRAY['price-dropped']) RPC
-  // (migration 0028) at getRecentDrops / getCoralAvailability / getVendorInventory.
-  // Null when no CT-observed price-drop lead event exists within the 24h window
-  // for the listing, or on helpers that don't merge (getRecentPriceDrops; /new
-  // /arrivals populate from the RPC's price-dropped arm directly).
+  // Cross-surface medal — populated by getListingDropContext() at getRecentDrops
+  // / getCoralAvailability / getVendorInventory. Null when no CT-observed
+  // price-drop lead event exists within the 24h window for the listing, or on
+  // helpers that don't merge (getRecentPriceDrops; /new /arrivals populate from
+  // the RPC's price-dropped arm directly).
   priorPrice: number | null;
   priceDropObservedAt: string | null;
-  // CTK-047 Session 5 — natural event timestamp for the Listed. relative-time
-  // field. Populated by getRecentArrivals (RPC event_at) + getRecentPriceDrops
-  // (RPC observed_at); null on getRecentDrops + getCoralAvailability +
-  // getVendorInventory (those surfaces fall back to firstSeenAt — the medal
-  // carries the price-drop recency separately via Price field). <ListingCard>
-  // Listed. consumes `listing.eventAt ?? listing.firstSeenAt`.
+  // Natural event timestamp for the Listed. relative-time field. Populated by
+  // getRecentArrivals (RPC event_at) + getRecentPriceDrops (RPC observed_at);
+  // null on getRecentDrops + getCoralAvailability + getVendorInventory (those
+  // surfaces fall back to firstSeenAt — the medal carries the price-drop recency
+  // separately via Price field). <ListingCard> Listed. consumes
+  // `listing.eventAt ?? listing.firstSeenAt`.
   eventAt: string | null;
 }
 
-// Flat row shape returned by the JOIN below. PostgREST's nested-relation
-// shape (vendors: {...}, named_corals: {...}) is gone post-cut-4; columns
-// flatten with vendor_/named_coral_ prefixes.
-// Exported (CTK-058): lib/queries/search.ts projects the same column set for
-// the /search listings class and reuses rowToListing below — one cast path,
-// no shape fork.
+// Flat row shape returned by the JOIN below — columns flatten with
+// vendor_/named_coral_ prefixes. Exported: lib/queries/search.ts projects the
+// same column set for the /search listings class and reuses rowToListing below
+// — one cast path, no shape fork.
 export interface VendorListingRow {
   id: number;
   raw_title: string;
@@ -136,50 +110,44 @@ export function rowToListing(row: VendorListingRow): Listing {
     namedCoralCanonicalName: row.named_coral_canonical_name,
     namedCoralSlug: row.named_coral_slug,
     namedCoralOriginVendor: row.named_coral_origin_vendor,
-    // CTK-047 B-3 — defaulted null; the LEFT JOIN merge in getRecentDrops /
-    // getCoralAvailability / getVendorInventory populates these post-
-    // rowToListing for listings present in get_listing_lead_event()'s
-    // price-dropped arm.
+    // Defaulted null; the LEFT JOIN merge in getRecentDrops /
+    // getCoralAvailability / getVendorInventory populates these post-rowToListing
+    // for listings present in get_listing_lead_event()'s price-dropped arm.
     priorPrice: null,
     priceDropObservedAt: null,
-    // CTK-047 Session 5 — plain-JOIN surfaces (strip / coral / vendor) carry
-    // no natural event timestamp; Listed. falls back to firstSeenAt.
+    // Plain-JOIN surfaces (strip / coral / vendor) carry no natural event
+    // timestamp; Listed. falls back to firstSeenAt.
     eventAt: null,
   };
 }
 
-// CTK-047 B-1 — per-listing price-drop context.
-// Wraps the get_listing_lead_event() RPC (migration 0028) with the
-// event_filter=['price-dropped'] arm-scoped predicate for the three non-feed
+// Per-listing price-drop context. Wraps the get_listing_lead_event() RPC with
+// the event_filter=['price-dropped'] arm-scoped predicate for the three non-feed
 // consumers (homepage strip, /coral/[slug], /vendor/[slug]). RPC returns rows
-// only for listings whose LEAD event within the window is a price-drop;
-// helpers LEFT JOIN the returned Map back into their primary Listing rows
-// post-fetch, so a listing without a price-dropped lead event simply doesn't
-// appear in the map.
+// only for listings whose LEAD event within the window is a price-drop; helpers
+// LEFT JOIN the returned Map back into their primary Listing rows post-fetch, so
+// a listing without a price-dropped lead event simply doesn't appear in the map.
 //
 // Map keys coerced to Number() because @neondatabase/serverless returns bigint
-// columns as strings; existing rowToListing-shape code treats id as number per
-// the cast-site interface, so the merge must coerce on both sides to keep key
-// equality consistent.
+// columns as strings; rowToListing-shape code treats id as number, so the merge
+// must coerce on both sides to keep key equality consistent.
 export async function getListingDropContext(
   listingIds: number[],
   windowHours: number = 24,
 ): Promise<Map<number, { priorPrice: number; observedAt: string; eventAt: string }>> {
   if (listingIds.length === 0) return new Map();
   const sql = getNeonSql();
-  // Explicit row_limit NULL (CTK-124 close-fold rider (a), mirroring the
-  // /new fold): the 0030 DEFAULT 100 was a latent truncation — every
-  // consumer passes <= PAGE_SIZE (50) ids today, so the served set is
-  // unchanged and the wrapping consumers' cache keys deliberately do NOT
-  // bump; the explicit arg just closes the silent-bind hazard before a
-  // consumer grows past 100 ids.
+  // Explicit row_limit NULL: the DEFAULT 100 was a latent truncation — every
+  // consumer passes <= PAGE_SIZE (50) ids today, so the served set is unchanged
+  // and the explicit arg just closes the silent-bind hazard before a consumer
+  // grows past 100 ids.
   const rows = (await sql`
     SELECT id, prior_price, event_at
     FROM get_listing_lead_event(${listingIds}::bigint[], ${windowHours}, ARRAY['price-dropped']::text[], NULL)
   `) as unknown as { id: number | string; prior_price: number | string; event_at: string }[];
-  // CTK-047 close-window: eventAt mirrors observedAt by definition (the CT-
-  // observed price-drop event IS the observation). Surfaced explicitly so the
-  // merge call-sites populate Listing.eventAt without re-reading the RPC row.
+  // eventAt mirrors observedAt by definition (the CT-observed price-drop event IS
+  // the observation). Surfaced explicitly so the merge call-sites populate
+  // Listing.eventAt without re-reading the RPC row.
   const out = new Map<number, { priorPrice: number; observedAt: string; eventAt: string }>();
   for (const row of rows) {
     out.set(Number(row.id), {
@@ -191,11 +159,10 @@ export async function getListingDropContext(
   return out;
 }
 
-// Shared CT-observed drop-context merge (CTK-130 (+); CTK-047 B-5 pattern).
-// Fetches getListingDropContext for the rendered set and folds priorPrice +
-// priceDropObservedAt onto each matching Listing so the struck-price Price
-// field + the Q3 lead promotion render with cross-surface parity (a row that
-// medals on /new medals everywhere).
+// Shared CT-observed drop-context merge. Fetches getListingDropContext for the
+// rendered set and folds priorPrice + priceDropObservedAt onto each matching
+// Listing so the struck-price Price field + the Q3 lead promotion render with
+// cross-surface parity (a row that medals on /new medals everywhere).
 //
 // TWO DELIBERATE VARIANTS, not a default + override:
 //   - withEventAt: true  — the canonical feed/destination surfaces
@@ -204,12 +171,10 @@ export async function getListingDropContext(
 //     ago") and day-bucket dividers key on it.
 //   - withEventAt: false — /search (searchListings) ONLY. eventAt stays null
 //     by construction so Listed. and the /search dividers keep reading the
-//     surface's own first_seen_at ordering timestamp. This divergence is the
-//     CTK-058 fold-#3 rejection made structural — do NOT collapse it into a
+//     surface's own first_seen_at ordering timestamp. Do NOT collapse it into a
 //     withEventAt default; the markers-only caller depends on the null.
-// Same projection shape both ways (eventAt already defaults null on Listing),
-// so no unstable_cache key bump (feedback_unstable_cache_shape_change is for
-// shape changes; this is render-identical to the inlined merges it replaces).
+// Same projection shape both ways (eventAt already defaults null on Listing), so
+// no unstable_cache key bump.
 export async function mergeDropContext(
   listings: Listing[],
   opts: { withEventAt: boolean },
@@ -229,14 +194,11 @@ export async function mergeDropContext(
   });
 }
 
-// Homepage strip per site.md §4.2 + Q-E default policy.
-// Plain JOIN with LEFT JOIN named_corals; JS-side dedup on named_coral_id
-// preserved from the Supabase impl (rather than pushing DISTINCT ON into SQL,
-// which complicates the LIMIT semantics).
-// CTK-080: first_seen_at > now() - 7d bound added 2026-05-24 — strip's
-// just-listed lead-verb hardcode (recent-drops-strip.tsx L43) was rendering
-// stale restocks as "just listed at $vendor" (Session 5 F-4). 7d matches
-// CORAL_RECENCY_DAYS canon at L25.
+// Homepage strip. Plain JOIN with LEFT JOIN named_corals; JS-side dedup on
+// named_coral_id (rather than pushing DISTINCT ON into SQL, which complicates
+// the LIMIT semantics). The first_seen_at > now() - 7d bound keeps the strip's
+// just-listed lead-verb hardcode from rendering stale restocks as "just listed
+// at $vendor"; 7d matches CORAL_RECENCY_DAYS.
 export async function getRecentDrops(limit = 10): Promise<Listing[]> {
   const sql = getNeonSql();
   const overFetch = limit * 3;
@@ -276,65 +238,50 @@ export async function getRecentDrops(limit = 10): Promise<Listing[]> {
     out.push(rowToListing(row));
     if (out.length >= limit) break;
   }
-  // CTK-047 B-5 — drop context onto the rendered set (mergeDropContext, CTK-130
-  // (+)) so the strip's B-4 deriveEvent() surfaces price-drop variants
-  // alongside just-listed; withEventAt so price-dropped rows show "X hours ago"
-  // (the drop time) on Listed. rather than firstSeenAt.
-  // CTK-124: getListingDropContext's 24h default is DELIBERATE divergence from
-  // /deals' DEALS_WINDOW_DAYS union window — homepage strip stays a 24h
-  // drop-context surface per Jon strip ruling 2026-06-03 (CTK-111
-  // trigger-gated). Do not couple to the /deals constant.
+  // Drop context onto the rendered set so the strip's deriveEvent() surfaces
+  // price-drop variants alongside just-listed; withEventAt so price-dropped rows
+  // show "X hours ago" (the drop time) on Listed. rather than firstSeenAt.
+  // getListingDropContext's 24h default is DELIBERATE divergence from /deals'
+  // DEALS_WINDOW_DAYS union window — homepage strip stays a 24h drop-context
+  // surface. Do not couple to the /deals constant.
   return mergeDropContext(out, { withEventAt: true });
 }
 
-// /coral/[slug] per site.md §4.1.
-// Filtered by named_coral_id AND last_seen_at > now() - interval '7 days'.
-// CTK-126 D-2 (2026-06-05): in-stock default — default RESTRICTS to
-// in_stock = true; includeOOS=true drops the predicate and restores the
-// inventory-recon mixed render (CTK-098 semantic, same constant-folding
+// /coral/[slug]. Filtered by named_coral_id AND last_seen_at > now() - 7 days.
+// In-stock default RESTRICTS to in_stock = true; includeOOS=true drops the
+// predicate and restores the inventory-recon mixed render (same constant-folding
 // predicate shape as getVendorInventory). The searchParams await makes
-// /coral/[slug] fully dynamic — the build emits no static HTML for its
-// paths despite generateStaticParams (prerender-manifest check, CTK-128
-// close review; supersedes the route-table-glyph reading at CTK-126 #8) —
-// so this wrap IS the load-bearing cache for every request, per the
-// CTK-046 /vendor/[slug] precedent — key carries
-// (namedCoralId, includeOOS); V1 prefix is this function's first cached
-// generation (no pre-wrap Data Cache entries exist; bump on any future shape
-// change per feedback_unstable_cache_shape_change). revalidate 300 matches
-// the page-level cadence (CTK-047 B-2 medal-bearing surface). sevenDaysAgo
-// computed inside the cached fn per getVendorInventory precedent.
+// /coral/[slug] fully dynamic — the build emits no static HTML for its paths
+// despite generateStaticParams — so this wrap IS the load-bearing cache for
+// every request. Key carries (namedCoralId, includeOOS); bump the prefix on any
+// future shape change. revalidate 300 matches the page-level cadence.
+// sevenDaysAgo computed inside the cached fn.
 //
-// CTK-127 (2026-06-05): buy-intent ordering ladder per branding-guide
-// §"Recent-first ordering by default" buy-intent carve-out (Jon-ratified
-// 2026-06-05) — the surface answers "where do I buy this cheapest," and
-// recent-first buried markdown rows below the fold at live eyeball. Ladder:
+// Buy-intent ordering ladder per branding-guide §"Recent-first ordering by
+// default" buy-intent carve-out — the surface answers "where do I buy this
+// cheapest," and recent-first buried markdown rows below the fold. Ladder:
 // in-stock priced rows current_price ASC (tie-break first_seen_at DESC) →
-// NULL-price in-stock rows (price-on-request / auction class) → OOS rows
-// last (toggled-on view only), newest-first within — recency is the
-// staleness signal on invalidated rows; price-ordering them would rank by
-// stale data. One ORDER BY implements the whole contract: the CASE yields
-// NULL for every OOS row, collapsing the OOS block to the first_seen_at DESC
-// tie-break.
+// NULL-price in-stock rows (price-on-request / auction class) → OOS rows last
+// (toggled-on view only), newest-first within — recency is the staleness signal
+// on invalidated rows; price-ordering them would rank by stale data. One ORDER
+// BY implements the whole contract: the CASE yields NULL for every OOS row,
+// collapsing the OOS block to the first_seen_at DESC tie-break.
 //
-// CTK-125 adjacency note (do NOT fold here): this query carries no
-// v.active / sentinel-slug vendor guards — the Tier 4 vendor-guard sibling
-// (CTK-125) owns that predicate change; mechanism-class discipline keeps it
-// out of the CTK-126 D-2 edit.
+// This query carries no v.active / sentinel-slug vendor guards — a separate
+// vendor-guard sibling owns that predicate change; do NOT fold it in here.
 //
-// Predicate coupling with the /corals index (CTK-128 (a) — assessed, paired
-// cross-cites over extraction): the core triple here (named_coral_id +
-// last_seen_at window + the in_stock=true default) is what the
-// getAllNamedCoralsWithListings lateral (lib/queries/named-corals.ts)
-// carries, coupled by convention per the Default-render parity rule
-// (branding-guide §"State markers"); the window is constant-coupled via
-// CORAL_RECENCY_DAYS. Two asymmetries are DELIBERATE and must survive any
-// future refactor: (1) vendor guards are index-side only — see the CTK-125
-// note above; (2) the includeOOS OR is destination-side only — parity is
-// measured against this function's DEFAULT render, never the toggled view.
-// A shared SQL fragment was rejected: neon's tagged template doesn't
-// compose fragments without raw-string assembly, and a helper spanning two
-// table-alias shapes would hide exactly the two asymmetries that matter.
-// Edit the predicate here → check the lateral, and vice versa.
+// Predicate coupling with the /corals index: the core triple here
+// (named_coral_id + last_seen_at window + the in_stock=true default) is what the
+// getAllNamedCoralsWithListings lateral (lib/queries/named-corals.ts) carries,
+// coupled by convention per the Default-render parity rule (branding-guide
+// §"State markers"); the window is constant-coupled via CORAL_RECENCY_DAYS. Two
+// asymmetries are DELIBERATE and must survive any future refactor: (1) vendor
+// guards are index-side only — see the note above; (2) the includeOOS OR
+// is destination-side only — parity is measured against this function's DEFAULT
+// render, never the toggled view. A shared SQL fragment was rejected: neon's
+// tagged template doesn't compose fragments without raw-string assembly, and a
+// helper spanning two table-alias shapes would hide exactly the two asymmetries
+// that matter. Edit the predicate here → check the lateral, and vice versa.
 export async function getCoralAvailability(
   namedCoralId: number,
   includeOOS: boolean = false,
@@ -374,18 +321,15 @@ export async function getCoralAvailability(
       `) as unknown as VendorListingRow[];
 
       const listings = rows.map(rowToListing);
-      // CTK-047 B-5 — drop context for cross-surface medal on
-      // <VendorAvailabilityRow> (mergeDropContext, CTK-130 (+)). In-stock rows
-      // with priorPrice non-null render price-drop-new at position 2 in the
-      // precedence chain; withEventAt so Listed. reads "X hours ago" not "X
-      // days ago" on rows with a recent CT-observed drop.
+      // Drop context for cross-surface medal on <VendorAvailabilityRow>.
+      // In-stock rows with priorPrice non-null render price-drop-new at position
+      // 2 in the precedence chain; withEventAt so Listed. reads "X hours ago" not
+      // "X days ago" on rows with a recent CT-observed drop.
       return mergeDropContext(listings, { withEventAt: true });
     },
-    // V2 prefix bump 2026-06-05 (CTK-127) — default ordering flipped
-    // recent-first → buy-intent ladder (below). Not a shape change, but the
-    // Data Cache persists across deploys per
-    // feedback_unstable_cache_shape_change.md — without the bump, stale-order
-    // arrays serve up to 300s post-deploy.
+    // Prefix bump when the default ordering flips or the cached shape widens —
+    // the Data Cache persists across deploys, so without the bump stale-order /
+    // stale-shape arrays serve up to 300s post-deploy.
     ['getCoralAvailabilityV2', String(namedCoralId), includeOOS ? '1' : '0'],
     {
       revalidate: 300,
@@ -394,18 +338,14 @@ export async function getCoralAvailability(
   )();
 }
 
-// CTK-126 fold (/code-review #1, Tier 1A): cheap second signal for the
-// /coral/[slug] third render state (all-OOS). Distinct-vendor count over the
-// stock-UNFILTERED in-window set — getCoralAvailability's predicate MINUS
-// the in_stock default — so the page can distinguish "listed but all out of
-// stock" from "not listed" on the default render without widening the
-// default availability query (/lead-backend call: separate count over
-// query-widening). N = distinct vendors per the locked eyebrow shape
-// (`N VENDORS · ALL OUT OF STOCK`, branding-guide §"Eyebrow shape + slot").
-// Deliberately no vendor guards, matching getCoralAvailability — CTK-125
-// adjacency; both gain them together if CTK-125 fires. Cheap enough to fire
-// speculatively (one COUNT behind a 300s per-coral cache) — call-shape
-// rationale lives at the consumer (app/coral/[slug]/page.tsx, CTK-128 (g)).
+// Cheap second signal for the /coral/[slug] third render state (all-OOS).
+// Distinct-vendor count over the stock-UNFILTERED in-window set —
+// getCoralAvailability's predicate MINUS the in_stock default — so the page can
+// distinguish "listed but all out of stock" from "not listed" on the default
+// render without widening the default availability query. N = distinct vendors
+// per the locked eyebrow shape (`N VENDORS · ALL OUT OF STOCK`, branding-guide
+// §"Eyebrow shape + slot"). Deliberately no vendor guards, matching
+// getCoralAvailability — both would gain them together with the vendor-guard sibling.
 export async function getCoralInWindowVendorCount(
   namedCoralId: number,
 ): Promise<number> {
@@ -426,34 +366,22 @@ export async function getCoralInWindowVendorCount(
   )();
 }
 
-// /vendor/[slug] per site.md §4.5.
-// Filtered by vendor_id AND last_seen_at > now() - interval '14 days'.
-// CTK-046: paginated via LIMIT PAGE_SIZE OFFSET ((page - 1) * PAGE_SIZE); default page = 1
-// keeps non-paginated callers untouched. unstable_cache wrap (ISR-regression
-// fold 2026-05-18): the searchParams await makes /vendor/[slug] fully
-// dynamic — the build emits no static HTML for its paths despite
-// generateStaticParams (prerender-manifest check, CTK-128 close review) —
-// so this wrap is the load-bearing cache for every request, not an
-// ISR supplement. Key is the V5 tuple below: (vendorId, page, sort,
-// category, includeOOS). revalidate = 300 since CTK-047 B-2 (this header's
-// stale 600 corrected at CTK-128 (e)). fourteenDaysAgo computed inside the
-// cached fn — drifts up to 5 min within TTL window (mathematically
+// /vendor/[slug]. Filtered by vendor_id AND last_seen_at > now() - 14 days.
+// Paginated via LIMIT PAGE_SIZE OFFSET ((page - 1) * PAGE_SIZE); default page = 1
+// keeps non-paginated callers untouched. The searchParams await makes
+// /vendor/[slug] fully dynamic — the build emits no static HTML for its paths
+// despite generateStaticParams — so this wrap is the load-bearing cache for
+// every request, not an ISR supplement. Key is the V5 tuple below: (vendorId,
+// page, sort, category, includeOOS). revalidate = 300. fourteenDaysAgo computed
+// inside the cached fn — drifts up to 5 min within TTL window (mathematically
 // acceptable on a 14-day window).
 //
-// CTK-053: sort + category + inStock params. Default sort 'newest' preserves
-// the pre-CTK-053 ORDER BY first_seen_at DESC. price-asc / price-desc use
-// NULLS LAST in both directions so "price on request" auction rows
-// (current_price IS NULL per project_auctions_in_scope.md) sink below priced
-// rows regardless of direction. Category = exact-match against the schema
-// enum (architecture-v1.md §1.4 L360-362) — NULL silent in unfiltered state.
-// CTK-098 (2026-05-31): in-stock semantic flipped — default RESTRICTS to
-// in_stock=true; includeOOS=true drops the predicate (mixed render). URL
-// param renamed ?in-stock=1 → ?include-oos=1 per /brand-manager INV-02 lock.
-// Predicate flipped from (NOT inStockParam OR in_stock=true) to
-// (includeOOSParam OR in_stock=true). Cache-key prefix bumped to *V2 to
-// invalidate pre-flip Data Cache entries (Next.js 15 unstable_cache persists
-// across deploys per feedback_unstable_cache_shape_change.md) — cache key
-// tuple shape unchanged.
+// Default sort 'newest' is ORDER BY first_seen_at DESC. price-asc / price-desc
+// use NULLS LAST in both directions so "price on request" auction rows
+// (current_price IS NULL) sink below priced rows regardless of direction.
+// Category = exact-match against the schema enum — NULL silent in unfiltered
+// state. In-stock default RESTRICTS to in_stock=true; includeOOS=true drops the
+// predicate (mixed render).
 
 export type ListingSort = 'newest' | 'price-asc' | 'price-desc';
 
@@ -482,11 +410,11 @@ export async function getVendorInventory(
 
       // Optional filters collapse via SQL-side NULL/false constant folding:
       // `(${category}::text IS NULL OR vl.category = ${category})` lets a null
-      // category short-circuit through the planner. includeOOS predicate
-      // reads: false → (false OR in_stock=true) requires in_stock; true →
-      // (true OR …) drops constraint. ORDER BY can't be parameterized —
-      // switch on the allowlisted sort string and emit one of three full SQL
-      // queries. Sort is validated at the view layer (page.tsx allowlist).
+      // category short-circuit through the planner. includeOOS predicate reads:
+      // false → (false OR in_stock=true) requires in_stock; true → (true OR …)
+      // drops constraint. ORDER BY can't be parameterized — switch on the
+      // allowlisted sort string and emit one of three full SQL queries. Sort is
+      // validated at the view layer.
       const categoryParam = category ?? null;
       const includeOOSParam = includeOOS;
 
@@ -556,28 +484,16 @@ export async function getVendorInventory(
       })()) as unknown as VendorListingRow[];
 
       const listings = rows.map(rowToListing);
-      // CTK-047 B-5 — drop context for cross-surface medal on
-      // <VendorInventoryRow> (mergeDropContext, CTK-130 (+) — the three
-      // full-merge sites that stayed inline at the 2026-06-02 abstraction-
-      // threshold call now share the helper). withEventAt for cross-surface
-      // Listed. parity with /deals (medal-bearing row reads "X hours ago").
+      // Drop context for cross-surface medal on <VendorInventoryRow>.
+      // withEventAt for cross-surface Listed. parity with /deals (medal-bearing
+      // row reads "X hours ago").
       return mergeDropContext(listings, { withEventAt: true });
     },
     [
-      // V3 prefix bump 2026-06-01 (CTK-100 Wave-3) — Listing shape widened
-      // with compareAtPrice; Next.js 15 unstable_cache persists Data Cache
-      // across deploys per feedback_unstable_cache_shape_change.md, so V2
-      // entries would deserialize without the new field for up to 600s.
-      // V4 prefix bump 2026-06-02 (CTK-047 B-3) — Listing shape widened again
-      // with priorPrice + priceDropObservedAt; same persistence concern. The
-      // V3 entries would deserialize the new fields as undefined for up to
-      // the revalidate window, breaking medal render on cached pages.
-      // V5 prefix bump 2026-06-03 (CTK-047 close-window) — getVendorInventory's
-      // post-merge cached shape now carries eventAt populated for rows with a
-      // recent CT-observed drop (alongside priorPrice + priceDropObservedAt).
-      // V4 entries would deserialize eventAt as undefined → Listed. ?? chain
-      // falls back to firstSeenAt incorrectly on price-dropped rows for up to
-      // 300s, showing "X days ago" instead of "X hours ago."
+      // Bump the prefix each time the cached Listing shape widens — the Data
+      // Cache persists across deploys, so stale-shape entries deserialize the new
+      // fields as undefined for up to the revalidate window, breaking medal
+      // render on cached pages.
       'getVendorInventoryV5',
       String(vendorId),
       String(page),
@@ -586,11 +502,9 @@ export async function getVendorInventory(
       includeOOS ? '1' : '0',
     ],
     {
-      // CTK-047 B-2 cascade — /vendor/[slug] medal-bearing surface; cadence
-      // equalized to 5min with /coral/[slug] + /deals + homepage strip per
-      // /lead-architect re-disposition 2026-06-02. Page-level revalidate at
-      // app/vendor/[slug]/page.tsx:31 also drops 600 → 300 so the wrapped
-      // data-cache doesn't outlast the page cache.
+      // Cadence equalized to 5min with /coral/[slug] + /deals + homepage strip.
+      // The page-level revalidate also drops to 300 so the wrapped data-cache
+      // doesn't outlast the page cache.
       revalidate: 300,
       tags: [
         `vendor-${vendorId}-page-${page}-${sort}-${category ?? '_'}-${includeOOS ? '1' : '0'}`,
@@ -599,13 +513,10 @@ export async function getVendorInventory(
   )();
 }
 
-// /vendor/[slug] total-pages math per site.md §4.5 + CTK-046 + CTK-053.
-// COUNT against the same 14-day recency window as getVendorInventory().
-// No JOINs — vendor_id + last_seen_at + optional category + includeOOS
-// drive the count; vendors / named_corals do not constrain row count.
-// unstable_cache wrap per ISR-fold. Cache key drops sort + page (totals are
-// invariant to both). CTK-098 (2026-05-31): cache-key prefix bumped to *V2
-// to invalidate pre-flip Data Cache entries on the semantic flip.
+// /vendor/[slug] total-pages math. COUNT against the same 14-day recency window
+// as getVendorInventory(). No JOINs — vendor_id + last_seen_at + optional
+// category + includeOOS drive the count; vendors / named_corals do not constrain
+// row count. Cache key drops sort + page (totals are invariant to both).
 export async function getVendorInventoryTotal(
   vendorId: number,
   category: ListingCategory | null = null,
@@ -637,34 +548,27 @@ export async function getVendorInventoryTotal(
       includeOOS ? '1' : '0',
     ],
     {
-      // CTK-047 close-window — completes B-2 cadence cascade. aa24d96 dropped
-      // getVendorInventory revalidate 600 → 300 but missed the sibling total
-      // helper; pagination chrome was lagging up to 10 min behind the row
-      // feed.
+      // 300 matches getVendorInventory — otherwise pagination chrome lags up to
+      // 10 min behind the row feed.
       revalidate: 300,
       tags: [`vendor-${vendorId}-total-${category ?? '_'}-${includeOOS ? '1' : '0'}`],
     },
   )();
 }
 
-// /deals union feed per site.md §4.3 + CTK-124.
-// Backed by get_recent_price_drops(p_window_days) (migration 0033) — two-arm
-// union: CT-observed drops (price_history LAG window) ∪ active vendor
-// markdowns whose attested onset (vendor_listings.markdown_started_at) falls
-// in-window. One row per listing (ROW_NUMBER, price-dropped precedence per
-// 0028 canon); both arms in_stock = true AND auction_end_time IS NULL
-// (INV-05, enforced inside the RPC body). Window binds from
-// DEALS_WINDOW_DAYS above. Supersedes the zero-arg 24h drops-only function
-// (migrations 0008/0009/0026/0028 lineage; migration 0034 drops that
-// signature after the CTK-124 verify cycle).
+// /deals union feed. Backed by get_recent_price_drops(p_window_days) — two-arm
+// union: CT-observed drops (price_history LAG window) ∪ active vendor markdowns
+// whose attested onset (vendor_listings.markdown_started_at) falls in-window.
+// One row per listing (ROW_NUMBER, price-dropped precedence); both arms in_stock
+// = true AND auction_end_time IS NULL (INV-05, enforced inside the RPC body).
+// Window binds from DEALS_WINDOW_DAYS above.
 export interface PriceDropListing extends Listing {
   // null on markdown-only union rows (no CT-observed prior price — the slash
   // renders from compareAtPrice); non-null on drop-arm rows.
   priorPrice: number | null;
   // Union event time — drop arm: price_history.observed_at; markdown arm:
-  // markdown_started_at (observation-attested onset). Field name kept from
-  // the zero-arg era so /deals consumers (latestTimestamp, bucketTransition,
-  // row keys) read it unchanged.
+  // markdown_started_at (observation-attested onset). Field name kept so /deals
+  // consumers (latestTimestamp, bucketTransition, row keys) read it unchanged.
   observedAt: string;
 }
 
@@ -680,7 +584,7 @@ interface RpcPriceDropRow {
   first_seen_at: string;
   named_coral_id: number | null;
   match_confidence: 'exact' | 'alias' | 'fuzzy' | 'manual' | null;
-  // NULL on the markdown arm (migration 0033 — no fabricated prior).
+  // NULL on the markdown arm — no fabricated prior.
   prior_price: number | string | null;
   event_at: string;
   vendor_slug: string;
@@ -697,9 +601,9 @@ function rpcRowToPriceDrop(row: RpcPriceDropRow): PriceDropListing {
     vendorDisplayName: row.vendor_display_name,
     rawTitle: row.raw_title,
     currentPrice: row.current_price != null ? Number(row.current_price) : null,
-    // Nullable in the 0033 union projection (drop-arm rows without a live
-    // vendor markdown). On markdown-only rows this carries the slash —
-    // <ListingCard> renders vendor-markdown + Q3 lead promotion from it.
+    // Nullable in the union projection (drop-arm rows without a live vendor
+    // markdown). On markdown-only rows this carries the slash — <ListingCard>
+    // renders vendor-markdown + the Q3 lead promotion from it.
     compareAtPrice: row.compare_at_price != null ? Number(row.compare_at_price) : null,
     inStock: row.in_stock,
     imageUrl: row.image_url,
@@ -709,60 +613,53 @@ function rpcRowToPriceDrop(row: RpcPriceDropRow): PriceDropListing {
     namedCoralCanonicalName: row.named_coral_canonical_name,
     namedCoralSlug: row.named_coral_slug,
     namedCoralOriginVendor: row.named_coral_origin_vendor,
-    // CTK-124: guard before Number() — markdown-only rows carry prior_price
-    // NULL, and Number(null) is 0, which would silently render a fake
-    // "$0.00 → $X" drop on every markdown row.
+    // Guard before Number() — markdown-only rows carry prior_price NULL, and
+    // Number(null) is 0, which would silently render a fake "$0.00 → $X" drop on
+    // every markdown row.
     priorPrice: row.prior_price != null ? Number(row.prior_price) : null,
-    // CTK-047 B-3 base-Listing field — union event_at on every row (markdown
-    // rows: the attested onset). <ListingCard>'s CT-drop branches guard
-    // conjunctively on priorPrice ≠ null, so markdown-only rows still route
-    // to the vendor-markdown render despite this being populated.
+    // Union event_at on every row (markdown rows: the attested onset).
+    // <ListingCard>'s CT-drop branches guard conjunctively on priorPrice ≠ null,
+    // so markdown-only rows still route to the vendor-markdown render despite
+    // this being populated.
     priceDropObservedAt: row.event_at,
-    // CTK-047 Session 5 — Listed. consumes eventAt ?? firstSeenAt; for /deals
-    // this is the drop time (drop arm) or markdown onset (markdown arm).
+    // Listed. consumes eventAt ?? firstSeenAt; for /deals this is the drop time
+    // (drop arm) or markdown onset (markdown arm).
     eventAt: row.event_at,
     observedAt: row.event_at,
   };
 }
 
-// CTK-124 / CTK-127 #6 fold — shared ORDER-BY-ladder wrapper for the two
-// event-RPC feeds (getRecentPriceDrops + getRecentArrivals). Both RPCs
-// project `event_at` + `current_price`, so one ladder serves both; CTK-127
-// landed the four-branch wrapper per-query because the pre-0033 drops RPC
-// still projected `observed_at` — the union swap unifies the column and the
-// extraction rides it (plan §Cross-CTK).
+// Shared ORDER-BY-ladder wrapper for the two event-RPC feeds
+// (getRecentPriceDrops + getRecentArrivals). Both RPCs project `event_at` +
+// `current_price`, so one ladder serves both.
 //
-// Wrapper JOIN, not RPC migration, per the CTK-127 rationale: category lives
-// on vendor_listings, not in the RPC projections; INV-05 predicates stay
-// inside the RPC bodies. Bare call (newest, no category) skips the wrapper —
-// each function's own ORDER BY event_at DESC carries the default order;
-// filtered branches reproduce it explicitly (join output ordering isn't
-// guaranteed).
+// Wrapper JOIN, not RPC migration: category lives on vendor_listings, not in the
+// RPC projections; INV-05 predicates stay inside the RPC bodies. Bare call
+// (newest, no category) skips the wrapper — each function's own ORDER BY
+// event_at DESC carries the default order; filtered branches reproduce it
+// explicitly (join output ordering isn't guaranteed).
 //
-// sql.unsafe() embeds ONLY module-level constants: `fnCall` is one of the
-// two literal RPC invocations below (window values are exported constants,
-// never user input), and the ORDER BY tail comes from the allowlisted-sort
-// ladder map. Category and cap stay real binds; sort is validated at the
-// view layer (lib/queries/listing-params.ts allowlist) before it reaches
-// here. Never pass user input through `fnCall`.
+// sql.unsafe() embeds ONLY module-level constants: `fnCall` is one of the two
+// literal RPC invocations below (window values are exported constants, never
+// user input), and the ORDER BY tail comes from the allowlisted-sort ladder map.
+// Category and cap stay real binds; sort is validated at the view layer before
+// it reaches here. Never pass user input through `fnCall`.
 //
-// CTK-124 Session 3b: every ladder tail ends in the unique e.id tiebreak —
-// event_at is massively non-unique (the 0033 cold-start backfill stamped
-// thousands of onsets with one apply-moment timestamp), so without the
-// tiebreak, order within ties was planner-dependent and could reshuffle
-// call-to-call. With it, each tail is a total order, which makes the `cap`
-// truncation below deterministic across revalidations.
+// Every ladder tail ends in the unique e.id tiebreak — event_at is massively
+// non-unique (the cold-start backfill stamped thousands of onsets with one
+// apply-moment timestamp), so without the tiebreak, order within ties was
+// planner-dependent and could reshuffle call-to-call. With it, each tail is a
+// total order, which makes the `cap` truncation below deterministic across
+// revalidations.
 const EVENT_ORDER_LADDER: Record<ListingSort, string> = {
   'price-asc': 'e.current_price ASC NULLS LAST, e.event_at DESC, e.id',
   'price-desc': 'e.current_price DESC NULLS LAST, e.event_at DESC, e.id',
   newest: 'e.event_at DESC, e.id',
 };
 
-// `cap` (CTK-124 Session 3b): view-layer row ceiling, applied as SQL LIMIT
-// AFTER the ladder ORDER BY so truncation happens on the filtered/sorted
-// set (migration 0035 removed the drops RPC's internal LIMIT — see
-// DEALS_PAGE_CAP). Omitted cap binds LIMIT NULL ≡ no limit (same SQL-side
-// constant-folding pattern as the category predicate).
+// `cap`: view-layer row ceiling, applied as SQL LIMIT AFTER the ladder ORDER BY
+// so truncation happens on the filtered/sorted set. Omitted cap binds LIMIT NULL
+// ≡ no limit (same SQL-side constant-folding pattern as the category predicate).
 async function orderedEventRows(
   fnCall: string,
   sort: ListingSort,
@@ -770,21 +667,18 @@ async function orderedEventRows(
   cap?: number,
 ): Promise<Record<string, unknown>[]> {
   if (cap !== undefined && cap < 1) {
-    // cap=0 would bind LIMIT 0 (empty feed served silently) — a caller bug,
-    // not a request shape. Assert loud rather than treating falsy as
-    // uncapped (close-fold /code-review rider (c) — assert-≥1 chosen).
+    // cap=0 would bind LIMIT 0 (empty feed served silently) — a caller bug, not a
+    // request shape. Assert loud rather than treating falsy as uncapped.
     throw new Error(`orderedEventRows: cap must be >= 1 (got ${cap})`);
   }
   const sql = getNeonSql();
   const categoryParam = category ?? null;
   const capParam = cap ?? null;
   if (sort === 'newest' && categoryParam === null) {
-    // Bare branch — no JOIN needed; one template capped or not (LIMIT NULL
-    // ≡ no limit). The wrapper owns the total order on every path: the
-    // arrivals RPC's internal ORDER BY (migration 0030) carries no id
-    // tiebreak, so "function-internal order" was never contractual here
-    // (close-fold rider (b) — the uncapped passthrough was dead code with
-    // a false comment).
+    // Bare branch — no JOIN needed; one template capped or not (LIMIT NULL ≡ no
+    // limit). The wrapper owns the total order on every path: the arrivals RPC's
+    // internal ORDER BY carries no id tiebreak, so "function-internal order" was
+    // never contractual here.
     return sql`
       SELECT e.*
       FROM ${sql.unsafe(fnCall)} e
@@ -802,13 +696,9 @@ async function orderedEventRows(
   `;
 }
 
-// CTK-124: bind swapped to the one-arg union RPC (migration 0033) —
-// get_recent_price_drops(DEALS_WINDOW_DAYS). Scope widens 24h CT-observed
-// drops only → 7d drops ∪ active vendor markdowns, one row per listing
-// (retires the zero-arg function's multi-event-per-listing semantic).
-// Sort/category wrapper via orderedEventRows above (CTK-127 shape, ladder
-// extracted per fold #6). unstable_cache wrap per CTK-046/126 precedent:
-// the searchParams read flips /deals dynamic at runtime; key carries
+// get_recent_price_drops(DEALS_WINDOW_DAYS) — 7d drops ∪ active vendor
+// markdowns, one row per listing. Sort/category wrapper via orderedEventRows
+// above. The searchParams read flips /deals dynamic at runtime; key carries
 // (sort, category); revalidate 300 matches the page cadence.
 export async function getRecentPriceDrops(
   sort: ListingSort = 'newest',
@@ -826,17 +716,9 @@ export async function getRecentPriceDrops(
       return rows.map(rpcRowToPriceDrop);
     },
     [
-      // V2 prefix bump 2026-06-06 (CTK-124) — RPC swapped to the one-arg
-      // union: row shape renames observed_at → event_at, prior_price goes
-      // nullable, scope widens to the 7d union. The Data Cache persists
-      // across deploys per feedback_unstable_cache_shape_change.md — V1
-      // entries would keep serving the old shape/scope for up to 300s.
-      // V3 prefix bump 2026-06-06 (CTK-124 Session 3b) — output set changes
-      // twice over: migration 0035 lands the markdown-arm 5% floor in the
-      // RPC, and the 250 cap relocates RPC→wrapper so truncation happens
-      // after filter/sort (filtered/sorted views admit the full window
-      // instead of sampling the global newest-250). Same persistence
-      // concern as above.
+      // Bump the prefix when the row shape or served set changes — the Data
+      // Cache persists across deploys, so stale entries keep serving the old
+      // shape/scope for up to 300s otherwise.
       'getRecentPriceDropsV3',
       sort,
       category ?? '_',
@@ -848,15 +730,13 @@ export async function getRecentPriceDrops(
   )();
 }
 
-// /deals eyebrow LATEST source (CTK-124 close-fold, /code-review round-2
-// #1, Tier 1B): post-0035 the wrapper cap truncates AFTER the ladder sort,
-// so under price sorts max(rendered.observedAt) reads the capped slice, not
-// the window — the eyebrow could claim "LATEST 2 DAYS AGO" while a drop
-// landed an hour ago. Canon constrains the fix (branding-guide §"Eyebrow
-// shape + slot" filtered-eyebrows lock: no eyebrow change under sort — the
-// chunk can't drop on sorted views), so the true latest comes from a
-// dedicated cap=1 newest-ladder call. Same category arg keeps the filtered
-// eyebrow in-category-honest. Own cache key, same revalidate cadence.
+// /deals eyebrow LATEST source: the wrapper cap truncates AFTER the ladder
+// sort, so under price sorts max(rendered.observedAt) reads the capped slice,
+// not the window — the eyebrow could claim "LATEST 2 DAYS AGO" while a drop
+// landed an hour ago. Canon constrains the fix (branding-guide §"Eyebrow shape +
+// slot" filtered-eyebrows lock: no eyebrow change under sort), so the true
+// latest comes from a dedicated cap=1 newest-ladder call. Same category arg
+// keeps the filtered eyebrow in-category-honest.
 export async function getLatestPriceDropAt(
   category: ListingCategory | null = null,
 ): Promise<string | null> {
@@ -878,13 +758,10 @@ export async function getLatestPriceDropAt(
   )();
 }
 
-// /new arrivals feed per site.md §4.4.
-// Backed by the get_listing_lead_event() SQL function (migration 0028)
+// /new arrivals feed. Backed by the get_listing_lead_event() SQL function
 // wrapping the three-arm UNION + ROW_NUMBER precedence ranking (price-dropped >
-// back-in-stock > just-listed; Q2 brand-manager lock 2026-06-02). Invoked as
-// `SELECT * FROM get_listing_lead_event(NULL, 24, NULL)` — NULL event_filter
-// surfaces all three lead-event types on one row per listing. Migration 0029
-// drops the predecessor get_recent_arrivals() post-deploy verify.
+// back-in-stock > just-listed). NULL event_filter surfaces all three lead-event
+// types on one row per listing.
 export interface ArrivalListing extends Listing {
   event: 'just-listed' | 'back-in-stock' | 'price-dropped';
   eventAt: string;
@@ -921,11 +798,11 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
     vendorDisplayName: row.vendor_display_name,
     rawTitle: row.raw_title,
     currentPrice: row.current_price != null ? Number(row.current_price) : null,
-    // CTK-109: get_listing_lead_event() projects compare_at_price across all
-    // three arms. /new renders vendor-markdown on every arrival row regardless
-    // of which lead event won. Loose != null guards the T0→T1 deploy-window
-    // where get_recent_arrivals() may still be serving pre-swap (column
-    // undefined, not null) — strict !== would NaN-poison the field.
+    // get_listing_lead_event() projects compare_at_price across all three arms;
+    // /new renders vendor-markdown on every arrival row regardless of which lead
+    // event won. Loose != null guards a deploy-window where a predecessor may
+    // still serve the column undefined (not null) — strict !== would NaN-poison
+    // the field.
     compareAtPrice: row.compare_at_price != null ? Number(row.compare_at_price) : null,
     inStock: row.in_stock,
     imageUrl: row.image_url,
@@ -935,10 +812,9 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
     namedCoralCanonicalName: row.named_coral_canonical_name,
     namedCoralSlug: row.named_coral_slug,
     namedCoralOriginVendor: row.named_coral_origin_vendor,
-    // CTK-047 B-3 / Q2 amendment — /new now carries the price-dropped lead-
-    // event arm. priorPrice + priceDropObservedAt populate only when this
-    // row's lead event is a drop; null on back-in-stock + just-listed arms
-    // (the RPC projects prior_price=NULL on those arms by construction).
+    // priorPrice + priceDropObservedAt populate only when this row's lead event
+    // is a drop; null on back-in-stock + just-listed arms (the RPC projects
+    // prior_price=NULL on those arms by construction).
     priorPrice: row.prior_price != null ? Number(row.prior_price) : null,
     priceDropObservedAt: row.event === 'price-dropped' ? row.event_at : null,
     event: row.event,
@@ -946,14 +822,11 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
   };
 }
 
-// CTK-127: sort + category params via the shared orderedEventRows wrapper
-// (ladder extracted at CTK-124 per fold #6 — see the helper's header for the
-// sql.unsafe constants-only invariant). CTK-124 Session 3b /new fold
-// (Jon-ratified, graduates the Q127-1 park): row_limit binds explicit NULL
-// and ARRIVALS_PAGE_CAP caps wrapper-side, so filtered/sorted /new admits
-// the full 24h window instead of sampling the RPC's internal newest-100.
-// unstable_cache key carries (sort, category), V2 generation, revalidate
-// 300 per page cadence.
+// sort + category params via the shared orderedEventRows wrapper (see the
+// helper's header for the sql.unsafe constants-only invariant). row_limit binds
+// explicit NULL and ARRIVALS_PAGE_CAP caps wrapper-side, so filtered/sorted /new
+// admits the full 24h window instead of sampling the RPC's internal newest-100.
+// Cache key carries (sort, category); revalidate 300 per page cadence.
 export async function getRecentArrivals(
   sort: ListingSort = 'newest',
   category: ListingCategory | null = null,
@@ -961,9 +834,9 @@ export async function getRecentArrivals(
   return unstable_cache(
     async () => {
       const rows = (await orderedEventRows(
-        // Explicit fourth arg NULL = row_limit uncapped (migration 0030
-        // semantics) — the silent DEFAULT 100 truncated pre-filter; the
-        // wrapper cap below truncates post-filter/sort instead.
+        // Explicit fourth arg NULL = row_limit uncapped — the silent DEFAULT 100
+        // truncated pre-filter; the wrapper cap below truncates post-filter/sort
+        // instead.
         `get_listing_lead_event(NULL, ${ARRIVALS_WINDOW_HOURS}, NULL, NULL)`,
         sort,
         category,
@@ -973,11 +846,9 @@ export async function getRecentArrivals(
       return rows.map(rpcRowToArrival);
     },
     [
-      // V2 prefix bump 2026-06-06 (CTK-124 Session 3b /new fold) — row_limit
-      // NULL + wrapper cap change the served set on filtered/sorted views
-      // (full-window admission instead of the global newest-100 sample). The
-      // Data Cache persists across deploys per
-      // feedback_unstable_cache_shape_change.md.
+      // Bump the prefix when the served set changes (row_limit NULL + wrapper cap
+      // widened it to full-window admission) — the Data Cache persists across
+      // deploys.
       'getRecentArrivalsV2',
       sort,
       category ?? '_',

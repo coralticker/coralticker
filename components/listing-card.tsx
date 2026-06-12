@@ -1,29 +1,23 @@
-// <ListingCard> — single composition for the public-feed event-row across
-// /deals, /new, and the homepage strip. Lead and Price both derive from
-// listing fields per the precedence chain (CTK-047 Q3 lead-promotion lock
-// 2026-06-03; see branding-guide.md §"Vendor-side sale markdown state-marker"
-// → "Lead promotion on strikethrough Price."):
+// Lead and Price both derive from listing fields per the precedence chain
+// (branding-guide §"Vendor-side sale markdown state-marker" → "Lead promotion
+// on strikethrough Price."):
 //
 //   OOS (invalidated): lead = baseEvent ("listed at" / "back in stock at"),
-//     Price = invalidated. OOS does NOT promote the lead per branding-guide
-//     L230 invalidation semantic — supersedes Q3 promotion semantic.
+//     Price = invalidated. OOS does NOT promote the lead per the invalidation
+//     semantic — supersedes the promotion semantic.
 //   CT-observed price-drop (priorPrice + priceDropObservedAt non-null):
 //     lead = "price dropped at", Price = price-drop-new (oldValue = priorPrice).
 //   Vendor-markdown ≥5% (compareAtPrice >= currentPrice * 1.05): lead =
-//     "price dropped at" (Q3 lead promotion), Price = vendor-markdown
+//     "price dropped at" (lead promotion), Price = vendor-markdown
 //     (oldValue = compareAtPrice).
 //   Otherwise: lead = baseEvent, Price = bare current price.
 //
-// Vendor surfaces inline in the lead on every variant via parallel
-// `at {vendor}.` grammar (CTK-047 Q1 lock 2026-06-02).
-//
 // baseEvent prop carries the back-in-stock vs. just-listed hint from the
-// caller (e.g., /new's RPC arrival.event mapped through). The composition
-// overrides with "price dropped at" via the derivation rule above; baseEvent
-// only fires for non-price-drop rows. /deals + homepage strip pass no
-// baseEvent and accept the 'just-listed' default — neither surface
-// distinguishes restock vs. first-listing at the lead level (composition
-// reads Price-shape signals from listing fields instead).
+// caller. The composition overrides with "price dropped at" via the
+// derivation rule above; baseEvent only fires for non-price-drop rows.
+// /deals + homepage strip pass no baseEvent and accept the 'just-listed'
+// default — neither surface distinguishes restock vs. first-listing at the
+// lead level (composition reads Price-shape signals from listing fields).
 
 import { type DataRowField } from '@/components/ui/data-row';
 import { ListingRowFrame } from '@/components/ui/listing-row-frame';
@@ -41,22 +35,20 @@ function deriveLeadEvent(
   listing: Listing,
   baseEvent: 'just-listed' | 'back-in-stock' = 'just-listed',
 ): { verb: string; isPriceDropped: boolean } {
-  // OOS does NOT promote (invalidated semantic per branding-guide L230 +
-  // Q3 OOS-non-promotion precision lock 2026-06-03).
+  // OOS does NOT promote (invalidated semantic).
   if (!listing.inStock) {
     return {
       verb: baseEvent === 'just-listed' ? 'listed at' : 'back in stock at',
       isPriceDropped: false,
     };
   }
-  // CT-observed price-drop wins over Q3 vendor-markdown promotion when both
+  // CT-observed price-drop wins over vendor-markdown promotion when both
   // could apply (the listing actually moved within the 24h window).
   if (listing.priorPrice !== null && listing.priceDropObservedAt !== null) {
     return { verb: 'price dropped at', isPriceDropped: true };
   }
-  // Q3 promotion — vendor-markdown strikethrough promotes the lead.
-  // Float-imprecision rewrite per /code-review Finding (2026-06-03): the
-  // straightforward `compareAtPrice >= currentPrice * 1.05` form silently
+  // Vendor-markdown strikethrough promotes the lead.
+  // The straightforward `compareAtPrice >= currentPrice * 1.05` form silently
   // misses ~29% of integer-dollar clean 5% markdowns because IEEE754
   // representation of 1.05 + the multiply nudges the threshold above the
   // true mark (e.g., 3 * 1.05 = 3.1500000000000004; 3.15 < 3.1500000000000004).
@@ -79,9 +71,8 @@ function buildFields(listing: Listing): DataRowField[] {
   const fields: DataRowField[] = [];
 
   // Price precedence chain (OOS > price-drop-new > vendor-markdown > bare)
-  // lives in the shared buildPriceValue() — CTK-103 F3 consolidation. Q3
-  // changes the LEAD derivation only (deriveLeadEvent above), not the Price
-  // field.
+  // lives in the shared buildPriceValue(). The lead-promotion logic
+  // (deriveLeadEvent above) changes the LEAD derivation only, not the Price.
   fields.push({ label: 'Price', value: buildPriceValue(listing) });
 
   fields.push({
@@ -92,8 +83,7 @@ function buildFields(listing: Listing): DataRowField[] {
     },
   });
 
-  // Lineage. field carries origin-only post-CTK-092 (year_introduced dropped
-  // per Q-040-11 hold-position path-a). Sentinel suppression — community/
+  // Lineage. field carries origin-only. Sentinel suppression — community/
   // canonical → field omitted entirely; <DataRow>'s em-dash interleaving
   // skips the slot automatically. Truthy guards rule out null AND empty-
   // string drift in one boundary.

@@ -1,6 +1,4 @@
-// lib/queries/search.ts
-//
-// /search three-class query helpers per CTK-058 plan D-058-1/2:
+// /search three-class query helpers:
 //   searchCorals()   — named_corals.normalized_name + auto-link
 //                      aliases.alias_text, active-filtered, deduped to
 //                      canonical; routes to /coral/[slug]
@@ -9,23 +7,20 @@
 //   searchListings() — vendor_listings.normalized_title, in_stock = true,
 //                      active vendor, first_seen_at DESC, LIMIT 51 overflow
 //
-// Query shape (D-058-1): per-token `ILIKE '%tok%'` AND-composed across the
-// first SEARCH_TOKEN_CAP whitespace-split tokens of the parseSearchQuery
-// output. Metacharacters escape with '!' + an explicit ESCAPE '!' clause per
-// feedback_ts_template_sql_escape_char — `ILIKE ALL(array)` cannot carry an
+// Per-token `ILIKE '%tok%'` AND-composed across the first SEARCH_TOKEN_CAP
+// whitespace-split tokens of the parseSearchQuery output. Metacharacters escape
+// with '!' + an explicit ESCAPE '!' clause — `ILIKE ALL(array)` cannot carry an
 // ESCAPE clause, so predicates compose per-token instead. The Neon tagged
 // template can't splice a variable predicate count, so each statement carries
 // SEARCH_TOKEN_CAP fixed predicate slots with NULL constant-folding —
 // `(${p}::text IS NULL OR x ILIKE ${p} ESCAPE '!')` — the same planner-fold
-// idiom as getVendorInventory's category/includeOOS params (listings.ts).
+// idiom as getVendorInventory's category/includeOOS params.
 //
-// pg_trgm GIN on vendor_listings.normalized_title (migration 0032) keeps the
-// listings predicates indexed; vendors (11 rows) + the dictionary (20 + 41
-// rows) seq-scan by design.
+// pg_trgm GIN on vendor_listings.normalized_title keeps the listings predicates
+// indexed; vendors + the dictionary seq-scan by design.
 //
-// No unstable_cache (D-058-4): user-supplied q is unbounded key cardinality —
-// caching per-q pollutes the Data Cache for one-shot reads. Direct
-// per-request SQL; no React cache() wrapper — single call site per helper.
+// No unstable_cache: user-supplied q is unbounded key cardinality — caching
+// per-q pollutes the Data Cache for one-shot reads. Direct per-request SQL.
 
 import { getNeonSql } from '@/lib/db/neon';
 import { buildIlikePatterns } from '@/lib/queries/listing-params';
@@ -36,15 +31,14 @@ import {
   type VendorListingRow,
 } from '@/lib/queries/listings';
 
-// D-058-2 listings cap + D-058-6(a) overflow flag: fetch LIMIT
-// SEARCH_LISTINGS_LIMIT + 1, render SEARCH_LISTINGS_LIMIT, overflow drives
-// the `50+ LISTINGS` eyebrow chunk (branding-guide L296 — the `+` marks a
-// floor per disclosure-symmetry).
+// Listings cap + overflow flag: fetch LIMIT SEARCH_LISTINGS_LIMIT + 1, render
+// SEARCH_LISTINGS_LIMIT, overflow drives the `50+ LISTINGS` eyebrow chunk (the
+// `+` marks a floor per disclosure-symmetry).
 export const SEARCH_LISTINGS_LIMIT = 50;
 
 // Pattern builder (tokenize + escape + SEARCH_TOKEN_CAP) lives in
-// listing-params.ts with the parser family — pure function, unit-tested
-// there without this module's DB import chain.
+// listing-params.ts with the parser family — pure function, unit-tested there
+// without this module's DB import chain.
 
 // Fixed-slot padding for the SEARCH_TOKEN_CAP constant-folded predicates.
 type PatternSlots = [
@@ -73,8 +67,8 @@ export interface CoralSearchHit {
   canonicalName: string;
   coralType: string | null;
   originVendor: string | null;
-  // Alias-side hits only (D-058-5 #6 `Matched.` field, guide L327): null on
-  // canonical-side hits — a row matching both renders plain (canonical wins).
+  // Alias-side hits only: null on canonical-side hits — a row matching both
+  // renders plain (canonical wins).
   matchedAlias: string | null;
 }
 
@@ -87,29 +81,25 @@ interface CoralSearchRow {
   matched_alias: string | null;
 }
 
-// Named corals: canonical-side ILIKE on normalized_name OR alias-side ILIKE
-// on auto-link alias_text, both behind named_corals.active = true
-// (/review-plan fold #1 — alias hits filter through the correlated join).
-// flag-review rows carry named_coral_id IS NULL by CHECK constraint, so the
-// correlation excludes them structurally; the match_behavior predicate stays
-// explicit per the plan anyway. One row per coral by construction (no join
-// fan-out; MIN() picks a deterministic alias when several match). NO in-stock
-// EXISTS per the D-058-2 parity-divergence ruling (/brand-manager 2026-06-05,
-// guide §"Default-render parity") — search answers "does CT know this coral";
+// Named corals: canonical-side ILIKE on normalized_name OR alias-side ILIKE on
+// auto-link alias_text, both behind named_corals.active = true. flag-review rows
+// carry named_coral_id IS NULL by CHECK constraint, so the correlation excludes
+// them structurally; the match_behavior predicate stays explicit anyway. One row
+// per coral by construction (no join fan-out; MIN() picks a deterministic alias
+// when several match). NO in-stock EXISTS per the parity-divergence ruling
+// (guide §"Default-render parity") — search answers "does CT know this coral";
 // /coral/[slug]'s three-state canon is the honest answer behind the click.
 // Order: canonical_name ASC per the /corals index precedent.
 export async function searchCorals(
   normalizedQuery: string,
 ): Promise<CoralSearchHit[]> {
   const patterns = buildIlikePatterns(normalizedQuery);
-  // Invariant guard — KEPT, not dead (CTK-130 #10b: verified soft). The page
-  // null-checks parseSearchQuery before any caller reaches here, so today this
-  // is unreachable. But the helper is exported, and on an empty patterns array
-  // toSlots() pads all-NULL → every `${p}::text IS NULL OR ...` slot folds to
-  // TRUE → an unfiltered full-table result. This guard (and its siblings in
-  // searchVendors/searchListings) is the second line of defense against that
-  // all-true predicate set (search.test.ts pins the contract); removing it
-  // trades a real failure mode for three saved lines.
+  // Invariant guard — KEPT, not dead. The page null-checks parseSearchQuery
+  // before any caller reaches here, so today this is unreachable. But the helper
+  // is exported, and on an empty patterns array toSlots() pads all-NULL → every
+  // `${p}::text IS NULL OR ...` slot folds to TRUE → an unfiltered full-table
+  // result. This guard (and its siblings in searchVendors/searchListings) is the
+  // second line of defense against that all-true predicate set.
   if (patterns.length === 0) return [];
   const [p1, p2, p3, p4, p5, p6] = toSlots(patterns);
   const sql = getNeonSql();
@@ -171,18 +161,17 @@ export interface VendorSearchHit {
   displayName: string;
 }
 
-// Vendors: ILIKE on display_name (there is no vendors.name), active = true +
-// the CTK-095 Axis 3 sentinel-slug guard — same belt-and-suspenders as
-// getAllActiveVendors (vendors.ts), because these rows route to
-// /vendor/[slug] and a sentinel hit would route to a 404. display_name is
-// not a normalized column; ILIKE carries the case fold and the 11-row scale
-// makes accent divergence a non-issue.
+// Vendors: ILIKE on display_name (there is no vendors.name), active = true + the
+// sentinel-slug guard — same belt-and-suspenders as getAllActiveVendors, because
+// these rows route to /vendor/[slug] and a sentinel hit would route to a 404.
+// display_name is not a normalized column; ILIKE carries the case fold and the
+// 11-row scale makes accent divergence a non-issue.
 export async function searchVendors(
   normalizedQuery: string,
 ): Promise<VendorSearchHit[]> {
   const patterns = buildIlikePatterns(normalizedQuery);
-  // Invariant guard (CTK-130 #10b) — see searchCorals: empty patterns → all-
-  // true predicate set → unfiltered result. Kept as defense, not dead code.
+  // Invariant guard — see searchCorals: empty patterns → all-true predicate set
+  // → unfiltered result. Kept as defense, not dead code.
   if (patterns.length === 0) return [];
   const [p1, p2, p3, p4, p5, p6] = toSlots(patterns);
   const sql = getNeonSql();
@@ -209,31 +198,27 @@ export async function searchVendors(
 
 export interface ListingSearchResult {
   listings: Listing[];
-  // True when a 51st row existed — the eyebrow renders `50+ LISTINGS`
-  // (D-058-6(a) end-to-end disclosure chain).
+  // True when a 51st row existed — the eyebrow renders `50+ LISTINGS`.
   overflow: boolean;
 }
 
-// Listings: ILIKE on normalized_title (render raw_title via the Listing
-// shape), in_stock = true + active vendor per the D-058-2 OOS posture
-// (deal-buyer query-filter lock; the OOS story lives one click behind the
+// Listings: ILIKE on normalized_title (render raw_title via the Listing shape),
+// in_stock = true + active vendor (the OOS story lives one click behind the
 // dictionary class). Sentinel-slug vendor guard matches the vendors class —
-// sentinel rows are test fixtures. first_seen_at DESC; LIMIT cap + 1 drives
-// the overflow flag.
+// sentinel rows are test fixtures. first_seen_at DESC; LIMIT cap + 1 drives the
+// overflow flag.
 //
-// CT-observed drop context merges per the CTK-047 per-callsite precedent
-// (close-out fold, Jon directive 2026-06-05) — MARKERS ONLY: priorPrice +
-// priceDropObservedAt populate so the struck-price Price field and the Q3
-// lead promotion render with cross-surface parity (a row that medals on
-// /new medals here); eventAt deliberately stays null so Listed. and the
-// day-bucket dividers keep reading the first_seen_at timestamp this
-// surface orders by.
+// CT-observed drop context merges MARKERS ONLY: priorPrice + priceDropObservedAt
+// populate so the struck-price Price field and the Q3 lead promotion render with
+// cross-surface parity (a row that medals on /new medals here); eventAt
+// deliberately stays null so Listed. and the day-bucket dividers keep reading the
+// first_seen_at timestamp this surface orders by.
 export async function searchListings(
   normalizedQuery: string,
 ): Promise<ListingSearchResult> {
   const patterns = buildIlikePatterns(normalizedQuery);
-  // Invariant guard (CTK-130 #10b) — see searchCorals: empty patterns → all-
-  // true predicate set → unfiltered result. Kept as defense, not dead code.
+  // Invariant guard — see searchCorals: empty patterns → all-true predicate set
+  // → unfiltered result. Kept as defense, not dead code.
   if (patterns.length === 0) return { listings: [], overflow: false };
   const [p1, p2, p3, p4, p5, p6] = toSlots(patterns);
   const sql = getNeonSql();
@@ -276,7 +261,7 @@ export async function searchListings(
 
   // Markers only — withEventAt: false keeps eventAt null so Listed. + the
   // /search day-bucket dividers read this surface's first_seen_at ordering
-  // timestamp (see header comment; CTK-058 fold-#3 rejection, CTK-130 (+)).
+  // timestamp (see header comment).
   return {
     listings: await mergeDropContext(listings, { withEventAt: false }),
     overflow,

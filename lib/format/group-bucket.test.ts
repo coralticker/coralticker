@@ -1,14 +1,3 @@
-// lib/format/group-bucket.test.ts
-//
-// Boundary tests for bucketTransition() + bucketLabel() and the 12-card
-// threshold gate logic per site.md §4.4 + branding-guide.md §"Group dividers"
-// line 257. Threshold gate is view-side (app/new/page.tsx); these tests
-// exercise the pure helpers + simulate the gate to confirm the divider count
-// the view emits matches spec at each boundary.
-//
-// Runs via Node's built-in test runner with native TypeScript type stripping:
-//   node --test --experimental-strip-types lib/format/*.test.ts
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -18,9 +7,8 @@ import {
   DIVIDER_THRESHOLD,
 } from './group-bucket.ts';
 
-// Helper: simulates the view-side dividers-fired count for a feed of N cards
-// with given event_at timestamps. Mirrors app/new/page.tsx FeedWithDividers
-// logic (12-card threshold gate + bucketTransition between adjacent cards).
+// Mirrors the view-side gate (12-card threshold + bucketTransition between
+// adjacent cards) so the divider count tracks production.
 function dividersFired(eventAts: string[]): number {
   if (eventAts.length < DIVIDER_THRESHOLD) return 0;
   let count = 0;
@@ -67,9 +55,9 @@ test('bucketTransition: crosses local-day boundary → true', () => {
 // --- bucketLabel ladder ---------------------------------------------------
 
 test('bucketLabel: dayDiff=0 same-day → null (totality, CTK-130)', () => {
-  // CTK-130 (+): the former throw is now return-null — same-day = no divider
-  // (base no-Today-header rule). bucketTransition() still skips same-day pairs
-  // for inter-row transitions; the leading caller relies on this null.
+  // Same-day returns null (no divider) under the base no-Today-header rule.
+  // bucketTransition() still skips same-day pairs for inter-row transitions;
+  // the leading caller relies on this null.
   const now = new Date(2026, 4, 14, 12, 0);
   const sameDay = new Date(2026, 4, 14, 9, 0).toISOString();
   assert.equal(bucketLabel(sameDay, now), null);
@@ -101,7 +89,7 @@ test('bucketLabel: 8 days ago → MMM D uppercase', () => {
   assert.equal(bucketLabel(past, now), 'MAY 6');
 });
 
-// --- Threshold + transition boundary cases per directive ------------------
+// --- Threshold + transition boundary cases ---------------------------------
 
 test('exactly 12 cards spanning two days → divider fires once', () => {
   // 11 today + 1 yesterday = 12 total, one bucket transition at index 11.
@@ -139,10 +127,8 @@ test('5 cards spanning two days → no divider (under threshold)', () => {
   assert.equal(dividersFired(feed), 0);
 });
 
-// --- buildBucketedRows (CTK-130 #5 + (+)) ---------------------------------
-// The annotate-then-render split that replaced the three hand-rolled loops.
-// Owns the leading-divider carve-out + future-day suppression + bucketLabel
-// totality. Rows are bare timestamp strings here; getTimestamp = identity.
+// --- buildBucketedRows -----------------------------------------------------
+// Rows are bare timestamp strings here; getTimestamp = identity.
 
 const id = (t: string) => t;
 
@@ -163,7 +149,7 @@ test('buildBucketedRows: today-top feed → NO leading label (base no-Today rule
 
 test('buildBucketedRows: past-top feed → leading label renders (filtered/slow-day case)', () => {
   // Top bucket is days old (a filtered /search feed, or a slow-day unfiltered
-  // /new) → the leading label renders per the carve-out (CTK-130 #5).
+  // /new) → the leading label renders per the carve-out.
   const now = new Date(2026, 4, 14, 12, 0);
   const rows = [
     new Date(2026, 4, 11, 11, 0).toISOString(), // 3 days ago (top)

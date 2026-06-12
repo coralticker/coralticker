@@ -1,18 +1,11 @@
-// lib/format/group-bucket.ts
-//
-// Day-bucket transition helpers for <GroupDivider> (§3.5.7). The feed surfaces
-// (/new, /deals, /search — any surface that crosses day boundaries with 12+
-// cards per branding-guide.md §"Group dividers on long feed surfaces")
-// drive their dividers through buildBucketedRows(), which composes the two
-// primitives:
+// Day-bucket transition helpers for <GroupDivider>. The feed surfaces drive
+// their dividers through buildBucketedRows(), which composes the two primitives:
 //
 //   bucketTransition(prev_event_at, curr_event_at)  → boolean
 //   bucketLabel(event_at, now)                      → string | null
 //
-// The composition takes the formatted label and renders. Threshold gating
-// (12-card minimum, DIVIDER_THRESHOLD) stays view-side per site.md §3.5.7
-// composition rules — buildBucketedRows runs only once a surface is over the
-// threshold.
+// Threshold gating (12-card minimum, DIVIDER_THRESHOLD) stays view-side —
+// buildBucketedRows runs only once a surface is over the threshold.
 //
 // Label ladder per branding-guide.md §"Group dividers on long feed surfaces":
 //   1 day ago     → "YESTERDAY"
@@ -23,7 +16,6 @@
 // branding-guide.md §"Mono uppercase register"; this helper emits the literal
 // uppercase string. The composition's class wiring applies the typography.
 
-// Lives here alongside bucketLabel + bucketTransition — same day-bucket helper family.
 export const DIVIDER_THRESHOLD = 12;
 
 const MONTH_NAMES_UPPER = [
@@ -41,16 +33,14 @@ export function bucketTransition(prevTimestamp: string, currTimestamp: string): 
   return prevDay !== currDay;
 }
 
-// Total over all (timestamp, now) pairs (CTK-130 (+)): dayDiff <= 0 returns
-// null — "no divider for this bucket" — instead of throwing. Two callers reach
-// dayDiff <= 0:
+// Total over all (timestamp, now) pairs: dayDiff <= 0 returns null — "no divider
+// for this bucket" — instead of throwing. Two callers reach dayDiff <= 0:
 //   - same-day (dayDiff = 0): the base no-Today-header rule — a top bucket that
 //     IS today gets no leading label;
 //   - future-dated (dayDiff < 0): a top row ahead of `now` under midnight
 //     Neon-vs-Vercel clock skew — suppressed rather than mislabelled.
-// Both used to live caller-side (/search's isPastDay guard + the throw the
-// loop worked around); buildBucketedRows now relies on this totality, so the
-// helper owns the contract and callers just treat null as "skip the divider."
+// buildBucketedRows relies on this totality, so the helper owns the contract and
+// callers just treat null as "skip the divider."
 export function bucketLabel(timestamp: string, now: Date): string | null {
   const eventDay = startOfLocalDay(new Date(timestamp));
   const nowDay = startOfLocalDay(now);

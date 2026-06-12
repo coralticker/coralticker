@@ -1,13 +1,4 @@
-// /vendors — flat alphabetical index of active vendors per CTK-055.
-//
-// Discovery surface for /vendor/[slug]; rows link directly into per-vendor
-// inventory. Alphabetical sort by display_name per branding-guide.md L41-42
-// (no curated tier ranking). v1-minimal: no enrichment, no eyebrow, no
-// last-scrape timestamp (Phase 3 charter per CTK-009). Rows carry the
-// listing-row divider treatment (py-6 border-b border-line) per the CTK-140
-// rider — parity with /corals + /search + the feed surfaces.
-//
-// ISR revalidate = 600 per site.md §1.2 + /vendor/[slug] precedent.
+// Alphabetical sort by display_name — no curated tier ranking.
 
 import type { Metadata } from 'next';
 import { Suspense } from 'react';

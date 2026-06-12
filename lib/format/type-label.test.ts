@@ -1,10 +1,3 @@
-// Branch coverage for formatTypeLabel() per branding-guide.md §"Type label
-// casing (data-field register)". Three classes (acronym / category-word /
-// binomial) + the unknown-passthrough fallback.
-//
-// Runs via Node's built-in test runner with native TypeScript type stripping:
-//   node --test --experimental-strip-types lib/format/*.test.ts
-
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { formatTypeLabel } from './type-label.ts';
@@ -57,9 +50,8 @@ test('formatTypeLabel: binomial does not match Acropora sp. (period-terminated s
 });
 
 test('formatTypeLabel: unknown value passthrough — Encrusting → display=Encrusting, italic=false', () => {
-  // Not in any of the three classes; drift-add discipline says raw
-  // passthrough until /brand-manager assigns a class. /code-review flags
-  // unknown values for first-exercise routing.
+  // Not in any of the three classes; drift-add discipline says raw passthrough
+  // until a class is assigned.
   assert.deepEqual(formatTypeLabel('Encrusting'), {
     display: 'Encrusting',
     italic: false,

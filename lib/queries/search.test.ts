@@ -1,12 +1,5 @@
-// Pattern-builder coverage for /search (CTK-058 D-058-1, /review-plan
-// suggestion fold). buildIlikePatterns is the single escape point between
-// parseSearchQuery output and search.ts's per-token ILIKE ... ESCAPE '!'
-// predicates — these tests pin the tokenize / cap / escape / wrap contract.
-// The builder lives in listing-params.ts (pure parser family; search.ts
-// carries a DB import chain the bare node test runner can't load).
-//
-// Runs via Node's built-in test runner with native TypeScript type stripping:
-//   node --test --experimental-strip-types lib/queries/*.test.ts
+// The builder lives in listing-params.ts (pure parser family; search.ts carries
+// a DB import chain the bare node test runner can't load).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -32,8 +25,8 @@ test('buildIlikePatterns: caps at SEARCH_TOKEN_CAP, drops the remainder', () => 
 
 test('buildIlikePatterns: escapes % _ ! with the ! escape char', () => {
   // JS template cooking collapses backslash escapes, hence '!' as the escape
-  // char per feedback_ts_template_sql_escape_char — and '!' itself must
-  // escape so a literal '!' in a query can't orphan-escape what follows.
+  // char — and '!' itself must escape so a literal '!' in a query can't
+  // orphan-escape what follows.
   assert.deepEqual(buildIlikePatterns('50%'), ['%50!%%']);
   assert.deepEqual(buildIlikePatterns('a_b'), ['%a!_b%']);
   assert.deepEqual(buildIlikePatterns('wow!'), ['%wow!!%']);

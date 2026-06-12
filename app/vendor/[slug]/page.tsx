@@ -1,9 +1,9 @@
 // Retired vendors (vendor.active === false) short-circuit before any inventory
-// query — row stays in `vendors` per architecture-v1.md §1.3 row-retention rule
-// but the page renders a back-link instead of inventory.
+// query — row stays in `vendors` but the page renders a back-link instead of
+// inventory.
 //
 // Auction listings (currentPrice = null) reach <VendorInventoryRow> and render
-// "price on request" per project_auctions_in_scope.md.
+// "price on request".
 
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -37,14 +37,12 @@ import { pluralize } from '@/lib/format/pluralize';
 import { VendorInventoryRow } from './_components/vendor-inventory-row';
 import { PaginationNav } from './_components/pagination-nav';
 
-// CTK-047 B-2 cascade — medal-bearing surface; cadence equalized to 5min per
-// /lead-architect re-disposition 2026-06-02. The real cadence lives in
-// getVendorInventory's unstable_cache (300, lib/queries/listings.ts): the
-// searchParams await makes this route fully dynamic — no static HTML is
-// emitted for its paths despite generateStaticParams (prerender-manifest
-// check, CTK-128 close review) — so the const below is inert for serving
-// today; kept so the cadence intent survives if the route ever regains
-// static prerendering. /vendors index (no medal) is unaffected.
+// The real cadence lives in getVendorInventory's unstable_cache (300,
+// lib/queries/listings.ts): the searchParams await makes this route fully
+// dynamic — no static HTML is emitted for its paths despite
+// generateStaticParams — so the const below is inert for serving today; kept
+// so the cadence intent survives if the route ever regains static
+// prerendering.
 export const revalidate = 300;
 
 interface PageProps {
@@ -64,10 +62,6 @@ function parsePage(raw: string | undefined): number {
   return n;
 }
 
-// Sort / category / include-oos parsers moved to lib/queries/listing-params.ts
-// at CTK-127 (three consumer routes post-promotion); parsePage stays local —
-// pagination is a /vendor/[slug]-only axis.
-
 export async function generateStaticParams(): Promise<{ slug: string }[]> {
   return getAllActiveVendorSlugs();
 }
@@ -77,8 +71,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const vendor = await getVendorBySlug(slug);
   if (!vendor) {
     // 404 copy duplicated at ./not-found.tsx metadata export — edit both or
-    // neither. This null-branch is RSC-flight-only (verified next@15.5.18);
-    // not-found.tsx paints the rendered head and is the keeper if one ever goes.
+    // neither. This null-branch is RSC-flight-only; not-found.tsx paints the
+    // rendered head and is the keeper if one ever goes.
     return {
       title: 'Vendor not found', // suffix via root title.template
       description: "That vendor isn't on CoralTicker yet.",
@@ -107,9 +101,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 // Not-found-shaped chrome kept INLINE rather than via <NotFoundShell>: this is
 // a retired-vendor gap surface (vendor.active === false), distinct 404
 // semantics with its own back-link target (/new, not /vendors), so it consumes
-// <PageShell> with inline children instead of the 404 specialization. py-16
-// drift normalized to py-12 by the shared chrome (CTK-077 /brand-manager
-// Element 1).
+// <PageShell> with inline children instead of the 404 specialization.
 function RetiredVendorView({ vendor }: { vendor: Vendor }) {
   return (
     <PageShell as="section">
@@ -194,18 +186,16 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
     return <RetiredVendorView vendor={vendor} />;
   }
 
-  // CTK-046: page parse + totalPages math sequenced after vendor lookup so
-  // retired / not-found vendors short-circuit before the count query fires.
+  // Page parse + totalPages math sequenced after vendor lookup so retired /
+  // not-found vendors short-circuit before the count query fires.
   // Math.max(1, ...) holds the floor at 1 even on empty inventory — single-page
-  // PaginationNav state still renders ("PAGE 1 OF 1" both-disabled), consistent
-  // with brand-manager spec for /vendor/jf, /vendor/tsa, /vendor/pacific-east
-  // v1 sparsity. Upper-clamp via Math.min keeps malformed ?page=999 graceful.
+  // PaginationNav state still renders ("PAGE 1 OF 1" both-disabled). Upper-clamp
+  // via Math.min keeps malformed ?page=999 graceful.
   //
-  // CTK-053: sort/category/in-stock params parsed against allowlists; invalid
-  // inputs silently default. Total query uses filter params (page-count
-  // shrinks under filter); inventory query uses all four (page + sort +
-  // filters). CTK-098 (2026-05-31): in-stock semantic flipped — default is
-  // in-stock-only; ?include-oos=1 opt-in restores mixed render.
+  // sort/category/in-stock params parsed against allowlists; invalid inputs
+  // silently default. Total query uses filter params (page-count shrinks under
+  // filter); inventory query uses all four (page + sort + filters). In-stock
+  // default is in-stock-only; ?include-oos=1 opt-in restores mixed render.
   const sort = parseSort(sp.sort);
   const category = parseCategory(sp.category);
   const includeOOS = parseIncludeOOS(sp['include-oos']);
@@ -217,9 +207,8 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
   const totalPages = Math.max(1, Math.ceil(total / 50));
   const page = Math.min(rawPage, totalPages);
 
-  // Empty branch (total === 0): eyebrow suppressed pending /brand-manager
-  // empty-state register call; until then the empty-state body line below owns
-  // the surface alone.
+  // Empty branch (total === 0): eyebrow suppressed; the empty-state body line
+  // below owns the surface alone.
   const eyebrowChunks =
     total > 0
       ? latestScrapeAt !== null
@@ -234,9 +223,8 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
   // to document head when rendered without a `precedence` attribute). Next.js
   // Metadata API has no first-class prev/next slot; icons.other is the
   // documented escape hatch but semantically misleading.
-  // Prev for page 2 routes to bare URL (canonical) per site.md §6 SEO discipline.
-  // CTK-053: filter/sort params preserved in prev/next hrefs so SEO chain
-  // stays within the filtered subset.
+  // Prev for page 2 routes to bare URL (canonical). Filter/sort params preserved
+  // in prev/next hrefs so the SEO chain stays within the filtered subset.
   function pageHref(p: number): string {
     const params = new URLSearchParams();
     if (sort !== 'newest') params.set('sort', sort);

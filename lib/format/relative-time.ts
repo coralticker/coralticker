@@ -1,12 +1,9 @@
-// lib/format/relative-time.ts
-//
-// Pure relative-time formatter. INV-01 channel-parity sibling per
-// site.md §3.6 fold-point E + §3.2 channel-parity:
+// Pure relative-time formatter. INV-01 channel-parity sibling:
 //   - Web <RelativeTime> (DOM) consumes via components/ui/relative-time.tsx.
 //   - formatDataRow() (non-DOM channels — email digest, Discord embed, push body)
 //     consumes at send-time with a frozen `now`.
 //
-// Format ladder per branding-guide.md §"Time format" lines 241-249:
+// Format ladder per branding-guide.md §"Time format":
 //   < 1h    → "N minute(s) ago"  (singular at N === 1)
 //   < 24h   → "N hour(s) ago"    (singular at N === 1)
 //   < 7d    → "N day(s) ago"     (singular at N === 1)

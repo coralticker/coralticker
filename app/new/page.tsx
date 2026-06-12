@@ -25,9 +25,9 @@ import {
   type ListingSort,
 } from '@/lib/queries/listings';
 
-// CTK-127: the searchParams read below flips this route dynamic at runtime
-// (CTK-046/126 precedent); getRecentArrivals' unstable_cache wrap keyed on
-// (sort, category) carries the 300s data cadence.
+// The searchParams read below flips this route dynamic at runtime;
+// getRecentArrivals' unstable_cache wrap keyed on (sort, category) carries
+// the 300s data cadence.
 export const revalidate = 300;
 
 export const metadata: Metadata = {
@@ -46,16 +46,15 @@ interface PageProps {
 const SKELETON_ROW_COUNT = 6;
 
 // Window label derives from the same constant the query passes to
-// get_listing_lead_event() (CTK-127 fold #3, one-constant pattern per
-// /deals' PRICE_DROP_WINDOW) — three consumers: downtime fallback,
-// filtered-empty line, filtered-zero eyebrow chunk.
+// get_listing_lead_event() (one-constant pattern), so it can't drift from the
+// actual window.
 const ARRIVALS_WINDOW = `${ARRIVALS_WINDOW_HOURS} hours`;
 
 const DOWNTIME_FALLBACK = `No new arrivals in the last ${ARRIVALS_WINDOW}. I'll surface them as vendors list.`;
 
-// CTK-127: arg-taking per the /review-plan cache() re-key pin — a no-arg
-// wrapper would serve one cached shape for all filter states in a request
-// tree; React cache() keys per-request dedup by the (sort, category) args.
+// Arg-taking is load-bearing: a no-arg wrapper would serve one cached shape
+// for all filter states in a request tree; React cache() keys per-request
+// dedup by the (sort, category) args.
 const arrivalsCached = cache(
   (sort: ListingSort, category: ListingCategory | null) =>
     getRecentArrivals(sort, category),
@@ -63,11 +62,9 @@ const arrivalsCached = cache(
 
 function rowToProps(arrival: ArrivalListing) {
   const { event, ...listing } = arrival;
-  // CTK-047 Session 5 — baseEvent carries the RPC's just-listed vs.
-  // back-in-stock hint; <ListingCard> derives "price dropped at" itself from
-  // listing.priorPrice + priceDropObservedAt + listing.compareAtPrice. The
-  // 'price-dropped' RPC arm falls back to 'just-listed' baseEvent (composition
-  // overrides via the derivation rule).
+  // baseEvent carries the RPC's just-listed vs. back-in-stock hint;
+  // <ListingCard> derives "price dropped at" itself. The 'price-dropped' RPC
+  // arm falls back to 'just-listed' baseEvent.
   const baseEvent = event === 'back-in-stock' ? 'back-in-stock' : 'just-listed';
   return { listing, baseEvent } as const;
 }
@@ -84,9 +81,8 @@ async function Eyebrow({
   if (arrivals.length === 0) {
     // Bare zero — eyebrow suppressed; the downtime fallback owns the surface.
     if (category === null) return null;
-    // Filtered zero (branding-guide §"Eyebrow shape + slot" filtered-eyebrows
-    // lock): qualified zero count + window chunk, freshness omitted — the
-    // window chunk earns the slot at zero where the freshness chunk is
+    // Filtered zero: qualified zero count + window chunk, freshness omitted —
+    // the window chunk earns the slot at zero where the freshness chunk is
     // impossible.
     return (
       <PageEyebrow
@@ -99,7 +95,7 @@ async function Eyebrow({
   }
 
   // LATEST = max(eventAt), not index 0 — price-sorted renders break the
-  // recency-order assumption (/review-plan pin; shared helper per fold #1).
+  // recency-order assumption.
   const latestEventAt = latestTimestamp(arrivals, (a) => a.eventAt);
   const latestRelative = formatRelativeTime(latestEventAt, new Date()).toUpperCase();
   const countNoun = pluralize(arrivals.length, 'ARRIVAL', 'ARRIVALS');
@@ -124,11 +120,10 @@ async function ArrivalsFeed({
   const arrivals = await arrivalsCached(sort, category);
 
   if (arrivals.length === 0) {
-    // Filtered-empty line (branding-guide §"Short-copy assets", CTK-127): a
-    // filter miss is an honest zero, not a coverage gap — no I-voice second
-    // sentence, no promise. Category renders prose-register via the
-    // formatTypeLabel three-class resolver (SPS/LPS caps, Zoa/Clam Title
-    // Case). Bare-URL zero keeps DOWNTIME_FALLBACK.
+    // Filtered-empty line: a filter miss is an honest zero, not a coverage
+    // gap — no I-voice second sentence, no promise. Category renders
+    // prose-register via the formatTypeLabel three-class resolver. Bare-URL
+    // zero keeps DOWNTIME_FALLBACK.
     if (category !== null) {
       return (
         <p role="status" className="text-base text-ink py-6">
@@ -146,7 +141,7 @@ async function ArrivalsFeed({
 
   // Time-bucket dividers are chrome over a recency-ordered list; under
   // price-asc / price-desc they would interleave nonsensically. Dividers
-  // gate on the default sort — price-sorted feeds render flat (CTK-127).
+  // gate on the default sort — price-sorted feeds render flat.
   const withDividers = sort === 'newest';
 
   if (!withDividers || arrivals.length < DIVIDER_THRESHOLD) {
@@ -199,8 +194,7 @@ export default async function NewArrivalsPage({ searchParams }: PageProps) {
       <PageH1 className="mb-8">
         New arrivals.
       </PageH1>
-      {/* Two axes only — no INCLUDE OUT OF STOCK on feed surfaces per
-          branding-guide §"State markers" deal-buyer query-filter lock
+      {/* Two axes only — no INCLUDE OUT OF STOCK on feed surfaces
           (includeOOS omitted → axis not rendered). */}
       <SortFilterBar
         basePath="/new"
