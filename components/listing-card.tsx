@@ -27,6 +27,7 @@
 
 import { type DataRowField } from '@/components/ui/data-row';
 import { ListingRowFrame } from '@/components/ui/listing-row-frame';
+import { buildPriceValue } from '@/lib/format/listing-price';
 import { resolveOriginVendor } from '@/lib/format/origin-vendor';
 import type { Listing } from '@/lib/queries/listings';
 
@@ -34,11 +35,6 @@ interface ListingCardProps {
   listing: Listing;
   baseEvent?: 'just-listed' | 'back-in-stock';
   matchIndicator?: boolean;
-}
-
-function formatPrice(value: number | null): string {
-  if (value === null) return 'price on request';
-  return `$${value.toFixed(2)}`;
 }
 
 function deriveLeadEvent(
@@ -79,44 +75,14 @@ function deriveLeadEvent(
   };
 }
 
-function buildFields(listing: Listing, isOutOfStock: boolean): DataRowField[] {
+function buildFields(listing: Listing): DataRowField[] {
   const fields: DataRowField[] = [];
 
-  // Price precedence chain stays verbatim per CTK-047 Q3 directive — Q3
-  // changes the LEAD derivation only, not the Price field. OOS > price-drop-
-  // new > vendor-markdown > bare. currentPrice !== null guards auction rows
-  // (project_auctions_in_scope.md L4 parse-side).
-  if (isOutOfStock) {
-    fields.push({
-      label: 'Price',
-      value: { kind: 'invalidated', value: formatPrice(listing.currentPrice) },
-    });
-  } else if (listing.priorPrice !== null && listing.currentPrice !== null) {
-    fields.push({
-      label: 'Price',
-      value: {
-        kind: 'price-drop-new',
-        oldValue: formatPrice(listing.priorPrice),
-        newValue: formatPrice(listing.currentPrice),
-      },
-    });
-  } else if (
-    listing.compareAtPrice !== null &&
-    listing.currentPrice !== null &&
-    (listing.compareAtPrice - listing.currentPrice) >=
-      listing.currentPrice * 0.05 - 1e-9
-  ) {
-    fields.push({
-      label: 'Price',
-      value: {
-        kind: 'vendor-markdown',
-        oldValue: formatPrice(listing.compareAtPrice),
-        newValue: formatPrice(listing.currentPrice),
-      },
-    });
-  } else {
-    fields.push({ label: 'Price', value: formatPrice(listing.currentPrice) });
-  }
+  // Price precedence chain (OOS > price-drop-new > vendor-markdown > bare)
+  // lives in the shared buildPriceValue() — CTK-103 F3 consolidation. Q3
+  // changes the LEAD derivation only (deriveLeadEvent above), not the Price
+  // field.
+  fields.push({ label: 'Price', value: buildPriceValue(listing) });
 
   fields.push({
     label: 'Listed',
@@ -142,10 +108,9 @@ function buildFields(listing: Listing, isOutOfStock: boolean): DataRowField[] {
 }
 
 export function ListingCard({ listing, baseEvent, matchIndicator }: ListingCardProps) {
-  const isOutOfStock = !listing.inStock;
   const coralName = listing.namedCoralCanonicalName ?? listing.rawTitle;
   const { verb } = deriveLeadEvent(listing, baseEvent);
-  const fields = buildFields(listing, isOutOfStock);
+  const fields = buildFields(listing);
 
   return (
     <ListingRowFrame
