@@ -28,15 +28,18 @@ from scrapers.common.parse_shopify import _should_keep
 
 
 # UC YAML shape at CTK-096 ship: PT allowlist permissive on empty bucket +
-# CORAL + Coral. tag_denylist 11 entries. title_denylist 7 walk-grounded
-# entries per CTK-096 D-1 / D-3, plus the CTK-141 bare 'shipping'
-# forward-bind (2026-06-12). (The CTK-107 fleet chaeto/macroalgae entries
-# remain unmirrored here — CTK-096-scoped suite, pre-existing state.)
+# CORAL + Coral. title_denylist 7 walk-grounded entries per CTK-096 D-1 / D-3,
+# plus the CTK-141 bare 'shipping' forward-bind (2026-06-12). tag_denylist
+# mirror carries the CTK-153 'Dalua International LLC' full-LLC entry
+# (2026-06-13). (Marco Rocks / MarcoRocks + the CTK-107 fleet chaeto/macroalgae
+# title entries remain unmirrored here — CTK-096-scoped representative subset,
+# pre-existing state; the mirror pins drop-vs-keep behavior, not full YAML
+# parity.)
 UC_FILTER = {
     "product_type_allowlist": ["", "CORAL", "Coral"],
     "tag_denylist": [
-        "Dalua", "goods", "illumagic", "maintenance", "openbox", "Other DG",
-        "Panta Rhei", "PNS", "shipping", "triton", "used",
+        "Dalua", "Dalua International LLC", "goods", "illumagic", "maintenance",
+        "openbox", "Other DG", "Panta Rhei", "PNS", "shipping", "triton", "used",
     ],
     "title_denylist": [
         "ARID ",
@@ -111,6 +114,35 @@ def test_uc_drops_panta_rhei_illumagic_dalua():
         assert _should_keep(_p(title, product_type="", tags=[]), UC_FILTER) is False, title
 
 
+def test_uc_drops_dalua_collective_cohort_pt_empty():
+    """CTK-153 (2026-06-13) — the Shopify Collective dropship wave. UC sources
+    172 products from one supplier carrying tags=['Dalua International LLC',
+    'Shopify Collective']; 24 ride the allowlisted PT='' bucket (23 leaked).
+    The bare 'Dalua' tag_denylist entry never matched these: membership is
+    normalized-exact, and _normalize_tag('Dalua')='dalua' != the real product
+    tag 'dalua international llc'. The full-LLC entry catches the whole wave.
+    Synthetics carry the verbatim two-tag shape + PT='' (the leak case)."""
+    for title in [
+        "VCA AI Prime Visor",
+        "Shrimp Bickies SAS",
+        "Dual Random Flow Generators",
+        "Trigger natural feeding behaviour in minutes — without polluting your tank.",
+    ]:
+        p = _p(title, product_type="",
+               tags=["Dalua International LLC", "Shopify Collective"])
+        assert _should_keep(p, UC_FILTER) is False, title
+
+
+def test_uc_dalua_collective_fp_guard_pt_empty_coral_kept():
+    """CTK-153 FP-guard — the cut is brand-tag-scoped, not PT-scoped. A real
+    UC WYSIWYG coral riding the same allowlisted PT='' bucket, WITHOUT the
+    Dalua/Collective brand tags, must stay kept. Pins that the new entry does
+    not over-reach into the '' bucket's ~38 signature corals (the reason ''
+    stays allowlisted; CTK-085 Q-8 path (a))."""
+    p = _p("UC Pikachu Acropora", product_type="", tags=[])
+    assert _should_keep(p, UC_FILTER) is True
+
+
 # --- Keep: FP-discipline controls + baseline coral ---
 
 def test_uc_drops_shipping_pt_drift_class():
@@ -182,6 +214,8 @@ def main() -> int:
         test_uc_drops_seeclear_magsleeve,
         test_uc_drops_arid_brand,
         test_uc_drops_panta_rhei_illumagic_dalua,
+        test_uc_drops_dalua_collective_cohort_pt_empty,
+        test_uc_dalua_collective_fp_guard_pt_empty_coral_kept,
         test_uc_drops_shipping_pt_drift_class,
         test_uc_drops_free_shipping_residual_control,
         test_uc_keeps_arida_suffix_fp_control,
