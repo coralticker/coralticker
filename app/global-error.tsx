@@ -32,7 +32,7 @@ export default function GlobalError({ reset }: GlobalErrorProps) {
           <p className="text-base text-ink">
             {retrying
               ? 'Retrying.'
-              : "Scrapers are down. I'm fixing it. Last update: —."}
+              : "The feed's not updating. I'm fixing it. Last update: —."}
           </p>
           <div className="mt-4">
             <Button type="button" disabled={retrying} onClick={handleRetry}>

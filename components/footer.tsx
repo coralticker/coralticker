@@ -28,7 +28,7 @@ export async function Footer() {
           <Wordmark variant="nav" />
         </span>
         <small className="font-mono text-sm">
-          Not affiliated with vendors.<br className="sm:hidden" /> Last scrape: {lastScrape}
+          Not affiliated with vendors.<br className="sm:hidden" /> Last checked: {lastScrape}
         </small>
       </div>
     </footer>
