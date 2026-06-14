@@ -62,7 +62,8 @@ WWC_CATEGORY_FILTER = {
         "shipping",
     ],
     # CTK-119 D-1 anchored wholesale/live-sale channel-prefix axis.
-    "title_denylist_prefix": ["WS - "],
+    # CTK-155 (2026-06-14) added 'test-' for the launch-day junk row — see YAML.
+    "title_denylist_prefix": ["WS - ", "test-"],
 }
 
 # Mirrors scrapers/vendors/wwc.yaml auction_detection block (CTK-041 D-1 lean
@@ -312,6 +313,44 @@ def test_filter_keeps_word_final_ws_collision_class(products):
         )
 
 
+# CTK-155: anchored 'test-' prefix rejects the launch-day test row
+def test_filter_rejects_test_prefix(products):
+    """CTK-155 (2026-06-14) — WWC test row 'test-WWC Striptease Acropora'
+    (id=15795, PT='') rejects on the title_denylist_prefix axis. The row's PT=''
+    is not in the WWC allowlist (so it is already PT-filtered today), but the
+    anchored prefix is belt-and-suspenders + forward-binds the class. Title
+    verbatim from the live feed; lowercase-drift variant pinned per the CTK-096
+    convention."""
+    for title in ("test-WWC Striptease Acropora", "TEST-uppercase drift"):
+        product = {
+            "title": title,
+            "product_type": "Frag",  # allowlisted — isolates the prefix as the cut
+            "tags": [],
+            "variants": [{"available": True}],
+        }
+        assert _should_keep(product, WWC_CATEGORY_FILTER) is False, (
+            f"title-initial {title!r} should reject on the 'test-' prefix axis; product passed"
+        )
+
+
+# CTK-155: anchored semantics — 'test' substring class survives
+def test_filter_keeps_test_substring_collision_class(products):
+    """CTK-155 FP-guard — 'test-' is an ANCHORED prefix, not a bare substring
+    'test' (which would false-kill greatest/hottest/latest/contest). Corals
+    carrying 'test' inside a word must SURVIVE; a regression to substring or a
+    move to title_denylist breaks this."""
+    for title in ("Greatest Hits Acropora", "Hottest Contest Zoa"):
+        product = {
+            "title": title,
+            "product_type": "Frag",
+            "tags": [],
+            "variants": [{"available": True}],
+        }
+        assert _should_keep(product, WWC_CATEGORY_FILTER) is True, (
+            f"'test'-substring title {title!r} false-killed — anchored semantics regressed"
+        )
+
+
 # CTK-119 Test 20: promo tail exact-compound entries reject, one per entry
 def test_filter_rejects_promo_tail_exact_titles(products):
     """CTK-119 D-1 — each of the 6 promo/POS/BOGO dead-route titles rejects
@@ -498,6 +537,8 @@ def main() -> int:
         test_non_auction_preserves_price,
         test_filter_rejects_ws_prefix,
         test_filter_keeps_word_final_ws_collision_class,
+        test_filter_rejects_test_prefix,
+        test_filter_keeps_test_substring_collision_class,
         test_filter_rejects_promo_tail_exact_titles,
         test_filter_keeps_corals_post_ctk119,
         test_filter_rejects_dry_goods_tag_in_allowlisted_pt,

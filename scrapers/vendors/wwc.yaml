@@ -149,6 +149,14 @@ category_filter:
   # review-fold #1.
   title_denylist_prefix:
     - "WS - "             # trailing space intentional; quoted to preserve it
+    # CTK-155 (2026-06-14) launch-day junk purge: WWC test row 'test-WWC
+    # Striptease Acropora' (id 15795, PT='' — not in the WWC allowlist, so the
+    # row is already intake-filtered; this prefix is belt-and-suspenders + the
+    # bridge flips the persisted in_stock=true row). Anchored prefix, FP-immune
+    # (not substring 'test', which false-kills greatest/contest/latest). Two-
+    # lens audit 2026-06-14: live full feed (2,223 products) = 1 prefix hit (the
+    # junk row), 0 coral; DB-wide = 0 named-coral collision.
+    - "test-"             # vendor test row 'test-WWC Striptease Acropora' (CTK-155 2026-06-14)
 
 # CTK-041 auction_detection: null-out current_price on auction listings per
 # Jon 2026-05-14 directive. Auctions stay visible in /new (rendered as

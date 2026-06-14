@@ -51,6 +51,11 @@ POTO_CATEGORY_FILTER = {
     "product_type_allowlist": [
         "live sale", "lightning sale", "collection", "poto-gems", "wysiwyg", "",
     ],
+    # CTK-155 (2026-06-14): mirror of the YAML title_denylist_prefix. (The
+    # production title_denylist substring block — Chaeto/Macroalgae — predates
+    # this mirror and is intentionally not reproduced here; see the /lead-backend
+    # flag re: the pre-existing POTO mirror gap.)
+    "title_denylist_prefix": ["Title"],
 }
 POTO_IN_STOCK_ONLY = True
 
@@ -82,6 +87,13 @@ def _keep(p: dict) -> bool:
 
 def _normalize(p: dict) -> dict:
     return _normalize_product(p, BASE_URL, IMAGE_STRATEGY, ORIGINATOR_PREFIX)
+
+
+def _p(title: str, product_type: str = "", available: bool = True) -> dict:
+    """CTK-155 synthetic product — buyable single variant so the in_stock_only
+    gate passes and the title axis is isolated as the cut."""
+    return {"title": title, "product_type": product_type, "tags": [],
+            "variants": [{"available": available}]}
 
 
 # Test 1: html_hash sentinel — sorted-keys-of-first-product SHA256
@@ -181,6 +193,32 @@ def test_normalize_buyable_coral(products):
     assert norm["vendor_image_url"] is not None
 
 
+# Test 8 (CTK-155): "Title" placeholder dropped by the anchored prefix
+def test_drops_title_placeholder_via_prefix(products=None):
+    """CTK-155 (2026-06-14) — POTO vendor placeholder row "Title" (id 72999,
+    PT='' the allowlisted empty bucket) leaked to /new. title_denylist_prefix
+    "Title" drops it. Synthetic is buyable + PT='' so in_stock_only and the
+    allowlist both PASS — only the prefix rejects."""
+    p = _p("Title")
+    assert _keep(p) is False
+    # Prove the prefix is the cut: without it (allowlist only) the row is kept.
+    assert _should_keep(
+        p, {"product_type_allowlist": POTO_CATEGORY_FILTER["product_type_allowlist"]},
+        in_stock_only=POTO_IN_STOCK_ONLY,
+    ) is True
+
+
+# Test 9 (CTK-155): FP-guard — anchored prefix spares a "title" substring coral
+def test_title_prefix_fp_guard_substring_coral_kept(products=None):
+    """CTK-155 FP-guard — the entry is an ANCHORED prefix, not a substring
+    (the reason Jon chose prefix). A coral whose name merely CONTAINS "title"
+    mid-string must stay kept: "...subtitle..." does not START with "title".
+    Pins that the entry cannot over-reach into real coral names."""
+    p = _p("Reef Subtitle Acropora")  # contains "title" at an offset, not the start
+    assert "title" in p["title"].lower()
+    assert _keep(p) is True
+
+
 def main() -> int:
     products = _load_fixture()
     tests = [
@@ -191,6 +229,8 @@ def main() -> int:
         test_macroalgae_accepted_leak,
         test_skip_count_matches,
         test_normalize_buyable_coral,
+        test_drops_title_placeholder_via_prefix,
+        test_title_prefix_fp_guard_substring_coral_kept,
     ]
     failed = 0
     for t in tests:

@@ -82,6 +82,8 @@ TSA_CATEGORY_FILTER = {
         "Test Livestock", "Chaeto", "Cheato", "Macroalgae", "Macro Algae",
         "Late Fees",
         "shipping",
+        # CTK-155 (2026-06-14) launch-day junk purge — see YAML rationale.
+        "Live stock test", "Test Suppl",
     ],
 }
 
@@ -638,6 +640,43 @@ def test_filter_keeps_hide_tagged_coral(products):
     )
 
 
+# ─── CTK-155 launch-day junk purge: test/placeholder row rejects ─────────────
+def test_filter_rejects_test_placeholder_rows(products):
+    """CTK-155 (2026-06-14) — three TSA test/placeholder rows leaked to /new via
+    allowlisted PTs. 'Live stock test' spans 'Live stock test' (PT='Livestock')
+    + 'Live stock test b'; 'Test Suppl' spans 'Test Supply' (PT='') + 'Test
+    Supplies Product' (PT='Aquarium Supplies', also allowlist-denied — title axis
+    is belt-and-suspenders there). Titles verbatim from the live feed; the
+    existing 'Test Livestock' entry is a different word order and does NOT cover
+    'Live stock test'."""
+    cases = [
+        ("Live stock test", "Livestock"),
+        ("Live stock test b", "Livestock"),
+        ("Test Supply", ""),
+        ("Test Supplies Product", ""),  # PT='' (the leak surface); reject on title
+    ]
+    for title, pt in cases:
+        product = {"title": title, "product_type": pt, "tags": [],
+                   "variants": [{"available": True}]}
+        assert _should_keep(product, TSA_CATEGORY_FILTER) is False, (
+            f"placeholder {title!r} should reject via title_denylist; product passed"
+        )
+
+
+def test_filter_keeps_coral_with_test_substring(products):
+    """CTK-155 FP-guard — the entries are compound ('Live stock test', 'Test
+    Suppl'), never a bare 'test' (which would substring-fire on greatest /
+    hottest / latest / contest). These synthetic corals carry 'test' inside a
+    word, blank-PT to share the leak surface, and must survive; a regression to
+    a bare 'test' entry breaks this."""
+    for title in ("Greatest Show Acropora", "Hottest Contest Zoa Coral"):
+        coral = {"title": title, "product_type": "", "tags": [],
+                 "variants": [{"available": True}]}
+        assert _should_keep(coral, TSA_CATEGORY_FILTER) is True, (
+            f"coral {title!r} false-killed — entries must stay compound, never bare 'test'"
+        )
+
+
 # ─── Test 19 (CTK-037 Session 5.5): predicate normalization keeps None/absent ─
 def test_filter_normalizes_none_product_type_to_empty_string(products):
     """CTK-037 Session 5.5 — None or key-absent product_type normalizes to "" so
@@ -695,6 +734,8 @@ def main() -> int:
         test_filter_keeps_coral_with_fee_substring,
         test_filter_rejects_shipping_service_class,
         test_filter_keeps_hide_tagged_coral,
+        test_filter_rejects_test_placeholder_rows,
+        test_filter_keeps_coral_with_test_substring,
         test_filter_normalizes_none_product_type_to_empty_string,
         test_filter_rejects_none_product_type_when_empty_not_in_allowlist,
     ]

@@ -187,3 +187,16 @@ category_filter:
     # would false-kill the lot at intake and fight the catalog-rotation
     # recovery path. Title axis is the surgical cut.
     - shipping            # service rows 'Overnight Shipping' + 'Live Sale Discounted Shipping'; matches BC/WWC fleet entries
+    # CTK-155 (2026-06-14) launch-day junk purge: 3 TSA test/placeholder rows
+    # leaking to /new via allowlisted PTs. 'Live stock test' spans 'Live stock
+    # test' (id 36219, PT='Livestock') + 'Live stock test b' (id 36218); note
+    # the existing 'Test Livestock' entry is a different word order and does not
+    # cover these. 'Test Suppl' spans 'Test Supply' (id 35514, PT='') + 'Test
+    # Supplies Product' (id 36925) + the already-OOS 'Test Supplies Product
+    # (UPC)' (forward-bind, no bridge) — 'Test Supply' alone would miss
+    # '...Supplies'. Bare 'test' deliberately NOT added: substring 'test' false-
+    # kills greatest/hottest/latest/contest. Two-lens audit 2026-06-14: live
+    # full feed (4,356 products) = 2 + 3 hits, all the junk cohort, 0 coral;
+    # DB-wide = 0 named-coral collision.
+    - Live stock test     # placeholder rows 'Live stock test' + 'Live stock test b' (CTK-155 2026-06-14)
+    - Test Suppl          # placeholder rows 'Test Supply' + 'Test Supplies Product' (+ already-OOS UPC variant) (CTK-155 2026-06-14)
