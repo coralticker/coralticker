@@ -27,7 +27,7 @@ const links: SocialLink[] = [
     ),
   },
   {
-    href: 'https://www.reef2reef.com/',
+    href: 'https://www.reef2reef.com/threads/got-tired-of-checking-ten-vendor-sites-every-morning-so-i-built-a-free-coral-drop-feed.1161470/',
     label: 'Reef2Reef',
     ariaLabel: 'Reef2Reef forum',
     iconPaths: (
