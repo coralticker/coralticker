@@ -29,9 +29,9 @@ export default function About() {
         <p>
           I&apos;m Jon. Reefer. Data engineer. I built CoralTicker because I kept
           missing listings. It&apos;s a personal project, not a startup. No team,
-          no investors, no roadmap pressure. I add vendors when there&apos;s signal
-          they&apos;re worth tracking. I ship features that fix something I&apos;d
-          actually use.
+          no investors, no roadmap pressure. I add vendors reefers actually buy
+          from. I build features I&apos;d actually use. If you&apos;d use one I
+          haven&apos;t built, tell me.
         </p>
         <p>
           CoralTicker doesn&apos;t sell coral. The links go to the vendor&apos;s own
