@@ -176,6 +176,27 @@ def fetch_and_parse(config: dict) -> ParseResult:
         _normalize_tag(e) for e in ((category_filter or {}).get("tag_denylist") or [])
     }
 
+    # CTK-160 (Option B) auction-keep override. Auctions are in-scope
+    # ([[project_auctions_in_scope]]) but their product_type (e.g. 'WWC Auction')
+    # misses the coral allowlist, so _should_keep drops them — stranding them out
+    # of the scrape AND out of the cohort absent-set, so they freeze in_stock at a
+    # stale buy-price (CTK-160 root cause). For an _is_auction product we re-test
+    # against a denylist-only VIEW of the filter (allowlists stripped): the auction
+    # bypasses the coral-gate (product_type/tag allowlist) but still faces the
+    # junk-gate (tag/title denylists) + the availability gate, via the SAME
+    # _should_keep predicate — no re-implemented denylist logic. A kept auction is
+    # price-nulled in _normalize_product (the CTK-041 null-out, which now actually
+    # runs) and does NOT enter filtered_urls, so it participates in the normal
+    # cohort-OOS lifecycle (fixes the freeze). Built only when auction_detection is
+    # configured (WWC today); a no-op for every other vendor. The coverage sweep
+    # (CTK-160 Step 0.5: 50/50 WWC auctions coral, 0 denylist hits) cleared the
+    # allowlist-bypass as non-coral-leak-safe for this class. Built only when
+    # auction_detection is configured (WWC today); None elsewhere = override
+    # no-op. See _should_keep_with_auction_override.
+    auction_keep_filter = (
+        _build_auction_keep_filter(category_filter) if auction_detection else None
+    )
+
     for page in range(1, max_pages + 1):
         url = f"{base_url}{products_path}?limit={page_size}&page={page}"
         result = http.fetch(url, request_delay_sec=delay)
@@ -217,7 +238,10 @@ def fetch_and_parse(config: dict) -> ParseResult:
         # accumulated across pages and logged at parse-end below. Permissive
         # default — config without category_filter block bypasses the gate.
         for p in products:
-            if not _should_keep(p, category_filter, in_stock_only, tag_denylist_norm):
+            if not _should_keep_with_auction_override(
+                p, category_filter, auction_detection, auction_keep_filter,
+                in_stock_only, tag_denylist_norm,
+            ):
                 # CTK-088 fold #4: attribute the drop. An unavailable item is
                 # short-circuited by the availability gate FIRST, so under
                 # in_stock_only any sold-out row is an availability drop; a
@@ -470,6 +494,48 @@ def _should_keep(
         if title_lower.startswith(tuple(e.lower() for e in title_denylist_prefix)):
             return False
     return True
+
+
+def _build_auction_keep_filter(category_filter: dict | None) -> dict | None:
+    """CTK-160 — the denylist-only VIEW of category_filter used by the
+    auction-keep override: the coral-gate allowlists (product_type_allowlist,
+    tag_allowlist) stripped, the junk-gate denylists kept. None when there is no
+    category_filter. Hoisted once per parse (the override re-tests up to ~50
+    auction products against it); also the seam tests build to drive the
+    override without a network round-trip."""
+    if not category_filter:
+        return None
+    return {
+        k: v for k, v in category_filter.items()
+        if k not in ("product_type_allowlist", "tag_allowlist")
+    }
+
+
+def _should_keep_with_auction_override(
+    product: dict,
+    category_filter: dict | None,
+    auction_detection: dict | None,
+    auction_keep_filter: dict | None,
+    in_stock_only: bool = False,
+    tag_denylist_norm: set[str] | None = None,
+) -> bool:
+    """CTK-160 (Option B) — `_should_keep` plus the auction-keep override.
+
+    A product the normal gate KEEPS is kept. A product the normal gate REJECTS
+    is kept iff it is an auction (`_is_auction`) AND clears the denylist-only
+    view (`auction_keep_filter`): auctions bypass the coral-gate (allowlist)
+    because they are in-scope per [[project_auctions_in_scope]], but still face
+    the junk-gate (tag/title denylists) + the availability gate. The kept
+    auction is price-nulled downstream in `_normalize_product` and, because it
+    is kept, never enters `filtered_urls` — so it participates in the normal
+    cohort-OOS lifecycle (fixes the freeze that stranded it in_stock at a stale
+    buy-price). `auction_keep_filter` is None when `auction_detection` is
+    unconfigured → the override is a pure no-op (pre-CTK-160 behavior)."""
+    if _should_keep(product, category_filter, in_stock_only, tag_denylist_norm):
+        return True
+    if auction_keep_filter is not None and _is_auction(product, auction_detection):
+        return _should_keep(product, auction_keep_filter, in_stock_only, tag_denylist_norm)
+    return False
 
 
 def _is_auction(product: dict, auction_detection: dict) -> bool:
