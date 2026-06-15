@@ -6,12 +6,13 @@ Pins the writer-side fix for the deceptive-buy-price defect: an _is_auction
 product whose product_type misses the coral allowlist (the real WWC shape,
 product_type='WWC Auction') is KEPT and price-nulled instead of stranded.
 
-Root cause it guards (diagnosed live 2026-06-15): the 4 WWC auction rows were
+Root cause it guards (diagnosed live 2026-06-15): the WWC auction rows were
 rejected at intake by product_type_allowlist (`_should_keep=False`), so they
 never reached _normalize_product (CTK-041 null-out never ran) OR diff.classify,
 and cohort-OOS skips filtered URLs — freezing them in_stock at a stale buy-price.
-The override bypasses the coral-gate (allowlist) for auctions but keeps the
-junk-gate (denylists) + availability gate.
+The override bypasses the coral-gate (allowlist) for auctions via
+_should_keep(skip_allowlists=True) but keeps the junk-gate (denylists) +
+availability gate.
 
 Reuses the real _is_auction / _should_keep / _normalize_product / fetch_and_parse
 predicates (no fork).
@@ -30,7 +31,8 @@ from decimal import Decimal
 from scrapers.common import parse_shopify
 from scrapers.common.http import FetchResult
 from scrapers.common.parse_shopify import (
-    _build_auction_keep_filter,
+    FILTER_AXES,
+    _ALLOWLIST_AXES,
     _normalize_product,
     _should_keep,
     _should_keep_with_auction_override,
@@ -44,12 +46,12 @@ BASE = "https://example-reef.com"
 # allowlist — the real live shape that strands auctions.
 CATEGORY_FILTER = {
     "product_type_allowlist": ["Frag", "WYSIWYG Frag"],
+    "tag_allowlist": [],  # unset for WWC; exercised by the allowlist-coverage test
     "tag_denylist": ["Dry Goods"],
     "title_denylist": ["Chaeto"],
     "title_denylist_prefix": ["WS - "],
 }
 AUCTION_DETECTION = {"tags": ["Auction", "active_bidding", "on_auction"], "slug_suffix": "-auc"}
-AKF = _build_auction_keep_filter(CATEGORY_FILTER)
 
 
 def _p(title="Rainbow Acro", product_type="Frag", tags=None, handle="rainbow-acro",
@@ -70,12 +72,18 @@ def test_override_keeps_auction_non_allowlisted_pt():
     # Normal gate rejects (PT not in the coral allowlist) — the strand cause.
     assert _should_keep(p, CATEGORY_FILTER) is False
     # Override keeps it (auction bypasses the coral-gate).
-    assert _should_keep_with_auction_override(p, CATEGORY_FILTER, AUCTION_DETECTION, AKF) is True
+    assert _should_keep_with_auction_override(p, CATEGORY_FILTER, AUCTION_DETECTION) is True
 
 
-# (a, price half) the kept auction is price-nulled in _normalize_product
+# (a, price half) the kept auction is price-nulled — asserted THROUGH the
+# override so deleting the override fails this test (CTK-160 /code-review #2:
+# the prior version passed via the CTK-041 null-out regardless of the override).
 def test_override_kept_auction_price_nulled():
     p = _p(product_type="WWC Auction", tags=["Auction"], price="599.00")
+    # The override must KEEP it — otherwise it is filtered and never normalized.
+    assert _should_keep_with_auction_override(p, CATEGORY_FILTER, AUCTION_DETECTION) is True, (
+        "override regressed — a kept auction is the precondition for the null-out to run"
+    )
     out = _normalize_product(p, BASE, "mirror", "wwc", AUCTION_DETECTION)
     assert out["current_price"] is None, f"auction price not nulled: {out['current_price']!r}"
 
@@ -83,31 +91,31 @@ def test_override_kept_auction_price_nulled():
 # (b) junk-gate intact — an auction caught by a denylist is DROPPED
 def test_override_drops_denylisted_auction_by_tag():
     p = _p(product_type="WWC Auction", tags=["Auction", "Dry Goods"])
-    assert _should_keep_with_auction_override(p, CATEGORY_FILTER, AUCTION_DETECTION, AKF) is False
+    assert _should_keep_with_auction_override(p, CATEGORY_FILTER, AUCTION_DETECTION) is False
 
 
 def test_override_drops_denylisted_auction_by_title():
     p = _p(title="Chaeto Auction Lot", product_type="WWC Auction", tags=["Auction"])
-    assert _should_keep_with_auction_override(p, CATEGORY_FILTER, AUCTION_DETECTION, AKF) is False
+    assert _should_keep_with_auction_override(p, CATEGORY_FILTER, AUCTION_DETECTION) is False
 
 
 # (c) no allowlist regression — a non-auction non-allowlisted product still DROPS
 def test_override_drops_non_auction_non_allowlisted():
     p = _p(product_type="Fish", tags=["Fish"])
-    assert _should_keep_with_auction_override(p, CATEGORY_FILTER, AUCTION_DETECTION, AKF) is False
+    assert _should_keep_with_auction_override(p, CATEGORY_FILTER, AUCTION_DETECTION) is False
 
 
 # no-op when unconfigured — without auction_detection the override never fires
 def test_override_noop_when_auction_detection_unconfigured():
     p = _p(product_type="WWC Auction", tags=["Auction"])
-    assert _should_keep_with_auction_override(p, CATEGORY_FILTER, None, None) is False
+    assert _should_keep_with_auction_override(p, CATEGORY_FILTER, None) is False
 
 
 # the override keeps the availability gate (a sold-out auction under in_stock_only drops)
 def test_override_keeps_availability_gate():
     p = _p(product_type="WWC Auction", tags=["Auction"], available=False)
     assert _should_keep_with_auction_override(
-        p, CATEGORY_FILTER, AUCTION_DETECTION, AKF, in_stock_only=True
+        p, CATEGORY_FILTER, AUCTION_DETECTION, in_stock_only=True
     ) is False
 
 
@@ -116,7 +124,40 @@ def test_override_keeps_availability_gate():
 def test_override_only_applies_to_auctions():
     non_auction = _p(product_type="WWC Auction", tags=["LPS"])  # 'WWC Auction' PT but no auction tag
     assert parse_shopify._is_auction(non_auction, AUCTION_DETECTION) is False
-    assert _should_keep_with_auction_override(non_auction, CATEGORY_FILTER, AUCTION_DETECTION, AKF) is False
+    assert _should_keep_with_auction_override(non_auction, CATEGORY_FILTER, AUCTION_DETECTION) is False
+
+
+# (#1 tripwire) every allowlist-class axis in FILTER_AXES is covered by the
+# skip_allowlists path. Structural guard: a future "*_allowlist" axis added to
+# FILTER_AXES but not to _ALLOWLIST_AXES (and thus not skipped) fails here.
+def test_skip_allowlists_covers_every_allowlist_axis():
+    declared = {a for a in FILTER_AXES if a.endswith("_allowlist")}
+    assert declared == set(_ALLOWLIST_AXES), (
+        f"allowlist axes in FILTER_AXES {declared} != _ALLOWLIST_AXES {set(_ALLOWLIST_AXES)} — "
+        "a new allowlist axis must be added to _ALLOWLIST_AXES AND guarded by "
+        "skip_allowlists in _should_keep, or auctions silently fail it"
+    )
+
+
+# (#1 behavioral) skip_allowlists=True bypasses BOTH current allowlist axes —
+# a product failing only the allowlist is rejected normally, kept when skipped.
+def test_skip_allowlists_bypasses_product_type_allowlist():
+    p = _p(product_type="WWC Auction", tags=[])  # PT not allowlisted
+    assert _should_keep(p, CATEGORY_FILTER) is False
+    assert _should_keep(p, CATEGORY_FILTER, skip_allowlists=True) is True
+
+
+def test_skip_allowlists_bypasses_tag_allowlist():
+    flt = {"product_type_allowlist": [], "tag_allowlist": ["Coral"]}
+    p = _p(product_type="", tags=["Fish"])  # no allowlisted tag
+    assert _should_keep(p, flt) is False
+    assert _should_keep(p, flt, skip_allowlists=True) is True
+
+
+def test_skip_allowlists_still_enforces_denylists():
+    # skip_allowlists must NOT loosen the junk-gate — a denylisted product drops.
+    p = _p(title="Chaeto Lot", product_type="WWC Auction", tags=["Dry Goods"])
+    assert _should_keep(p, CATEGORY_FILTER, skip_allowlists=True) is False
 
 
 # (d) integration — kept auction reaches items + is nulled + is NOT in
@@ -179,6 +220,10 @@ def main() -> int:
         test_override_noop_when_auction_detection_unconfigured,
         test_override_keeps_availability_gate,
         test_override_only_applies_to_auctions,
+        test_skip_allowlists_covers_every_allowlist_axis,
+        test_skip_allowlists_bypasses_product_type_allowlist,
+        test_skip_allowlists_bypasses_tag_allowlist,
+        test_skip_allowlists_still_enforces_denylists,
         test_fetch_and_parse_auction_kept_nulled_and_not_filtered,
     ]
     failed = 0
