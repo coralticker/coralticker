@@ -99,6 +99,20 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 
+# Shared content-data query layer (CTK-161 D-1). fetch_cross_vendor_cheapest,
+# fetch_medal_magnitudes, the pure cross_vendor_cheapest_ids ranker, and
+# drop_fraction were extracted to content_queries.py so this IG selector is one
+# consumer of the shared layer alongside the new content-format functions. The
+# cross-vendor ranking itself promoted to SQL (get_cross_vendor_cheapest). These
+# names are re-exported so existing importers (the score path below, the CTK-159
+# tests) keep resolving them from ig_select.
+from scrapers.tools.content_queries import (  # noqa: F401  (intentional re-export)
+    cross_vendor_cheapest_ids,
+    drop_fraction,
+    fetch_cross_vendor_cheapest,
+    fetch_medal_magnitudes,
+)
+
 # Mirrored-image host. Single source of truth is
 # scrapers/common/images.py:_PUBLIC_HOST (the mirror WRITER); kept as a local
 # const here so the selector's import graph stays light (images.py drags in
@@ -211,22 +225,6 @@ def passes_image_gate(c: Candidate) -> bool:
     return image_gate_reject(c) is None
 
 
-def drop_fraction(prior_price, current_price, compare_at_price) -> float:
-    """Medal magnitude as a fraction in [0, 1]. Prefers the CT-observed drop
-    (prior_price, get_recent_price_drops arm 1); falls back to the vendor
-    markdown reference (compare_at_price, arm 2, where prior_price is NULL).
-    Returns 0.0 when neither reference is usable (no positive baseline)."""
-    for baseline in (prior_price, compare_at_price):
-        if baseline is None or current_price is None:
-            continue
-        baseline = float(baseline)
-        if baseline <= 0:
-            continue
-        frac = (baseline - float(current_price)) / baseline
-        return max(0.0, min(1.0, frac))
-    return 0.0
-
-
 def recency_factor(event_at: datetime, now: datetime, window_hours: int) -> float:
     """Linear recency in [0, 1]: 1.0 at now, decaying to 0 at the window edge.
     A just-fired event tiebreaks above a window-old one of equal weight."""
@@ -259,37 +257,6 @@ def compute_score(
     }
 
 
-def cross_vendor_cheapest_ids(rows: list[dict]) -> set[int]:
-    """Pure: from named-coral listing rows, return the ids that are the cheapest
-    of their named_coral across >=2 DISTINCT vendors. Applies the three
-    eligibility predicates itself — named_coral_id present, in_stock, NON-AUCTION
-    (auction_end_time IS NULL), priced (current_price not None) — so the INV-05
-    residual (D-3) and the OOS/phantom guards hold even if handed an unfiltered
-    set. Defense in depth with the SQL WHERE in fetch_cross_vendor_cheapest.
-
-    Genuine price ties yield >1 cheapest id (both ARE the cheapest). Prices
-    (Decimal) are compared directly — exact, so a cent-for-cent tie is detected
-    without float-rounding hazard."""
-    eligible = [
-        r for r in rows
-        if r.get("named_coral_id") is not None
-        and r.get("in_stock") is True
-        and r.get("auction_end_time") is None
-        and r.get("current_price") is not None
-    ]
-    by_coral: dict[int, list[dict]] = {}
-    for r in eligible:
-        by_coral.setdefault(r["named_coral_id"], []).append(r)
-
-    out: set[int] = set()
-    for group in by_coral.values():
-        if len({r["vendor_id"] for r in group}) < 2:
-            continue
-        cheapest = min(r["current_price"] for r in group)
-        out.update(r["id"] for r in group if r["current_price"] == cheapest)
-    return out
-
-
 def rank(candidates: list[Candidate], top_n: int) -> list[Candidate]:
     """Sort scored candidates by score desc, event_at desc as the tiebreak,
     and return the top_n. Assumes .score / .event_at are populated."""
@@ -313,44 +280,6 @@ def fetch_candidates(conn, window_hours: int) -> list[Candidate]:
         )
         rows = cur.fetchall()
     return [Candidate.from_row(r) for r in rows]
-
-
-def fetch_medal_magnitudes(conn, window_days: int) -> dict[int, float]:
-    """T3 — CTK-047 medal magnitude per listing via the canonical medal surface
-    get_recent_price_drops(p_window_days). Already carries INV-05 on both arms
-    (CT-observed drop + vendor markdown) — no residual to re-assert here.
-    Returns {listing_id: drop_fraction}; the max fraction per listing if a row
-    appears under more than one arm."""
-    out: dict[int, float] = {}
-    with conn.cursor() as cur:
-        cur.execute("SELECT * FROM get_recent_price_drops(%s)", (window_days,))
-        for r in cur.fetchall():
-            frac = drop_fraction(r.get("prior_price"), r.get("current_price"), r.get("compare_at_price"))
-            lid = r["id"]
-            if frac > out.get(lid, 0.0):
-                out[lid] = frac
-    return out
-
-
-def fetch_cross_vendor_cheapest(conn) -> set[int]:
-    """T3 / T3-INV05 — listing_ids that are the cheapest of their named_coral
-    across >=2 distinct vendors. Runs over the FULL vendor_listings population
-    (NOT the gated candidate set), so the SELECT independently carries all three
-    predicates D-3 named: in_stock = true AND auction_end_time IS NULL (the
-    INV-05 residual) AND current_price IS NOT NULL (OOS/phantom guard). The
-    >=2-vendor + cheapest ranking is computed by the pure cross_vendor_cheapest_ids
-    (which re-asserts the same predicates — defense in depth)."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT id, vendor_id, named_coral_id, current_price, in_stock, auction_end_time "
-            "FROM vendor_listings "
-            "WHERE named_coral_id IS NOT NULL "
-            "  AND in_stock = true "
-            "  AND auction_end_time IS NULL "
-            "  AND current_price IS NOT NULL"
-        )
-        rows = cur.fetchall()
-    return cross_vendor_cheapest_ids(rows)
 
 
 def score_candidates(
@@ -403,7 +332,9 @@ def select(
     candidates = fetch_candidates(conn, window_hours)
     gated = [c for c in candidates if passes_image_gate(c)]
     medal_by_id = fetch_medal_magnitudes(conn, window_days)
-    cross_vendor_ids = fetch_cross_vendor_cheapest(conn)
+    # fetch_cross_vendor_cheapest now returns the render-ready crowned ROWS (the
+    # CTK-161 SQL function); the score path only needs the id-set membership test.
+    cross_vendor_ids = {r["id"] for r in fetch_cross_vendor_cheapest(conn)}
 
     score_candidates(gated, medal_by_id, cross_vendor_ids, now, window_hours)
     selected = rank(gated, top_n)

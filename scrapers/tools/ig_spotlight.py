@@ -78,6 +78,7 @@ import sys
 from dataclasses import dataclass
 
 from scrapers.tools.ig_select import Candidate, DEFAULT_TOP_N
+from scrapers.tools.content_queries import CONTENT_FORMATS, FormatDescriptor
 
 # ---------------------------------------------------------------------------
 # Brand canon, mirrored from branding-guide.md §Usage-rules IG-handle table
@@ -133,6 +134,41 @@ DETAIL_PROMPT = "[one thing you can see in the photo]"
 NICHE_PROMPT = "{niche reef-category tags}"
 
 CLOSER = "Full feed at coralticker.com — link in bio."
+
+
+# ---------------------------------------------------------------------------
+# CTK-161 D-2 — content-format auto-publish gate.
+#
+# The publish gate lives HERE in the Slice-B adapter, NOT the query layer: the
+# content query layer (content_queries.py) computes every format ungated; the
+# adapter decides what auto-publishes. Only NON-comparative formats (aggregate
+# activity, most-restocked, single-listing drop) enter the auto-publish path. A
+# COMPARATIVE format (cheapest-across-vendors, market-report) — one whose render
+# names which shop is cheapest — computes + renders to a draft but routes to
+# manual hold: a public price-ranking waits for Jon's deliberate publish call
+# (plan §Build-vs-publish split), because it commoditizes the vendor pricing the
+# reshare strategy + future partnerships lean on.
+#
+# WIRING: the content-format render/publish loop is a future CTK-161 consumer
+# slice (the data-post rendering on top of the shared layer). It MUST route its
+# format descriptors through auto_publishable() before any auto-POST, so a
+# comparative format can never auto-publish by omission. Pre-wired here, ahead of
+# that loop, so the gate exists before the first content post can be drafted.
+# ---------------------------------------------------------------------------
+
+
+def auto_publishable(descriptor: FormatDescriptor) -> bool:
+    """D-2 gate: True only for a NON-comparative format. The single code
+    obligation of the build-vs-publish split — comparative formats never enter
+    the auto-publish path."""
+    return not descriptor.comparative
+
+
+def auto_publishable_formats() -> list[FormatDescriptor]:
+    """The content formats cleared for auto-publish (comparative == false). The
+    comparative ones (cheapest-across-vendors, market-report) are computed +
+    render-ready but excluded here — manual-hold until Jon's publish call."""
+    return [d for d in CONTENT_FORMATS.values() if auto_publishable(d)]
 
 
 # ---------------------------------------------------------------------------
