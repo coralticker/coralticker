@@ -382,25 +382,42 @@ def _format_line(c: Candidate) -> str:
             f"{title!r} — {c.arm} — {price} — {c.product_url}")
 
 
-def run(mode: str, top_n: int) -> int:
-    from scrapers.common import db
+def select(
+    conn, mode: str, top_n: int, now: datetime | None = None
+) -> tuple[list[Candidate], list[Candidate], list[Candidate]]:
+    """The full selection pipeline against an open conn: fetch (T1) -> image
+    gate (T2) -> score (T3) -> rank top_n. Returns (candidates, gated, selected)
+    so callers see the pre-gate population, the gate survivors, and the ranked
+    top_n. Read-only; does NOT close conn (the caller owns its lifecycle). `now`
+    defaults to datetime.now(utc) and is injectable for deterministic tests.
 
+    Extracted from run() at Slice-B build (CTK-159) so the publish-or-notify
+    adapter (scrapers/tools/ig_spotlight.py) consumes one selection path rather
+    than forking the fetch/gate/score/rank orchestration."""
     window_hours = WINDOW_HOURS[mode]
     # get_recent_price_drops takes DAYS; ceil the hours window (24h->1d, 168h->7d).
     window_days = max(1, -(-window_hours // 24))
-    now = datetime.now(timezone.utc)
+    if now is None:
+        now = datetime.now(timezone.utc)
 
-    conn = db.get_conn()
-    try:
-        candidates = fetch_candidates(conn, window_hours)
-        gated = [c for c in candidates if passes_image_gate(c)]
-        medal_by_id = fetch_medal_magnitudes(conn, window_days)
-        cross_vendor_ids = fetch_cross_vendor_cheapest(conn)
-    finally:
-        conn.close()
+    candidates = fetch_candidates(conn, window_hours)
+    gated = [c for c in candidates if passes_image_gate(c)]
+    medal_by_id = fetch_medal_magnitudes(conn, window_days)
+    cross_vendor_ids = fetch_cross_vendor_cheapest(conn)
 
     score_candidates(gated, medal_by_id, cross_vendor_ids, now, window_hours)
     selected = rank(gated, top_n)
+    return candidates, gated, selected
+
+
+def run(mode: str, top_n: int) -> int:
+    from scrapers.common import db
+
+    conn = db.get_conn()
+    try:
+        candidates, gated, selected = select(conn, mode, top_n)
+    finally:
+        conn.close()
 
     print(f"ig-select {mode}: {len(candidates)} candidate(s), {len(gated)} pass image gate, "
           f"selecting top {top_n}")
