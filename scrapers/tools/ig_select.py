@@ -107,19 +107,18 @@ from decimal import Decimal
 # names are re-exported so existing importers (the score path below, the CTK-159
 # tests) keep resolving them from ig_select.
 from scrapers.tools.content_queries import (  # noqa: F401  (intentional re-export)
+    MIRROR_HOST,
     cross_vendor_cheapest_ids,
     drop_fraction,
     fetch_cross_vendor_cheapest,
     fetch_medal_magnitudes,
 )
 
-# Mirrored-image host. Single source of truth is
-# scrapers/common/images.py:_PUBLIC_HOST (the mirror WRITER); kept as a local
-# const here so the selector's import graph stays light (images.py drags in
-# boto3 + Pillow) and the gate predicate derives from ONE name rather than an
-# inlined literal (CTK-159 Q2 refinement). A drift-guard unit test asserts this
-# equals images._PUBLIC_HOST so a custom-domain change can't silently diverge.
-MIRROR_HOST = "https://images.coralticker.com"
+# MIRROR_HOST moved to content_queries (the shared layer) at the CTK-164 B-path
+# build so the content-card eligibility filter can reuse it without a circular
+# import; re-exported here so existing importers (test_ig_select, test_ig_spotlight)
+# keep resolving ig_select.MIRROR_HOST. Single source of truth + drift-guard
+# (== images._PUBLIC_HOST) unchanged — see content_queries.MIRROR_HOST.
 
 # Per-mode observation window. daily = today's events; weekly-roundup = 7d.
 WINDOW_HOURS = {"daily": 24, "weekly-roundup": 168}

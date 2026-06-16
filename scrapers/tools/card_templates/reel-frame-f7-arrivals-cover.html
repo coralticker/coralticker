@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CTK-164 — F7 arrivals cover reel frame — 9:16 production reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Production reference — compositor rasterizes this page at 1080x1920.
+     No doc chrome, no crop guides. The <body> IS the frame.
+     F7 carousel COVER — stat-only, no data row. Illustrative placeholder count. */
+  :root{--cream:#F5F1EA;--ink:#1A1A1A;--forest:#1B5E20;}
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--cream);}
+
+  /* 9:16 frame: the 1080x1080 square sits centered, 420px cream above + below */
+  .frame{width:1080px;height:1920px;background:var(--cream);position:relative;overflow:hidden;}
+  .card{position:absolute;left:0;top:420px;width:1080px;height:1080px;background:var(--cream);
+        padding:104px;display:flex;flex-direction:column;}
+
+  .wordmark{font-family:'IBM Plex Sans',sans-serif;font-size:40px;font-weight:400;letter-spacing:-.01em;line-height:1;}
+  .wordmark .c{font-weight:700;}
+  .wordmark .dot{color:var(--forest);font-weight:700;}
+
+  .body{flex:1;display:flex;flex-direction:column;justify-content:center;}
+
+  .stat{font-family:'IBM Plex Sans',sans-serif;font-weight:400;font-size:88px;line-height:1.12;letter-spacing:-.02em;max-width:880px;margin:0;}
+  .stat .num{font-weight:700;}
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="card">
+      <div class="wordmark"><span class="c">coral</span>ticker<span class="dot">.</span></div>
+      <div class="body">
+        <p class="stat">{{STAT_HTML}}</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

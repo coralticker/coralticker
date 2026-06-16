@@ -42,6 +42,7 @@ from __future__ import annotations
 import io
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -90,6 +91,14 @@ class MotionSpec:
 
 
 DEFAULT_MOTION = MotionSpec()
+
+# B-path (data-card motion) preset — a barely-there zoom. The A-path default
+# pushes 1.0 -> 1.15 because a photo tolerates the travel; a data card's whole
+# value is its legible text, so the zoom is a near-still 1.0 -> 1.02 (life, not
+# movement). Past ~1.03 the type drifts enough to read as a wobble on a card the
+# viewer is trying to READ. Same duration/fps as A-path so DATA_CARD_MOTION clips
+# share codec params and concat_clips can stream-copy them.
+DATA_CARD_MOTION = MotionSpec(zoom_start=1.0, zoom_end=1.02)
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +204,52 @@ def render_kenburns(
             f"ffmpeg render failed (exit {proc.returncode}) for {out_path}:\n"
             f"{proc.stderr[-2000:]}"
         )
+    return Path(out_path)
+
+
+def concat_clips(clips: list[str | Path], out_path: str | Path) -> Path:
+    """Join MP4 clips into one via ffmpeg's concat demuxer with stream copy
+    (-f concat ... -c copy) — no re-encode, no generation loss, the F7/F9
+    card-sequence-as-reel join (PB-5).
+
+    PRECONDITION: every clip shares identical codec params (dimensions, fps,
+    h264 profile, pix_fmt, SPS/PPS). Guaranteed when all clips come from
+    render_kenburns with the SAME MotionSpec — e.g. DATA_CARD_MOTION at
+    1080x1920/30fps. If a param ever diverges, the demuxer emits a corrupt join;
+    the fallback is a filter_complex re-encode (NOT built — no consumer needs it).
+
+    Raises on a non-zero ffmpeg exit (loud-failure) and on an empty clip list."""
+    clips = [Path(c) for c in clips]
+    if not clips:
+        raise ValueError("concat_clips: no clips to join")
+
+    # The concat demuxer reads a list file of `file '<path>'` lines. Single quotes
+    # in a path are escaped per ffmpeg's rule ('\'' ). -safe 0 permits absolute paths.
+    listing = "\n".join(
+        "file '{}'".format(str(c.resolve()).replace("'", "'\\''")) for c in clips
+    )
+    list_path = None
+    try:
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+            list_path = f.name   # set BEFORE write so a write failure still cleans up
+            f.write(listing + "\n")
+        args = [
+            _FFMPEG, "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", list_path,
+            "-c", "copy",
+            "-movflags", "+faststart",
+            str(out_path),
+        ]
+        proc = subprocess.run(args, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"ffmpeg concat failed (exit {proc.returncode}) for {out_path}:\n"
+                f"{proc.stderr[-2000:]}"
+            )
+    finally:
+        if list_path is not None:
+            Path(list_path).unlink(missing_ok=True)
     return Path(out_path)
 
 
