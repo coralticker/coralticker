@@ -1,4 +1,4 @@
-"""Apply migration 0038 — CTK-161 D-1: shared content-engine data-query layer.
+"""Apply migration 0041 — CTK-161 D-1: shared content-engine data-query layer.
 
 Creates three STABLE Postgres functions (the design-once shared layer per D-1):
   - get_cross_vendor_cheapest()            cross-vendor cheapest ranking (COMPARATIVE)
@@ -35,7 +35,7 @@ MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent
     / "supabase"
     / "migrations"
-    / "0038_content_engine_shared_queries.sql"
+    / "0041_content_engine_shared_queries.sql"
 )
 
 EXPECTED_FUNCS = (
@@ -94,7 +94,7 @@ def main() -> int:
             cheapest = cur.fetchall()
             print(f"  get_cross_vendor_cheapest(): {len(cheapest)} crowned listing(s)")
 
-    print("0038 applied + verified.")
+    print("0041 applied + verified.")
     return 0
 
 

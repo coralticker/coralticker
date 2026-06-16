@@ -2,7 +2,7 @@
 SQL <-> pure ranking parity for the cross-vendor cheapest signal (the single
 highest-blast-radius signal in ig_select — the +100 score weight).
 
-The ranking moved to SQL (get_cross_vendor_cheapest, migration 0038); the pure
+The ranking moved to SQL (get_cross_vendor_cheapest, migration 0041); the pure
 cross_vendor_cheapest_ids is kept as its reference spec. This test feeds ONE
 fixture to BOTH and asserts identical crowned-id sets — so a future divergence
 (someone edits the SQL WHERE, or the pure ranker) fails loudly instead of
@@ -132,12 +132,12 @@ def _run_all() -> int:
         print(f"FAIL test_sql_pure_ranking_parity: {e}")
         return 1
     except Exception as e:  # noqa: BLE001
-        # Most likely migration 0038 not applied yet (get_cross_vendor_cheapest
+        # Most likely migration 0041 not applied yet (get_cross_vendor_cheapest
         # absent) -> skip, not fail. A genuine logic break surfaces as the
         # AssertionError above.
         import psycopg
         if isinstance(e, psycopg.errors.UndefinedFunction):
-            print("SKIP test_cross_vendor_ranking_parity: migration 0038 not applied "
+            print("SKIP test_cross_vendor_ranking_parity: migration 0041 not applied "
                   "(get_cross_vendor_cheapest absent)")
             return 0
         print(f"ERROR test_cross_vendor_ranking_parity: {type(e).__name__}: {e}")

@@ -1,7 +1,7 @@
 """CTK-161 D-1/D-4 — owned-data content engine: the shared cross-vendor query
 layer (Python side).
 
-The design-once unit is the set of Postgres functions in migration 0038 (D-1 —
+The design-once unit is the set of Postgres functions in migration 0041 (D-1 —
 the only single-implementation point the Python content tools and the TS site can
 both share). This module is the thin Python fetch layer on top: it wraps those
 functions, carries the per-format COMPARATIVE flag (D-2), holds the cross-vendor
@@ -121,9 +121,11 @@ class FormatDescriptor:
     comparative: bool
 
 
-# Velocity (time-to-OOS) is intentionally absent — OUT of scope this layer
-# (resolution floors at scrape cadence, OOS-cause ambiguous; pending Jon
-# ratification). The four built formats + the two comparative ones:
+# Velocity (listed-and-gone) is non-comparative and publish-now-safe as of
+# 2026-06-16 (branding-guide.md §"Velocity claim resolution- + cause-honesty") —
+# windowed, cause-neutral language only; the query stays claim-neutral (it exposes
+# raw timestamps, the render derives the window). The five built formats + the two
+# comparative ones:
 CONTENT_FORMATS: dict[str, FormatDescriptor] = {
     # Non-comparative — publish-now-safe. Report activity without pitting vendors
     # against each other on price.
@@ -133,6 +135,8 @@ CONTENT_FORMATS: dict[str, FormatDescriptor] = {
         "most-restocked", "Most restocked of the week", comparative=False),
     "single-listing-drop": FormatDescriptor(
         "single-listing-drop", "Single-listing price drop", comparative=False),
+    "velocity": FormatDescriptor(
+        "velocity", "Velocity (listed and gone)", comparative=False),
     # Comparative — built but PUBLISH-GATED. Render names which shop is cheapest.
     "cheapest-across-vendors": FormatDescriptor(
         "cheapest-across-vendors", "Cheapest across N vendors", comparative=True),
@@ -178,7 +182,7 @@ def cross_vendor_cheapest_line(row: dict) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# I/O shell — fetch wrappers over the migration-0038 functions + the reused
+# I/O shell — fetch wrappers over the migration-0041 functions + the reused
 # get_recent_price_drops. Read-only; the caller owns the conn lifecycle.
 # ---------------------------------------------------------------------------
 
@@ -253,4 +257,24 @@ def fetch_most_restocked(conn, window_hours: int = 168, limit: int = 10) -> list
     population (a coral you can't name can't rank — D-2)."""
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM get_most_restocked(%s, %s)", (window_hours, limit))
+        return cur.fetchall()
+
+
+def fetch_velocity(conn, window_days: int | None = None) -> list[dict]:
+    """Velocity (listed-and-gone) rows via get_velocity_listings(). One row per
+    still-OOS, matched listing whose full first lifecycle we OBSERVED, carrying the
+    three raw timestamps the render derives its window from (first_seen_at,
+    last_in_stock_at, first_oos_at) plus the coral/vendor identity fields.
+
+    The SQL excludes cold-start listings (no successful scrape finished before the
+    first in-stock observation — we never watched them appear, so their lifespan is
+    fictional) — a claim-honesty correctness gate, not a tunable. window_days is an
+    optional recency selector on the gone-event (NULL = all); it is NOT a scrape
+    interval — no cadence config is threaded, the render is self-contained per row.
+
+    Claim-neutral by construction: the rows say WHEN, never WHY. Cause-neutral
+    templating ("gone" / "didn't last", never "sold out") is the render's job
+    (no sellout-vs-delist discriminator exists)."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM get_velocity_listings(%s)", (window_days,))
         return cur.fetchall()

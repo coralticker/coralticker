@@ -3,7 +3,7 @@ content-data query layer (scrapers/tools/content_queries.py) + the D-2 publish
 gate (scrapers/tools/ig_spotlight.py auto_publishable).
 
 Pure — no DB, no network, no env. The cross-vendor ranking ITSELF is now the SQL
-function get_cross_vendor_cheapest (migration 0038); the pure cross_vendor_cheapest_ids
+function get_cross_vendor_cheapest (migration 0041); the pure cross_vendor_cheapest_ids
 is the executable REFERENCE SPEC of the crowning contract, pinned here by a golden
 fixture. test_cross_vendor_ranking_parity (DB-gated) cross-checks the SQL function
 against this same pure ranker over a live-seeded copy of these scenarios.
@@ -20,7 +20,7 @@ Coverage:
   test_ranking_null_price_excluded   price-on-request row never crowns
   test_ranking_single_vendor_none    only 1 vendor carries it -> nothing crowned
   test_descriptor_comparative_flags  D-2 tags: non-comparative vs comparative
-  test_velocity_absent               velocity out of scope -> not in the registry
+  test_velocity_present              velocity registered, non-comparative (publish-now)
   test_auto_publishable_gate         comparative excluded from the auto-publish path
   test_cross_vendor_line_contract    provisional DataRowField[] listing-line shape
 """
@@ -118,17 +118,20 @@ def test_descriptor_comparative_flags():
     assert CONTENT_FORMATS["market-report"].comparative is True
 
 
-def test_velocity_absent():
-    # Velocity (time-to-OOS) is OUT of scope this layer (pending ratification).
-    assert "velocity" not in CONTENT_FORMATS
+def test_velocity_present():
+    # Velocity (listed-and-gone) cleared publish-now-safe 2026-06-16: registered,
+    # non-comparative (single listing, no cross-vendor price comparison).
+    assert "velocity" in CONTENT_FORMATS
+    assert CONTENT_FORMATS["velocity"].comparative is False
 
 
 def test_auto_publishable_gate():
     assert auto_publishable(CONTENT_FORMATS["aggregate-activity"]) is True
+    assert auto_publishable(CONTENT_FORMATS["velocity"]) is True
     assert auto_publishable(CONTENT_FORMATS["cheapest-across-vendors"]) is False
     assert auto_publishable(CONTENT_FORMATS["market-report"]) is False
     keys = {d.key for d in auto_publishable_formats()}
-    assert keys == {"aggregate-activity", "most-restocked", "single-listing-drop"}
+    assert keys == {"aggregate-activity", "most-restocked", "single-listing-drop", "velocity"}
     assert "cheapest-across-vendors" not in keys
     assert "market-report" not in keys
 

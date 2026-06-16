@@ -53,7 +53,7 @@
 -- ─── Idempotency + apply path ───
 --
 -- All three are CREATE OR REPLACE FUNCTION (re-runnable; no signature/return-type
--- change to force DROP+CREATE). Apply via scripts/apply_migration_0038.py
+-- change to force DROP+CREATE). Apply via scripts/apply_migration_0041.py
 -- (mirrors apply_migration_0037.py: scrapers.common.db.get_conn + cursor.execute
 -- against NEON_DATABASE_URL per architecture-v1.md decision #65 / CTK-061).
 -- GRANT EXECUTE re-asserted post-CREATE, same grantee set as 0028/0030.
