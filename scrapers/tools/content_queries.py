@@ -33,6 +33,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Mirrored-image host — the single LIGHT source for the IG image gate, shared by
+# the ig_select spotlight selector (Candidate-level) AND the content-card
+# eligibility filter below (row-level). The mirror WRITER's source of truth is
+# images.py:_PUBLIC_HOST (which drags boto3 + Pillow), so both import-light
+# selectors derive from this ONE name instead of an inlined literal (CTK-159 Q2).
+# Drift-guarded by test_ig_select asserting equality with images._PUBLIC_HOST.
+# Lives here (not ig_select) so this shared layer can use it without importing
+# ig_select — ig_select imports FROM here, so the reverse would be circular.
+MIRROR_HOST = "https://images.coralticker.com"
+
 # ---------------------------------------------------------------------------
 # Cross-vendor eligibility predicate — shared by the SQL guard and the ranker.
 # ---------------------------------------------------------------------------
@@ -182,6 +192,78 @@ def cross_vendor_cheapest_line(row: dict) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# D-4 card data-row field contract — LOCKED /brand-manager canon (2026-06-16).
+# F7/F8/F9 inherit exactly three fields in fixed order via format_data_row:
+#   Price.    plain string, or the price-drop-new struck-old/forest-new pair.
+#   Lineage.  "{origin} · {year}" — mid-dot INSIDE the value (near-black mono via
+#             card CSS, NOT a field separator). Graceful-degrade here, UPSTREAM of
+#             format_data_row: drop a missing part; if BOTH absent, omit the field
+#             entirely (format_data_row joins only what it's handed).
+#   Listed.   relative-time. Restocks use Listed., never Back.
+# No Vendor. field (rides the lead), no Ref. field (dormant).
+#
+# v1 NOTE: named_corals has origin_vendor (free-text) but NO year column, so the
+# "· {year}" half is dormant — Lineage always degrades to origin-only today. The
+# builder supports year for when a source lands; callers pass year=None now.
+# ---------------------------------------------------------------------------
+
+
+def lineage_value(origin: str | None, year=None) -> str | None:
+    """The Lineage. value with graceful degrade. Both parts -> "origin · year";
+    one part -> that part; neither -> None (caller omits the field). The mid-dot
+    is U+00B7 with surrounding spaces, byte-matching the /designer frame + web."""
+    parts = [p for p in (origin, str(year) if year is not None else None) if p]
+    if not parts:
+        return None
+    return " · ".join(parts)
+
+
+def plain_price_value(price) -> str:
+    """Price. value for a non-drop card (F7 arrival/restock, F9 listing)."""
+    return _format_price(price)
+
+
+def drop_price_value(old_price, new_price) -> dict:
+    """Price. value for a drop card (F8): the price-drop-new struck-old/forest-new
+    pair. format_data_row + the card adapter render it identically (INV-01)."""
+    return {"kind": "price-drop-new", "oldValue": _format_price(old_price), "newValue": _format_price(new_price)}
+
+
+def _drop_baseline(row: dict):
+    """The 'old' price for a drop display — the SAME baseline drop_fraction ranks
+    on: CT-observed prior_price, else the vendor markdown compare_at_price. Using
+    prior_price blindly renders a null 'price on request' as the struck value on a
+    markdown-arm drop (prior_price IS NULL there)."""
+    return row.get("prior_price") if row.get("prior_price") is not None else row.get("compare_at_price")
+
+
+def superlative_fields(row: dict) -> list[dict]:
+    """Build the F8 superlative card's D-4 field list from a select_superlative_drop
+    row: a Price. drop pair (struck baseline -> forest current), Lineage. from the
+    named coral's origin (year dormant in v1), Listed. from the lead-event time."""
+    return build_card_fields(
+        price_value=drop_price_value(_drop_baseline(row), row.get("current_price")),
+        origin=row.get("named_coral_origin_vendor"),
+        year=None,
+        listed_at=row.get("event_at"),
+    )
+
+
+def build_card_fields(*, price_value, origin: str | None = None, year=None, listed_at=None) -> list[dict]:
+    """Assemble the D-4 locked field list (Price / Lineage / Listed, fixed order)
+    for a content card. price_value is a prebuilt Price. value (plain_price_value
+    or drop_price_value). Lineage degrades + may be omitted (lineage_value). Listed
+    is a relative-time over listed_at (a datetime or ISO str; omitted if None)."""
+    fields: list[dict] = [{"label": "Price", "value": price_value}]
+    lineage = lineage_value(origin, year)
+    if lineage is not None:
+        fields.append({"label": "Lineage", "value": lineage})
+    if listed_at is not None:
+        fields.append({"label": "Listed", "value": {"kind": "relative-time", "timestamp": listed_at}})
+    return fields
+
+
+# ---------------------------------------------------------------------------
 # I/O shell — fetch wrappers over the migration-0041 functions + the reused
 # get_recent_price_drops. Read-only; the caller owns the conn lifecycle.
 # ---------------------------------------------------------------------------
@@ -258,6 +340,116 @@ def fetch_most_restocked(conn, window_hours: int = 168, limit: int = 10) -> list
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM get_most_restocked(%s, %s)", (window_hours, limit))
         return cur.fetchall()
+
+
+# ---------------------------------------------------------------------------
+# IG content-card selection filters (CTK-161 content lane; consumed by the
+# CTK-164 B-path data cards). These WRAP the data fetchers — they never touch
+# get_recent_price_drops itself, which /deals consumes UNFILTERED. Same pattern
+# as ig_select's T2 worthiness gate, applied to the content-card row shape.
+# ---------------------------------------------------------------------------
+
+
+def card_image_price_reject(row: dict) -> str | None:
+    """The IG image+price hard pre-filter (ig_select T2) as a row-level predicate.
+    Returns the drop-reason or None. Image before price so a row failing both
+    surfaces the image cause. Derives from MIRROR_HOST (no inlined literal)."""
+    image_url = row.get("image_url")
+    if image_url is None:
+        return "no-image"
+    if not image_url.startswith(MIRROR_HOST + "/"):
+        return "non-mirror-image"
+    if row.get("current_price") is None:
+        return "price-on-request"
+    return None
+
+
+def single_card_reject(row: dict) -> str | None:
+    """Junk floor for the single-listing CARD formats (F7/F8/F9 inners). Adds
+    matched-corals-only to the image+price pre-filter: the Lineage. field needs a
+    named coral to render, AND matched-only is what drops the unmatched ALL-CAPS
+    gimmick rows that otherwise auto-win a raw biggest-drop (no separate junk list
+    — CTK-155 purged the seeds). Reason order: coral -> image -> price."""
+    if row.get("named_coral_id") is None:
+        return "unmatched"
+    return card_image_price_reject(row)
+
+
+def is_single_card_eligible(row: dict) -> bool:
+    """True when the row clears the single-listing-card junk floor."""
+    return single_card_reject(row) is None
+
+
+# Superlative GLITCH-rejection bounds — NOT editorial post-worthiness. The "is
+# this drop interesting enough to feature" threshold (min %/$ ) is /brand-manager's
+# content canon, landing in parallel; these only reject DATA glitches and gimmick
+# rows so a $650 -> $9.99 "deal" placeholder can't auto-win the biggest-drop slot.
+# Provisional — loosen/tighten is a data call, not an editorial one.
+SUPERLATIVE_GLITCH_DROP_CEILING = 0.90   # >= 90% off is implausible for a real markdown
+SUPERLATIVE_MIN_PRICE = 5.0              # a new price under $5 reads as frag-noise / placeholder
+
+
+def superlative_drop_sane(row: dict) -> bool:
+    """Glitch-rejection for the superlative (biggest-drop) format: a positive
+    baseline, a new price above the frag-noise floor, and a drop fraction strictly
+    inside (0, CEILING). Rejects data errors / gimmick rows — NOT small-but-real
+    drops (that editorial floor is /brand-manager's). Pairs with is_single_card_
+    eligible: matched-only already removes the unmatched gimmick titles; this
+    catches a glitch on a MATCHED row."""
+    current = row.get("current_price")
+    if current is None or float(current) < SUPERLATIVE_MIN_PRICE:
+        return False
+    baseline = row.get("prior_price")
+    if baseline is None:
+        baseline = row.get("compare_at_price")
+    if baseline is None or float(baseline) <= 0:
+        return False
+    frac = drop_fraction(row.get("prior_price"), current, row.get("compare_at_price"))
+    return 0.0 < frac < SUPERLATIVE_GLITCH_DROP_CEILING
+
+
+# Superlative POST-WORTHINESS gate — /brand-manager content canon (2026-06-16),
+# layered ON TOP of the glitch-rejection bounds. The editorial "is this drop
+# interesting enough to feature" call: the drop must be big enough AND the coral
+# substantial enough. Provisional pending Jon. Price basis = current (post-drop)
+# price — a coral worth spotlighting is still a >= $100 piece after the markdown,
+# not a cheap frag with a big percentage. If nothing clears, F8 is a clean no-post
+# (skip the week), never a forced weak superlative.
+MIN_DROP_FRACTION = 0.25   # >= 25% off to be worth featuring
+MIN_CORAL_PRICE = 100.0    # post-drop price floor for "substantial enough to spotlight"
+
+
+def superlative_post_worthy(row: dict) -> bool:
+    """/brand-manager editorial gate (distinct from the glitch-rejection in
+    superlative_drop_sane): the drop clears MIN_DROP_FRACTION and the post-drop
+    price clears MIN_CORAL_PRICE. Both provisional pending Jon."""
+    current = row.get("current_price")
+    if current is None or float(current) < MIN_CORAL_PRICE:
+        return False
+    frac = drop_fraction(row.get("prior_price"), current, row.get("compare_at_price"))
+    return frac >= MIN_DROP_FRACTION
+
+
+def select_superlative_drop(conn, window_days: int = 7) -> dict | None:
+    """F8 superlative content selector: the biggest single-listing price drop
+    among CARD-eligible rows (matched + image + price) that pass BOTH the glitch-
+    rejection bounds (superlative_drop_sane) AND the /brand-manager post-worthiness
+    gate (superlative_post_worthy), over the window. Wraps fetch_recent_price_drops;
+    does NOT touch get_recent_price_drops (/deals reads that unfiltered).
+
+    Returns the winning row, or None — None is a clean no-post for the week (no
+    forced weak superlative), the caller skips F8, NOT an error."""
+    rows = fetch_recent_price_drops(conn, window_days)
+    eligible = [
+        r for r in rows
+        if is_single_card_eligible(r) and superlative_drop_sane(r) and superlative_post_worthy(r)
+    ]
+    if not eligible:
+        return None
+    return max(
+        eligible,
+        key=lambda r: drop_fraction(r.get("prior_price"), r.get("current_price"), r.get("compare_at_price")),
+    )
 
 
 def fetch_velocity(conn, window_days: int | None = None) -> list[dict]:

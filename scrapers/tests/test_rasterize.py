@@ -79,3 +79,37 @@ def test_f8_end_to_end_render(tmp_path):
     # DATA_CARD_MOTION duration (~7s) landed.
     duration = video.probe_duration(out)
     assert 6.5 <= duration <= 7.5, f"expected ~7s, got {duration}s"
+
+
+def _fields(price_value):
+    from scrapers.tools.content_queries import build_card_fields
+    return build_card_fields(price_value=price_value, origin="WWC", year=None,
+                             listed_at="2026-06-16T12:00:00Z")
+
+
+@requires_chromium
+def test_f7_arrivals_carousel_render(tmp_path):
+    # Cover-rides-the-reel: cover + 1 inner -> one concatenated reel (~2*7s).
+    out = tmp_path / "f7.mp4"
+    result = data_card.render_f7_arrivals(
+        count=23,
+        items=[{"name": "WWC Sunkist Bounce Mushroom", "vendor": "WWC",
+                "event_phrase": "back in stock", "fields": _fields("$250.00")}],
+        now=NOW, out_path=out,
+    )
+    assert result.exists() and result.stat().st_size > 0
+    duration = video.probe_duration(out)
+    assert 13.0 <= duration <= 15.0, f"expected ~14s (cover + 1 inner), got {duration}s"
+
+
+@requires_chromium
+def test_f9_lineage_carousel_render(tmp_path):
+    out = tmp_path / "f9.mp4"
+    result = data_card.render_f9_lineage(
+        coral="WWC Sunkist Bounce", vendor_count=2,
+        items=[{"name": "WWC Sunkist Bounce Mushroom", "vendor": "TSA", "fields": _fields("$230.00")}],
+        now=NOW, out_path=out,
+    )
+    assert result.exists() and result.stat().st_size > 0
+    duration = video.probe_duration(out)
+    assert 13.0 <= duration <= 15.0, f"expected ~14s (cover + 1 inner), got {duration}s"

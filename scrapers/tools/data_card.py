@@ -84,17 +84,128 @@ def format_data_row_html(fields: list[dict], now: datetime) -> str:
     return _SEP_HTML.join(parts)
 
 
+def _fill(template_name: str, **tokens: str) -> str:
+    """Load a card template and substitute {{TOKEN}} placeholders. The template is
+    /designer's frame byte-structure (card_templates/, source of truth); only the
+    tokenized dynamic regions change. .replace (not .format) — the CSS is full of
+    literal braces."""
+    html_doc = (_TEMPLATE_DIR / template_name).read_text(encoding="utf-8")
+    for key, value in tokens.items():
+        html_doc = html_doc.replace("{{" + key + "}}", value)
+    return html_doc
+
+
+def _lead_html(name: str, vendor: str, event_phrase: str) -> str:
+    """Inner-card lead line: "<b>{name}</b> {event_phrase} at {vendor}." —
+    event_phrase is 'listed' or 'back in stock' (the Vendor rides the lead, not the
+    data row, per the D-4 contract). Restocks read 'back in stock', never 'Back.'."""
+    return f'<span class="name">{_esc(name)}</span> {_esc(event_phrase)} at {_esc(vendor)}.'
+
+
 def render_f8_card_html(*, name: str, pct: int, fields: list[dict], now: datetime) -> str:
     """Assemble the F8 superlative card HTML: inject the coral name + drop percent
     into the stat line and the INV-01 data row into the .row. Returns a full HTML
     document ready for rasterize."""
-    template = (_TEMPLATE_DIR / "reel-frame-f8-superlative.html").read_text(encoding="utf-8")
-    return (
-        template
-        .replace("{{STAT_NAME}}", _esc(name))
-        .replace("{{STAT_PCT}}", str(pct))
-        .replace("{{DATA_ROW}}", format_data_row_html(fields, now))
+    return _fill(
+        "reel-frame-f8-superlative.html",
+        STAT_NAME=_esc(name),
+        STAT_PCT=str(pct),
+        DATA_ROW=format_data_row_html(fields, now),
     )
+
+
+def render_cover_html(template_name: str, stat_html: str) -> str:
+    """A carousel COVER frame (stat-only, no data row). stat_html is the prebuilt
+    .stat inner markup (the caller owns the brand copy + inline spans)."""
+    return _fill(template_name, STAT_HTML=stat_html)
+
+
+def render_inner_html(template_name: str, lead_html: str, fields: list[dict], now: datetime) -> str:
+    """A carousel INNER frame (lead + INV-01 data row). lead_html is prebuilt
+    (_lead_html); the row is the field-driven adapter output."""
+    return _fill(template_name, LEAD_HTML=lead_html, DATA_ROW=format_data_row_html(fields, now))
+
+
+def render_carousel(
+    *,
+    cover_html: str,
+    inner_htmls: list[str],
+    now: datetime,
+    out_path: str | Path,
+    work_dir: str | Path | None = None,
+    motion=video.DATA_CARD_MOTION,
+) -> Path:
+    """Cover-rides-the-reel (PB-5): rasterize + Ken Burns each frame (cover FIRST,
+    then inners in order), then concat_clips them into one reel. All clips share
+    DATA_CARD_MOTION so the concat demuxer stream-copies (no re-encode). Returns
+    out_path; intermediate PNGs/clips land in work_dir for the 11pm debug."""
+    out_path = Path(out_path)
+    work_dir = Path(work_dir) if work_dir else out_path.parent
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    frames = [("cover", cover_html)] + [(f"inner{i}", h) for i, h in enumerate(inner_htmls)]
+    clips: list[Path] = []
+    for label, html_doc in frames:
+        png = work_dir / f"{out_path.stem}-{label}.png"
+        clip = work_dir / f"{out_path.stem}-{label}.mp4"
+        rasterize.rasterize_html(html_doc, png)
+        video.render_kenburns(png, clip, motion_spec=motion)
+        clips.append(clip)
+    video.concat_clips(clips, out_path)
+    return out_path
+
+
+def f7_cover_stat_html(count: int) -> str:
+    """F7 cover .stat markup. Copy provisional (mirrors /designer's frame; the
+    locked stat-wrapper copy system is /brand-manager's rev1)."""
+    return f'<span class="num">{count}</span> new arrivals this week.'
+
+
+def f9_cover_stat_html(coral: str, vendor_count: int) -> str:
+    """F9 cover .stat markup — the dash is a near-black PROSE dash (it sits in
+    .stat, not a .row .sep forest separator). Copy provisional (mirrors frame)."""
+    return (
+        f'<span class="name">{_esc(coral)}</span> — at '
+        f'<span class="num">{vendor_count} vendors</span> right now.'
+    )
+
+
+def render_f7_arrivals(
+    *, count: int, items: list[dict], now: datetime, out_path: str | Path, work_dir: str | Path | None = None,
+) -> Path:
+    """F7 arrivals/back-in-stock carousel: a stat-only cover ("{count} new arrivals
+    this week.") + one inner per item. Each item: {name, vendor, event_phrase,
+    fields}."""
+    cover = render_cover_html("reel-frame-f7-arrivals-cover.html", f7_cover_stat_html(count))
+    inners = [
+        render_inner_html(
+            "reel-frame-f7-arrivals.html",
+            _lead_html(it["name"], it["vendor"], it["event_phrase"]),
+            it["fields"], now,
+        )
+        for it in items
+    ]
+    return render_carousel(cover_html=cover, inner_htmls=inners, now=now, out_path=out_path, work_dir=work_dir)
+
+
+def render_f9_lineage(
+    *, coral: str, vendor_count: int, items: list[dict], now: datetime,
+    out_path: str | Path, work_dir: str | Path | None = None,
+) -> Path:
+    """F9 lineage spotlight carousel: a stat-only cover ("{coral} — at {n} vendors
+    right now.", the dash a near-black PROSE dash, not a forest field separator) +
+    one inner per carrying vendor. Each item: {name, vendor, fields} (event is
+    'listed'). Cover copy provisional (mirrors /designer's frame)."""
+    cover = render_cover_html("reel-frame-f9-lineage-cover.html", f9_cover_stat_html(coral, vendor_count))
+    inners = [
+        render_inner_html(
+            "reel-frame-f9-lineage.html",
+            _lead_html(it["name"], it["vendor"], "listed"),
+            it["fields"], now,
+        )
+        for it in items
+    ]
+    return render_carousel(cover_html=cover, inner_htmls=inners, now=now, out_path=out_path, work_dir=work_dir)
 
 
 def render_f8_superlative(

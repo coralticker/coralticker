@@ -3,18 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CTK-164 — F8 superlative reel frame — 9:16 production reference</title>
+<title>CTK-164 — F7 arrivals cover reel frame — 9:16 production reference</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-<!-- Authored from .claude/plans/tickets/CTK-164/designs/round-1/reel-frame-f8-superlative.html
-     (/designer byte-structure = source of truth); dynamic regions tokenized
-     {{STAT_NAME}} / {{STAT_PCT}} / {{DATA_ROW}}. The style block below is pinned
-     byte-for-byte to the /designer frame by test_data_card's drift-guard — re-sync
-     on a /designer revision. -->
 <style>
   /* Production reference — compositor rasterizes this page at 1080x1920.
-     No doc chrome, no crop guides. The <body> IS the frame. */
+     No doc chrome, no crop guides. The <body> IS the frame.
+     F7 carousel COVER — stat-only, no data row. Illustrative placeholder count. */
   :root{--cream:#F5F1EA;--ink:#1A1A1A;--forest:#1B5E20;}
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;background:var(--cream);}
@@ -30,15 +26,8 @@
 
   .body{flex:1;display:flex;flex-direction:column;justify-content:center;}
 
-  .stat{font-family:'IBM Plex Sans',sans-serif;font-weight:400;font-size:66px;line-height:1.16;letter-spacing:-.02em;max-width:880px;margin:0;}
-  .stat .name,.stat .num{font-weight:700;}
-
-  .row{font-size:40px;line-height:1.55;max-width:880px;margin:48px 0 0;}
-  .row .lab{font-family:'IBM Plex Sans',sans-serif;font-weight:700;color:var(--ink);}
-  .row .val{font-family:'IBM Plex Mono',monospace;font-weight:400;color:var(--ink);}
-  .row .sep{font-family:'IBM Plex Sans',sans-serif;font-weight:400;color:var(--forest);}
-  .row .struck{font-family:'IBM Plex Mono',monospace;font-weight:400;color:var(--ink);text-decoration:line-through;text-decoration-thickness:2px;}
-  .row .new{font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--forest);}
+  .stat{font-family:'IBM Plex Sans',sans-serif;font-weight:400;font-size:88px;line-height:1.12;letter-spacing:-.02em;max-width:880px;margin:0;}
+  .stat .num{font-weight:700;}
 </style>
 </head>
 <body>
@@ -46,8 +35,7 @@
     <div class="card">
       <div class="wordmark"><span class="c">coral</span>ticker<span class="dot">.</span></div>
       <div class="body">
-        <p class="stat">Biggest drop this week: <span class="name">{{STAT_NAME}}</span>, down <span class="num">{{STAT_PCT}}%</span>.</p>
-        <p class="row">{{DATA_ROW}}</p>
+        <p class="stat">{{STAT_HTML}}</p>
       </div>
     </div>
   </div>

@@ -144,6 +144,103 @@ def test_cross_vendor_line_contract():
     ]
 
 
+# --- CTK-164 content-card selection filters --------------------------------
+
+from scrapers.tools.content_queries import (  # noqa: E402
+    MIRROR_HOST,
+    build_card_fields,
+    drop_price_value,
+    is_single_card_eligible,
+    lineage_value,
+    plain_price_value,
+    single_card_reject,
+    superlative_drop_sane,
+    superlative_post_worthy,
+)
+
+
+def _drop_row(**kw):
+    base = {
+        "named_coral_id": 1,
+        "image_url": MIRROR_HOST + "/wwc/x.webp",
+        "current_price": Decimal("455"),
+        "prior_price": Decimal("650"),
+        "compare_at_price": None,
+    }
+    base.update(kw)
+    return base
+
+
+def test_single_card_eligible_floor():
+    assert is_single_card_eligible(_drop_row()) is True
+    assert single_card_reject(_drop_row(named_coral_id=None)) == "unmatched"   # matched-only
+    assert single_card_reject(_drop_row(image_url=None)) == "no-image"
+    assert single_card_reject(_drop_row(image_url="https://vendor.example/x.jpg")) == "non-mirror-image"
+    assert single_card_reject(_drop_row(current_price=None)) == "price-on-request"
+
+
+def test_superlative_glitch_rejection():
+    assert superlative_drop_sane(_drop_row()) is True                          # 30% sane
+    assert superlative_drop_sane(_drop_row(prior_price=Decimal("650"), current_price=Decimal("9.99"))) is False  # 98% glitch
+    assert superlative_drop_sane(_drop_row(prior_price=Decimal("10"), current_price=Decimal("3"))) is False      # sub-$5 floor
+    assert superlative_drop_sane(_drop_row(prior_price=Decimal("455"), current_price=Decimal("455"))) is False   # 0% drop
+
+
+def test_superlative_post_worthy_gate():
+    # 30% off, post-drop $455 -> worthy.
+    assert superlative_post_worthy(_drop_row()) is True
+    # Big % but cheap coral ($120 -> $90 = 25%, but $90 < $100 floor) -> not worthy.
+    assert superlative_post_worthy(_drop_row(prior_price=Decimal("120"), current_price=Decimal("90"))) is False
+    # Substantial coral but small drop ($600 -> $560 = ~6.7% < 25%) -> not worthy.
+    assert superlative_post_worthy(_drop_row(prior_price=Decimal("600"), current_price=Decimal("560"))) is False
+
+
+def test_lineage_value_degrade():
+    assert lineage_value("WWC", 2018) == "WWC · 2018"
+    assert lineage_value("WWC", None) == "WWC"          # year missing -> origin only
+    assert lineage_value(None, 2018) == "2018"          # origin missing -> year only
+    assert lineage_value(None, None) is None            # both absent -> caller omits field
+    assert lineage_value("", None) is None              # empty origin treated as absent
+
+
+def test_build_card_fields_order_and_omission():
+    # Full: Price / Lineage / Listed in fixed order.
+    f = build_card_fields(price_value="$250.00", origin="WWC", year=2018, listed_at="2026-06-16T12:00:00Z")
+    assert [x["label"] for x in f] == ["Price", "Lineage", "Listed"]
+    assert f[1]["value"] == "WWC · 2018"
+    # Lineage degrades out entirely when both parts absent -> Price / Listed only.
+    f2 = build_card_fields(price_value="$250.00", origin=None, year=None, listed_at="2026-06-16T12:00:00Z")
+    assert [x["label"] for x in f2] == ["Price", "Listed"]
+    # v1 year-absent -> Lineage present as origin-only.
+    f3 = build_card_fields(price_value="$250.00", origin="WWC", year=None, listed_at="2026-06-16T12:00:00Z")
+    assert f3[1] == {"label": "Lineage", "value": "WWC"}
+
+
+def test_superlative_fields_drop_baseline():
+    from scrapers.tools.content_queries import superlative_fields
+    from datetime import datetime, timezone
+    ev = datetime(2026, 6, 16, 12, 0, 0, tzinfo=timezone.utc)
+    # CT-observed arm: prior_price is the struck old value.
+    f = superlative_fields(_drop_row(prior_price=Decimal("650"), current_price=Decimal("455"),
+                                     named_coral_origin_vendor="WWC", event_at=ev))
+    assert f[0]["value"] == {"kind": "price-drop-new", "oldValue": "$650.00", "newValue": "$455.00"}
+    assert f[1] == {"label": "Lineage", "value": "WWC"}   # year dormant in v1
+    # Markdown arm: prior_price NULL -> struck old falls back to compare_at_price,
+    # never a null 'price on request'.
+    f2 = superlative_fields(_drop_row(prior_price=None, compare_at_price=Decimal("250"),
+                                      current_price=Decimal("174.99"),
+                                      named_coral_origin_vendor="WWC", event_at=ev))
+    assert f2[0]["value"]["oldValue"] == "$250.00"
+    assert f2[0]["value"]["newValue"] == "$174.99"
+
+
+def test_price_value_helpers():
+    assert plain_price_value(Decimal("250")) == "$250.00"
+    assert drop_price_value(Decimal("650"), Decimal("455")) == {
+        "kind": "price-drop-new", "oldValue": "$650.00", "newValue": "$455.00",
+    }
+
+
 def _run_all():
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]
