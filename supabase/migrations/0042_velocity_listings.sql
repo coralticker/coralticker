@@ -162,7 +162,10 @@ AS $$
   -- all gone pieces; a caller wanting "gone this week" passes 7.
   AND (p_window_days IS NULL
        OR vel.first_oos_at >= now() - make_interval(days => p_window_days))
-  ORDER BY vel.first_oos_at DESC;
+  -- oos.id tiebreaker: first_oos_at alone is not a total order (a batch scrape
+  -- writes the same observed_at for many rows), so a top-N slice render-side would
+  -- otherwise be non-reproducible. Mirrors get_cross_vendor_cheapest's determinism.
+  ORDER BY vel.first_oos_at DESC, oos.id DESC;
 $$;
 
 GRANT EXECUTE ON FUNCTION get_velocity_listings(int) TO service_role, authenticated, anon;
