@@ -47,3 +47,8 @@ python-dotenv==1.0.1
 beautifulsoup4==4.12.3
 Pillow==12.2.0
 boto3==1.35.99
+# imageio-ffmpeg — bundled ffmpeg binary for CTK-164 IG reel render (Ken Burns
+# zoompan). Ships the static ffmpeg in the wheel so local + CI setup is zero-
+# touch (no `brew install ffmpeg` to chase). Binary path via
+# imageio_ffmpeg.get_ffmpeg_exe(); called directly via subprocess, not moviepy.
+imageio-ffmpeg==0.6.0

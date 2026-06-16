@@ -74,11 +74,19 @@ error (loud-failure posture).
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 
 from scrapers.tools.ig_select import Candidate, DEFAULT_TOP_N
 from scrapers.tools.content_queries import CONTENT_FORMATS, FormatDescriptor
+
+# A-path reel output dir (CTK-164). Overridable via --out-dir; the GH Actions
+# render uploads this dir as the run artifact (post_slack is a text webhook and
+# cannot carry the file — Slack gets the pointer, the MP4 rides the artifact).
+DEFAULT_REEL_DIR = "build/reels"
 
 # ---------------------------------------------------------------------------
 # Brand canon, mirrored from branding-guide.md §Usage-rules IG-handle table
@@ -302,17 +310,135 @@ def run(mode: str, top_n: int, dry_run: bool = False) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# CTK-164 A-path — Ken Burns reel render + delivery.
+#
+# Surface is LOCKED A-path only: pan/zoom the CLEAN mirrored vendor photo. No
+# card, no baked data row, no CoralTicker branding on the image (CTK-157 §5
+# reshare canon; attribution rides the caption per CTK-159 D-4). INV-01 does
+# NOT apply — no listing line renders on the image, so data_row.py is untouched.
+# ---------------------------------------------------------------------------
+
+
+def render_reel(c: Candidate, out_dir: str | Path) -> Path:
+    """Render one candidate's clean mirrored photo to a Ken Burns MP4. Fetches
+    the 600px mirror, composes the 9:16 blurred-fill frame, encodes the pan.
+    Raises on fetch or render failure (the batch driver catches + skips)."""
+    from scrapers.common import video
+    from scrapers.common.http import fetch_image
+
+    if not c.image_url:
+        raise RuntimeError(f"candidate id={c.listing_id} has no image_url (image gate should have dropped it)")
+    image_bytes = fetch_image(c.image_url)
+    if image_bytes is None:
+        raise RuntimeError(f"fetch_image returned None for {c.image_url}")
+
+    frame = video.compose_9x16_blurred_fill(image_bytes)
+    out_path = Path(out_dir) / f"{c.vendor_slug}-{c.listing_id}.mp4"
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    try:
+        frame.save(tmp, "PNG")
+        tmp.close()
+        video.render_kenburns(tmp.name, out_path, motion_spec=video.DEFAULT_MOTION)
+    finally:
+        os.unlink(tmp.name)
+    return out_path
+
+
+def render_batch(conn, mode: str, top_n: int, out_dir: str | Path):
+    """Select candidates and render each selected one to a reel. A single
+    render failure skips that candidate (logged) rather than crashing the batch
+    — the grid-stocking pass should bank the reels that do render. Returns
+    (all_candidates, gated, results) where results is [(Candidate, Path|None)]."""
+    from scrapers.tools import ig_select
+
+    candidates, gated, selected = ig_select.select(conn, mode, top_n)
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+
+    results: list[tuple[Candidate, Path | None]] = []
+    for c in selected:
+        try:
+            path: Path | None = render_reel(c, out_dir)
+        except Exception as e:  # noqa: BLE001 — skip one, keep the batch going
+            print(
+                f"WARN: reel render failed for {c.vendor_slug} id={c.listing_id}: "
+                f"{type(e).__name__}: {e}",
+                file=sys.stderr,
+            )
+            path = None
+        results.append((c, path))
+    return candidates, gated, results
+
+
+def render_reel_block(c: Candidate, path: Path | None) -> str:
+    """The operator block for one rendered reel: the existing caption/eyeball
+    block plus a pointer to the MP4 on disk (Slack carries text only)."""
+    pointer = (
+        f"reel rendered -> {path}"
+        if path is not None
+        else "reel render FAILED (see logs) — post the static image instead"
+    )
+    return f"{render_operator_block(c)}\n{pointer}"
+
+
+def render_reel_notification(mode: str, candidate_count: int, gated_count: int,
+                             results: list[tuple[Candidate, Path | None]],
+                             out_dir: str | Path) -> str:
+    """The operator-channel message for a reel batch: a header summary + one
+    block per candidate, each pointing at its MP4. The MP4s ride the run
+    artifact / out-dir — post_slack is a webhook and cannot upload files."""
+    rendered = sum(1 for _, p in results if p is not None)
+    header = (
+        f"ig-spotlight {mode} reels — {rendered}/{len(results)} rendered "
+        f"({candidate_count} scanned, {gated_count} passed the image gate). "
+        f"Grab the MP4s from {out_dir} (run artifact)."
+    )
+    if not results:
+        return header + "\n(nothing cleared the image gate this window.)"
+    blocks = "\n\n".join(render_reel_block(c, p) for c, p in results)
+    return f"{header}\n\n{blocks}"
+
+
+def run_reels(mode: str, top_n: int, out_dir: str | Path, dry_run: bool = False) -> int:
+    from scrapers.common import db
+
+    conn = db.get_conn()
+    try:
+        candidates, gated, results = render_batch(conn, mode, top_n, out_dir)
+    finally:
+        conn.close()
+
+    message = render_reel_notification(mode, len(candidates), len(gated), results, out_dir)
+
+    if dry_run:
+        print(message)
+        return 0
+
+    from scrapers.common.cohort_signal import post_slack
+    post_slack(message)
+    rendered = sum(1 for _, p in results if p is not None)
+    print(f"ig-spotlight {mode} reels: {rendered} rendered to {out_dir}; notified operator channel.")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--mode", choices=("daily", "weekly-roundup"), default="daily",
                         help="Selection window + size (daily top-1 / weekly-roundup top-N).")
     parser.add_argument("--top-n", type=int, default=None,
                         help="Override the per-mode default selection size.")
+    parser.add_argument("--reels", action="store_true",
+                        help="Render Ken Burns reels (CTK-164 A-path) instead of the static-image block.")
+    parser.add_argument("--out-dir", default=DEFAULT_REEL_DIR,
+                        help="Reel output dir (--reels mode; uploaded as the GH Actions artifact).")
     parser.add_argument("--dry-run", action="store_true",
                         help="Render to stdout without posting to the operator channel.")
     args = parser.parse_args()
     top_n = args.top_n if args.top_n is not None else DEFAULT_TOP_N[args.mode]
     try:
+        if args.reels:
+            return run_reels(args.mode, top_n, args.out_dir, dry_run=args.dry_run)
         return run(args.mode, top_n, dry_run=args.dry_run)
     except Exception as e:  # noqa: BLE001 — surface loudly, exit 1 (loud-failure posture)
         print(f"ERROR: {type(e).__name__}: {e}", file=sys.stderr)
