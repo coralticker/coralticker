@@ -192,19 +192,18 @@ def cross_vendor_cheapest_line(row: dict) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# D-4 card data-row field contract — LOCKED /brand-manager canon (2026-06-16).
-# F7/F8/F9 inherit exactly three fields in fixed order via format_data_row:
+# D-4 card data-row field contract — LOCKED /brand-manager canon (revised 2026-06-16).
+# F7/F8/F9 inherit exactly TWO fields in fixed order via format_data_row:
 #   Price.    plain string, or the price-drop-new struck-old/forest-new pair.
-#   Lineage.  "{origin} · {year}" — mid-dot INSIDE the value (near-black mono via
-#             card CSS, NOT a field separator). Graceful-degrade here, UPSTREAM of
-#             format_data_row: drop a missing part; if BOTH absent, omit the field
-#             entirely (format_data_row joins only what it's handed).
 #   Listed.   relative-time. Restocks use Listed., never Back.
 # No Vendor. field (rides the lead), no Ref. field (dormant).
 #
-# v1 NOTE: named_corals has origin_vendor (free-text) but NO year column, so the
-# "· {year}" half is dormant — Lineage always degrades to origin-only today. The
-# builder supports year for when a source lands; callers pass year=None now.
+# Lineage. was DROPPED in v1: named_corals has origin_vendor (free-text) but NO
+# year column, so it could only render origin-only — which duplicates the vendor
+# prefix already in the coral name / lead. LATENT three-field path: lineage_value
+# + build_card_fields's origin/year params survive so a future year column
+# reinstates Price. — Lineage. {origin} · {year} — Listed. uniformly (the mid-dot
+# sits INSIDE the value, near-black mono via card CSS, never a field separator).
 # ---------------------------------------------------------------------------
 
 
