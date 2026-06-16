@@ -203,17 +203,16 @@ def test_lineage_value_degrade():
     assert lineage_value("", None) is None              # empty origin treated as absent
 
 
-def test_build_card_fields_order_and_omission():
-    # Full: Price / Lineage / Listed in fixed order.
+def test_build_card_fields_two_field_v1():
+    # v1 D-4: exactly Price. — Listed. (Lineage dropped), regardless of origin/year.
     f = build_card_fields(price_value="$250.00", origin="WWC", year=2018, listed_at="2026-06-16T12:00:00Z")
-    assert [x["label"] for x in f] == ["Price", "Lineage", "Listed"]
-    assert f[1]["value"] == "WWC · 2018"
-    # Lineage degrades out entirely when both parts absent -> Price / Listed only.
+    assert [x["label"] for x in f] == ["Price", "Listed"]
+    # origin/year are accepted (latent three-field path) but produce no Lineage in v1.
     f2 = build_card_fields(price_value="$250.00", origin=None, year=None, listed_at="2026-06-16T12:00:00Z")
     assert [x["label"] for x in f2] == ["Price", "Listed"]
-    # v1 year-absent -> Lineage present as origin-only.
-    f3 = build_card_fields(price_value="$250.00", origin="WWC", year=None, listed_at="2026-06-16T12:00:00Z")
-    assert f3[1] == {"label": "Lineage", "value": "WWC"}
+    # Listed omitted only when listed_at is None.
+    f3 = build_card_fields(price_value="$250.00", listed_at=None)
+    assert [x["label"] for x in f3] == ["Price"]
 
 
 def test_superlative_fields_drop_baseline():
@@ -223,8 +222,8 @@ def test_superlative_fields_drop_baseline():
     # CT-observed arm: prior_price is the struck old value.
     f = superlative_fields(_drop_row(prior_price=Decimal("650"), current_price=Decimal("455"),
                                      named_coral_origin_vendor="WWC", event_at=ev))
+    assert [x["label"] for x in f] == ["Price", "Listed"]   # v1 two-field (no Lineage)
     assert f[0]["value"] == {"kind": "price-drop-new", "oldValue": "$650.00", "newValue": "$455.00"}
-    assert f[1] == {"label": "Lineage", "value": "WWC"}   # year dormant in v1
     # Markdown arm: prior_price NULL -> struck old falls back to compare_at_price,
     # never a null 'price on request'.
     f2 = superlative_fields(_drop_row(prior_price=None, compare_at_price=Decimal("250"),

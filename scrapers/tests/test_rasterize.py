@@ -62,7 +62,6 @@ def test_f8_end_to_end_render(tmp_path):
     # Full B-path chain on a single card: assemble F8 HTML -> rasterize -> encode.
     fields = [
         {"label": "Price", "value": {"kind": "price-drop-new", "oldValue": "$650", "newValue": "$455"}},
-        {"label": "Lineage", "value": "WWC · 2018"},
         {"label": "Listed", "value": {"kind": "relative-time", "timestamp": "2026-06-16T12:00:00Z"}},
     ]
     out = tmp_path / "f8.mp4"

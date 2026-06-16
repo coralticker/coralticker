@@ -53,16 +53,17 @@ def _assert_parity(fields):
 
 
 def test_parity_f8_price_drop_row():
-    # The F8 superlative row: a price drop, lineage, a relative listed-time.
+    # v1 D-4 two-field superlative row: Price. (drop pair) — Listed. (Lineage dropped).
     fields = [
         {"label": "Price", "value": {"kind": "price-drop-new", "oldValue": "$650", "newValue": "$455"}},
-        {"label": "Lineage", "value": "WWC · 2018"},
         {"label": "Listed", "value": {"kind": "relative-time", "timestamp": "2026-06-16T12:00:00Z"}},
     ]
     _assert_parity(fields)
     # Spot-check the literal canonical text too (catches a both-renderers-agree-but-
     # both-wrong drift the round-trip alone wouldn't).
-    assert format_data_row(fields, NOW) == "Price. $650 $455 — Lineage. WWC · 2018 — Listed. 6 hours ago"
+    assert format_data_row(fields, NOW) == "Price. $650 $455 — Listed. 6 hours ago"
+    # The struck-old / forest-new markup the .row CSS expects.
+    assert '<span class="struck">$650</span> <span class="new">$455</span>' in format_data_row_html(fields, NOW)
 
 
 def test_parity_bare_and_relative():
@@ -80,12 +81,20 @@ def test_parity_vendor_markdown():
     _assert_parity(fields)
 
 
-def test_parity_invalidated_and_italic():
-    fields = [
-        {"label": "Was", "value": {"kind": "invalidated", "value": "$300"}},
-        {"label": "Note", "value": {"kind": "italic", "value": "price on request"}},
-    ]
+def test_parity_italic():
+    # Italic = the scientific-binomial carve-out (.row em). Latent in v1 but the
+    # adapter path is kept; parity + the <em> markup must hold.
+    fields = [{"label": "Note", "value": {"kind": "italic", "value": "Acropora"}}]
     _assert_parity(fields)
+    assert "<em>Acropora</em>" in format_data_row_html(fields, NOW)
+
+
+def test_invalidated_kind_is_card_forbidden():
+    # B-path posts ACTIVE listings only; .row .invalid is absent from the frames.
+    # An invalidated value reaching a card must fail loud, not silently render.
+    import pytest
+    with pytest.raises(ValueError):
+        format_data_row_html([{"label": "Was", "value": {"kind": "invalidated", "value": "$300"}}], NOW)
 
 
 def test_parity_entity_safe_value():
@@ -100,38 +109,19 @@ def test_unknown_kind_raises():
         format_data_row_html([{"label": "X", "value": {"kind": "bogus"}}], NOW)
 
 
-# --- INV-01 parity across the D-4 Lineage degrade cases ---------------------
-# build_card_fields decides which fields exist (degrade is upstream of
-# format_data_row); the adapter must render whatever survives with parity.
+# --- INV-01 parity over the v1 two-field row (built via build_card_fields) ---
 
 
-def test_parity_lineage_year_missing():
-    # v1 default: origin present, year absent -> Lineage. renders origin-only.
+def test_parity_two_field_row():
+    # build_card_fields yields exactly Price. — Listed. in v1 (Lineage dropped),
+    # regardless of origin/year; the adapter renders it with parity.
     fields = build_card_fields(
         price_value={"kind": "price-drop-new", "oldValue": "$650.00", "newValue": "$455.00"},
         origin="WWC", year=None, listed_at="2026-06-16T12:00:00Z",
     )
-    assert [f["label"] for f in fields] == ["Price", "Lineage", "Listed"]
-    _assert_parity(fields)
-    assert format_data_row(fields, NOW) == "Price. $650.00 $455.00 — Lineage. WWC — Listed. 6 hours ago"
-
-
-def test_parity_lineage_origin_missing():
-    # Origin absent, year present -> Lineage. renders year-only.
-    fields = build_card_fields(price_value="$250.00", origin=None, year=2018,
-                               listed_at="2026-06-16T12:00:00Z")
-    assert [f["label"] for f in fields] == ["Price", "Lineage", "Listed"]
-    assert fields[1]["value"] == "2018"
-    _assert_parity(fields)
-
-
-def test_parity_lineage_both_absent_field_suppressed():
-    # Both absent -> Lineage. omitted; row is Price. — Listed. and parity still holds.
-    fields = build_card_fields(price_value="$250.00", origin=None, year=None,
-                               listed_at="2026-06-16T12:00:00Z")
     assert [f["label"] for f in fields] == ["Price", "Listed"]
     _assert_parity(fields)
-    assert format_data_row(fields, NOW) == "Price. $250.00 — Listed. 6 hours ago"
+    assert format_data_row(fields, NOW) == "Price. $650.00 $455.00 — Listed. 6 hours ago"
 
 
 # --- template drift-guard: public card_templates skeleton == /designer frame -
@@ -198,7 +188,6 @@ def test_card_templates_skeleton_matches_designer_frames():
 def test_f8_card_html_injects_and_keeps_row_parity():
     fields = [
         {"label": "Price", "value": {"kind": "price-drop-new", "oldValue": "$650", "newValue": "$455"}},
-        {"label": "Lineage", "value": "WWC · 2018"},
         {"label": "Listed", "value": {"kind": "relative-time", "timestamp": "2026-06-16T12:00:00Z"}},
     ]
     card = render_f8_card_html(name="WWC Sunkist Bounce Mushroom", pct=30, fields=fields, now=NOW)

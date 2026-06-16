@@ -57,19 +57,21 @@ def _value_html(value, now: datetime) -> str:
     if kind == "relative-time":
         return f'<span class="val">{_esc(format_relative_time(value["timestamp"], now))}</span>'
     if kind in ("price-drop-new", "vendor-markdown"):
-        # Struck old value + emphasized new value; the literal space between the
-        # spans reproduces _format_value's "old new" text.
+        # Struck old value + forest-bold new value (.row .struck / .row .new); the
+        # literal space between the spans reproduces _format_value's "old new" text.
         return (
             f'<span class="struck">{_esc(value["oldValue"])}</span> '
             f'<span class="new">{_esc(value["newValue"])}</span>'
         )
-    if kind == "invalidated":
-        # Strike styling is right for the card (visual channel); text is the bare
-        # value, matching the mirror's non-DOM "carry the bare value".
-        return f'<span class="struck">{_esc(value["value"])}</span>'
     if kind == "italic":
+        # Scientific-binomial carve-out (the sole sanctioned italic; .row em).
+        # Latent in v1 — no field carries a binomial now that Lineage. is dropped —
+        # but kept defensively so a future binomial-bearing field renders correctly.
         return f'<span class="val"><em>{_esc(value["value"])}</em></span>'
-    raise ValueError(f"format_data_row_html: unhandled value kind {kind!r}")
+    # 'invalidated' is intentionally NOT handled: B-path posts ACTIVE listings only,
+    # and .row .invalid is deliberately absent from the frames. An invalidated/OOS
+    # value reaching a card is a contract violation -> fail loud.
+    raise ValueError(f"format_data_row_html: unhandled or card-forbidden value kind {kind!r}")
 
 
 def format_data_row_html(fields: list[dict], now: datetime) -> str:

@@ -250,14 +250,22 @@ def superlative_fields(row: dict) -> list[dict]:
 
 
 def build_card_fields(*, price_value, origin: str | None = None, year=None, listed_at=None) -> list[dict]:
-    """Assemble the D-4 locked field list (Price / Lineage / Listed, fixed order)
-    for a content card. price_value is a prebuilt Price. value (plain_price_value
-    or drop_price_value). Lineage degrades + may be omitted (lineage_value). Listed
-    is a relative-time over listed_at (a datetime or ISO str; omitted if None)."""
+    """Assemble the D-4 v1 field list — TWO fields, Price. — Listed. (fixed order).
+
+    Lineage. is DROPPED in v1 (revised /brand-manager canon 2026-06-16): named_corals
+    has no year column, so it could only render origin-only, which duplicates the
+    coral name's vendor prefix already in the lead. origin/year stay in the signature
+    as the LATENT three-field path — when a year column lands, uncomment the Lineage
+    append below and the row reinstates uniformly to Price. — Lineage. {origin} · {year}
+    — Listed. (lineage_value already handles the {origin}·{year} degrade).
+
+    price_value is a prebuilt Price. value (plain_price_value or drop_price_value).
+    Listed. is a relative-time over listed_at (datetime or ISO str; omitted if None)."""
     fields: list[dict] = [{"label": "Price", "value": price_value}]
-    lineage = lineage_value(origin, year)
-    if lineage is not None:
-        fields.append({"label": "Lineage", "value": lineage})
+    # LATENT (v1 Lineage dropped) — reinstate when named_corals gains a year column:
+    #   lineage = lineage_value(origin, year)
+    #   if lineage is not None:
+    #       fields.append({"label": "Lineage", "value": lineage})
     if listed_at is not None:
         fields.append({"label": "Listed", "value": {"kind": "relative-time", "timestamp": listed_at}})
     return fields
