@@ -244,6 +244,7 @@ export async function searchListings(
     JOIN vendors v ON v.id = vl.vendor_id
     LEFT JOIN named_corals nc ON nc.id = vl.named_coral_id
     WHERE vl.in_stock = true
+      AND vl.is_auction = false
       AND v.active = true
       AND v.slug NOT LIKE '!_%' ESCAPE '!'
       AND (${p1}::text IS NULL OR vl.normalized_title ILIKE ${p1} ESCAPE '!')

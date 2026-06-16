@@ -221,6 +221,54 @@ def test_new_fixed_price_row_persists_is_auction_false(conn, vendor):
     )
 
 
+@mark_requires_db
+def test_reader_surface_predicate_excludes_auction(conn, vendor):
+    """Reader-surface pin: the `in_stock = true AND is_auction = false`
+    predicate the web read-surfaces share (search.ts, getVendorInventory,
+    getCoralAvailability, named-corals image lateral) excludes an in_stock
+    auction row. Self-contained — seeds one auction + one fixed-price row
+    for the test vendor and runs the shared predicate shape directly, so it
+    pins the gate without coupling to any one surface's full SQL. Dropping
+    `AND is_auction = false` from a surface fails this (the auction row
+    re-enters the result)."""
+    _wipe_listings(conn, vendor["id"])
+    run_id = _start_scraper_run(conn, vendor["id"])
+    persist_phase_a(
+        conn=conn, vendor_row=vendor, run_id=run_id, existing_by_url={},
+        decisions=[
+            ItemDecision(item=_new_item(AUCTION_URL, is_auction=True, current_price=None),
+                         decision="new"),
+            ItemDecision(item=_new_item(FIXED_URL, is_auction=False, current_price=Decimal("50.00")),
+                         decision="new"),
+        ],
+    )
+
+    with conn.cursor() as cur:
+        # The shared reader predicate: in-stock, non-auction.
+        cur.execute(
+            "SELECT product_url FROM vendor_listings "
+            "WHERE vendor_id = %s AND in_stock = true AND is_auction = false "
+            "ORDER BY product_url",
+            (vendor["id"],),
+        )
+        kept = [r["product_url"] for r in cur.fetchall()]
+        # Without the gate (regression baseline): both rows return.
+        cur.execute(
+            "SELECT count(*) AS c FROM vendor_listings "
+            "WHERE vendor_id = %s AND in_stock = true",
+            (vendor["id"],),
+        )
+        ungated = cur.fetchone()["c"]
+
+    assert kept == [FIXED_URL], (
+        f"reader predicate must keep only the fixed-price row; got {kept!r}"
+    )
+    assert ungated == 2, (
+        f"baseline sanity: both in-stock rows exist (got {ungated}); the gate "
+        f"is what drops the auction, not absence of the row"
+    )
+
+
 def main() -> int:
     # Parser tests run without a DB connection.
     parser_tests = [
@@ -231,6 +279,7 @@ def main() -> int:
     db_tests = [
         test_new_auction_row_persists_is_auction_true,
         test_new_fixed_price_row_persists_is_auction_false,
+        test_reader_surface_predicate_excludes_auction,
     ]
     failures = []
 

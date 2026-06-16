@@ -315,6 +315,7 @@ export async function getCoralAvailability(
         WHERE vl.named_coral_id = ${namedCoralId}
           AND vl.last_seen_at > ${sevenDaysAgo}
           AND (${includeOOSParam}::boolean OR vl.in_stock = true)
+          AND vl.is_auction = false
         ORDER BY vl.in_stock DESC,
                  CASE WHEN vl.in_stock THEN vl.current_price END ASC NULLS LAST,
                  vl.first_seen_at DESC
@@ -330,7 +331,10 @@ export async function getCoralAvailability(
     // Prefix bump when the default ordering flips or the cached shape widens —
     // the Data Cache persists across deploys, so without the bump stale-order /
     // stale-shape arrays serve up to 300s post-deploy.
-    ['getCoralAvailabilityV2', String(namedCoralId), includeOOS ? '1' : '0'],
+    // V3 (CTK-042): result set narrows (auction rows gated via is_auction =
+    // false). Same lockstep rationale as getVendorInventoryV6 — bump forces an
+    // immediate clean re-query so auctions drop on deploy, not on revalidate.
+    ['getCoralAvailabilityV3', String(namedCoralId), includeOOS ? '1' : '0'],
     {
       revalidate: 300,
       tags: [`coral-${namedCoralId}-availability-${includeOOS ? '1' : '0'}`],
@@ -358,10 +362,14 @@ export async function getCoralInWindowVendorCount(
         FROM vendor_listings vl
         WHERE vl.named_coral_id = ${namedCoralId}
           AND vl.last_seen_at > ${sevenDaysAgo}
+          AND vl.is_auction = false
       `) as unknown as { n: number }[];
       return rows[0]?.n ?? 0;
     },
-    ['getCoralInWindowVendorCountV1', String(namedCoralId)],
+    // V2 (CTK-042): auction vendors gated out (is_auction = false) — an
+    // auction-only vendor must not +1 the `N VENDORS · ALL OUT OF STOCK`
+    // eyebrow. Value-narrowing bump, parity with getCoralAvailabilityV3.
+    ['getCoralInWindowVendorCountV2', String(namedCoralId)],
     { revalidate: 300, tags: [`coral-${namedCoralId}-in-window-vendor-count`] },
   )();
 }
