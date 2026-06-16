@@ -89,3 +89,43 @@ def test_render_kenburns_produces_valid_mp4(tmp_path):
     assert result.stat().st_size > 0
     duration = video.probe_duration(out_path)
     assert 6.5 <= duration <= 7.5, f"expected ~7s, got {duration}s"
+
+
+# --- B-path: DATA_CARD_MOTION preset + concat_clips -------------------------
+
+
+def test_data_card_motion_preset():
+    m = video.DATA_CARD_MOTION
+    # Barely-there zoom — legibility budget, NOT the A-path 1.0->1.15 travel.
+    assert (m.zoom_start, m.zoom_end) == (1.0, 1.02)
+    # Shares duration/fps with the A-path default so DATA_CARD_MOTION clips have
+    # identical codec params and concat_clips can stream-copy them.
+    assert (m.duration_sec, m.fps) == (video.DEFAULT_MOTION.duration_sec, video.DEFAULT_MOTION.fps)
+
+
+def test_concat_clips_joins_to_one_mp4(tmp_path):
+    # Two short DATA_CARD_MOTION clips (identical codec params) -> one mp4 whose
+    # duration is the sum, via the concat demuxer + stream copy.
+    short = MotionSpec(duration_sec=1.0, fps=video.DATA_CARD_MOTION.fps,
+                       zoom_start=video.DATA_CARD_MOTION.zoom_start,
+                       zoom_end=video.DATA_CARD_MOTION.zoom_end)
+    clips = []
+    for i, colour in enumerate([(30, 94, 32), (245, 241, 234)]):
+        frame_path = tmp_path / f"frame{i}.png"
+        Image.new("RGB", (video.REEL_W, video.REEL_H), colour).save(frame_path, "PNG")
+        clip = tmp_path / f"clip{i}.mp4"
+        video.render_kenburns(frame_path, clip, motion_spec=short)
+        clips.append(clip)
+
+    out_path = tmp_path / "joined.mp4"
+    result = video.concat_clips(clips, out_path)
+
+    assert result.exists() and result.stat().st_size > 0
+    duration = video.probe_duration(out_path)
+    assert 1.7 <= duration <= 2.3, f"expected ~2s joined, got {duration}s"
+
+
+def test_concat_clips_empty_raises():
+    import pytest
+    with pytest.raises(ValueError):
+        video.concat_clips([], "out.mp4")
