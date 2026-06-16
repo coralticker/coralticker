@@ -145,6 +145,7 @@ export async function getAllNamedCoralsWithListings(): Promise<
           WHERE vl.named_coral_id = nc.id
             AND vl.last_seen_at > ${windowStart}
             AND vl.in_stock = true
+            AND vl.is_auction = false
             AND v.active = true
             AND v.slug NOT LIKE '!_%' ESCAPE '!'
           ORDER BY (vl.image_url IS NOT NULL) DESC, vl.first_seen_at DESC, vl.id DESC
@@ -156,7 +157,11 @@ export async function getAllNamedCoralsWithListings(): Promise<
       `) as unknown as CoralIndexRow[];
       return rows;
     },
-    ['getAllNamedCoralsWithListingsV4'],
+    // V5 (CTK-042): the image-lateral set narrows (auction rows gated via
+    // is_auction = false). Same lockstep rationale as getVendorInventoryV6 —
+    // the Data Cache persists across deploys, so bump forces a clean re-query
+    // rather than serving an auction-sourced thumbnail until revalidate.
+    ['getAllNamedCoralsWithListingsV5'],
     // Tandem with the /corals page const, matching the /coral/[slug] destination
     // cadence (skew note at the header).
     { revalidate: CORALS_INDEX_REVALIDATE_S, tags: ['corals-index'] },

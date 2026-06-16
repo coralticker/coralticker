@@ -354,6 +354,18 @@ def persist_phase_a(
             "compare_at_price": _decimal_to_str(item.get("compare_at_price")),  # CTK-100 Wave-2 F6 — turns capture into writes. item.get returns None cleanly when parsers don't set the key (e.g., pre-Wave-2 BC/Magento scrapes still in-flight); _decimal_to_str returns None for None input.
             "currency": item.get("currency", "USD"),
             "in_stock": item["in_stock"],
+            # CTK-042 auction-leak gate — is_auction rides the UPSERT path
+            # only (new / price_changed / restocked / oos), NOT the touch
+            # UPDATE below. Ratified UPSERT-only: is_auction is monotonic
+            # (an auction never becomes fixed-price), the one-time backfill
+            # seeds the entire existing population, and any false->true flip
+            # co-occurs with the CTK-160 price null-out -> price_changed ->
+            # this path. item.get default False covers non-Shopify parsers
+            # (BC/Magento/tidal) that never set the key. The unchanged-row
+            # blind spot is deliberately not wired (would need a 4th UNNEST
+            # array for a transition the backfill + price_changed already
+            # cover).
+            "is_auction": item.get("is_auction", False),
             "category": item.get("category"),
             "lineage_flag": item.get("lineage_flag", "unknown"),
             "last_seen_at": now,
@@ -635,6 +647,7 @@ _UPSERT_ALLOWED_COLS = frozenset({
     "markdown_started_at",  # CTK-124 F8 — episode-onset attestation (migration 0033). Present only on 'set' (now) / 'clear' (None) rows; omitted on 'keep' so the absent-column contract preserves the live onset.
     "currency",
     "in_stock",
+    "is_auction",  # CTK-042 auction-leak gate — tag-detected auction discriminator (migration 0038). Written on every UPSERT-path row (new/price_changed/restocked/oos); the unchanged-row touch UPDATE deliberately omits it (monotonic + backfill-seeded; a false->true flip co-occurs with the price null-out -> price_changed).
     "category",
     "lineage_flag",
     "last_seen_at",
