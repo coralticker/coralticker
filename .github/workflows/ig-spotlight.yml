@@ -1,0 +1,74 @@
+name: ig-spotlight
+
+# CTK-159 Slice B -- Instagram spotlight publish-or-notify pipeline. Selects the
+# day's (or week's) top spotlight candidate(s) over the existing drop data plane
+# and renders a caption skeleton + first-comment block to the Slack operator
+# channel for Jon to eyeball, fill, and post (D-1 semi-automated, human-in-the-
+# loop; D-2 scheduler notify-to-post -- Slack-render fallback is the v1 path).
+#
+# Trigger is Vercel cron, not GH schedule (same cron-reliability reason as
+# discord-digest: GH scheduled fires land hours late). Vercel cron hits
+# app/api/cron/ig-spotlight/route.ts, which dispatches this workflow with the
+# cadence `mode`. Single-trigger ownership: do NOT add a schedule block here --
+# two triggers would double-post to the operator channel.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Selection window: daily (top-1) or weekly-roundup (top-N)'
+        type: choice
+        options:
+          - daily
+          - weekly-roundup
+        default: daily
+      dry_run:
+        description: 'Render to the step log without posting to Slack'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ig-spotlight
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    # Read-only select + render + at most one webhook POST. Seconds, not minutes.
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Preflight NEON_DATABASE_URL
+        uses: ./.github/actions/preflight-neon-secret
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+      - name: Select + render IG spotlight
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python -m scrapers.tools.ig_spotlight --mode ${{ inputs.mode }} ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      # Failure routes to the operator channel (Slack), not a user-facing
+      # surface -- decision #39 operator/user split, same as discord-digest.
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"ig-spotlight failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"

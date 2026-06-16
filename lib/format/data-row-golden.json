@@ -1,0 +1,60 @@
+{
+  "_comment": "CTK-161 D-3 — INV-01 parity golden. Pins formatDataRow() (lib/format/data-row.ts) and its Python mirror (scrapers/tools/data_row.py:format_data_row) to ONE output over canonical DataRowField[] inputs. Both lib/format/data-row.test.ts and scrapers/tests/test_data_row_parity.py assert against this file — drift on EITHER side fails its test. Cases exercise every value-kind in the discriminated union (string, relative-time, price-drop-new, vendor-markdown, invalidated, italic) + a multi-field composite. This pins the RENDER MECHANISM (label. value, em-dash separator), NOT any content-format's field selection (that layers on top and stays provisional per Q3). relative-time cases stay < 7d (pure epoch arithmetic, timezone-independent); the >= 7d absolute branch is local-tz dependent on both sides and deliberately not pinned here.",
+  "now": "2026-05-14T12:00:00Z",
+  "cases": [
+    {
+      "name": "string-single",
+      "fields": [{ "label": "Vendor", "value": "World Wide Corals" }],
+      "expected": "Vendor. World Wide Corals"
+    },
+    {
+      "name": "price-drop-new",
+      "fields": [{ "label": "Price", "value": { "kind": "price-drop-new", "oldValue": "$80.00", "newValue": "$60.00" } }],
+      "expected": "Price. $80.00 $60.00"
+    },
+    {
+      "name": "vendor-markdown",
+      "fields": [{ "label": "Price", "value": { "kind": "vendor-markdown", "oldValue": "$100.00", "newValue": "$75.00" } }],
+      "expected": "Price. $100.00 $75.00"
+    },
+    {
+      "name": "invalidated",
+      "fields": [{ "label": "Price", "value": { "kind": "invalidated", "value": "$40.00" } }],
+      "expected": "Price. $40.00"
+    },
+    {
+      "name": "italic",
+      "fields": [{ "label": "Lineage", "value": { "kind": "italic", "value": "Acropora" } }],
+      "expected": "Lineage. Acropora"
+    },
+    {
+      "name": "relative-time-minute-singular",
+      "fields": [{ "label": "Listed", "value": { "kind": "relative-time", "timestamp": "2026-05-14T11:59:00Z" } }],
+      "expected": "Listed. 1 minute ago"
+    },
+    {
+      "name": "relative-time-hours-plural",
+      "fields": [{ "label": "Listed", "value": { "kind": "relative-time", "timestamp": "2026-05-14T10:00:00Z" } }],
+      "expected": "Listed. 2 hours ago"
+    },
+    {
+      "name": "relative-time-day-singular-boundary",
+      "fields": [{ "label": "Back", "value": { "kind": "relative-time", "timestamp": "2026-05-13T12:00:00Z" } }],
+      "expected": "Back. 1 day ago"
+    },
+    {
+      "name": "relative-time-days-plural",
+      "fields": [{ "label": "Back", "value": { "kind": "relative-time", "timestamp": "2026-05-11T12:00:00Z" } }],
+      "expected": "Back. 3 days ago"
+    },
+    {
+      "name": "composite-multi-field",
+      "fields": [
+        { "label": "Price", "value": { "kind": "price-drop-new", "oldValue": "$80.00", "newValue": "$60.00" } },
+        { "label": "Listed", "value": { "kind": "relative-time", "timestamp": "2026-05-14T11:00:00Z" } },
+        { "label": "Lineage", "value": { "kind": "italic", "value": "Acropora" } }
+      ],
+      "expected": "Price. $80.00 $60.00 — Listed. 1 hour ago — Lineage. Acropora"
+    }
+  ]
+}
