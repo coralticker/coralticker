@@ -399,9 +399,7 @@ def superlative_drop_sane(row: dict) -> bool:
     current = row.get("current_price")
     if current is None or float(current) < SUPERLATIVE_MIN_PRICE:
         return False
-    baseline = row.get("prior_price")
-    if baseline is None:
-        baseline = row.get("compare_at_price")
+    baseline = _drop_baseline(row)   # same prior-or-compare_at pick drop_fraction ranks on
     if baseline is None or float(baseline) <= 0:
         return False
     frac = drop_fraction(row.get("prior_price"), current, row.get("compare_at_price"))

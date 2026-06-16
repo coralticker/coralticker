@@ -228,10 +228,11 @@ def concat_clips(clips: list[str | Path], out_path: str | Path) -> Path:
     listing = "\n".join(
         "file '{}'".format(str(c.resolve()).replace("'", "'\\''")) for c in clips
     )
-    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
-        f.write(listing + "\n")
-        list_path = f.name
+    list_path = None
     try:
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+            list_path = f.name   # set BEFORE write so a write failure still cleans up
+            f.write(listing + "\n")
         args = [
             _FFMPEG, "-y",
             "-f", "concat", "-safe", "0",
@@ -247,7 +248,8 @@ def concat_clips(clips: list[str | Path], out_path: str | Path) -> Path:
                 f"{proc.stderr[-2000:]}"
             )
     finally:
-        Path(list_path).unlink(missing_ok=True)
+        if list_path is not None:
+            Path(list_path).unlink(missing_ok=True)
     return Path(out_path)
 
 
