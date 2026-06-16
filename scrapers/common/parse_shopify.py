@@ -565,6 +565,14 @@ def _normalize_product(
     matches, current_price is null-out'd so the frontend renders "price on
     request" via formatPrice(null) instead of the Shopify variant placeholder.
     Permissive default — None = no-op (matches the category_filter shape).
+
+    CTK-042: the same _is_auction match sets is_auction=true on the persisted
+    row (the acute auction-leak gate's discriminator). One detection call
+    drives both the price null-out and the boolean — no re-implemented
+    detection. is_auction rides through diff.py's UPSERT row-build so the
+    reader gate (get_listing_lead_event + getVendorInventory) can exclude
+    auction rows without false-positiving on legitimately null-priced
+    fixed-price rows.
     """
     raw_title = product.get("title", "")
     handle = product.get("handle", "")
@@ -575,8 +583,9 @@ def _normalize_product(
     current_price = normalize.coerce_price(variants)
     sku = next((v.get("sku") for v in variants if v.get("sku")), None)
 
-    if auction_detection and _is_auction(product, auction_detection):
-        log.info("auction detected: %s — null-out current_price", handle)
+    is_auction = bool(auction_detection and _is_auction(product, auction_detection))
+    if is_auction:
+        log.info("auction detected: %s — null-out current_price + is_auction=true", handle)
         current_price = None
 
     # CTK-100 L4: sequence AFTER the auction null-out so compare_at_price
@@ -598,6 +607,8 @@ def _normalize_product(
         "compare_at_price": compare_at_price,  # CTK-100: vendor-set markdown reference; NULL when no markdown / stale / auction
         "currency": "USD",                     # Phase 1 vendors all USD per Q1-3
         "in_stock": in_stock,
+        "is_auction": is_auction,              # CTK-042: tag-detected auction discriminator; gates reader surfaces
+
         "vendor_image_url": vendor_image_url,  # raw vendor URL; image-pipeline decides what becomes image_url
         "category": normalize.infer_category(product),
         "lineage_flag": normalize.infer_lineage_flag(raw_title),
