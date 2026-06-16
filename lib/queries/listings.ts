@@ -315,6 +315,7 @@ export async function getCoralAvailability(
         WHERE vl.named_coral_id = ${namedCoralId}
           AND vl.last_seen_at > ${sevenDaysAgo}
           AND (${includeOOSParam}::boolean OR vl.in_stock = true)
+          AND vl.is_auction = false
         ORDER BY vl.in_stock DESC,
                  CASE WHEN vl.in_stock THEN vl.current_price END ASC NULLS LAST,
                  vl.first_seen_at DESC
@@ -330,7 +331,10 @@ export async function getCoralAvailability(
     // Prefix bump when the default ordering flips or the cached shape widens —
     // the Data Cache persists across deploys, so without the bump stale-order /
     // stale-shape arrays serve up to 300s post-deploy.
-    ['getCoralAvailabilityV2', String(namedCoralId), includeOOS ? '1' : '0'],
+    // V3 (CTK-042): result set narrows (auction rows gated via is_auction =
+    // false). Same lockstep rationale as getVendorInventoryV6 — bump forces an
+    // immediate clean re-query so auctions drop on deploy, not on revalidate.
+    ['getCoralAvailabilityV3', String(namedCoralId), includeOOS ? '1' : '0'],
     {
       revalidate: 300,
       tags: [`coral-${namedCoralId}-availability-${includeOOS ? '1' : '0'}`],
@@ -358,10 +362,14 @@ export async function getCoralInWindowVendorCount(
         FROM vendor_listings vl
         WHERE vl.named_coral_id = ${namedCoralId}
           AND vl.last_seen_at > ${sevenDaysAgo}
+          AND vl.is_auction = false
       `) as unknown as { n: number }[];
       return rows[0]?.n ?? 0;
     },
-    ['getCoralInWindowVendorCountV1', String(namedCoralId)],
+    // V2 (CTK-042): auction vendors gated out (is_auction = false) — an
+    // auction-only vendor must not +1 the `N VENDORS · ALL OUT OF STOCK`
+    // eyebrow. Value-narrowing bump, parity with getCoralAvailabilityV3.
+    ['getCoralInWindowVendorCountV2', String(namedCoralId)],
     { revalidate: 300, tags: [`coral-${namedCoralId}-in-window-vendor-count`] },
   )();
 }
@@ -436,6 +444,7 @@ export async function getVendorInventory(
               AND vl.last_seen_at > ${fourteenDaysAgo}
               AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
               AND (${includeOOSParam}::boolean OR vl.in_stock = true)
+              AND vl.is_auction = false
             ORDER BY vl.current_price ASC NULLS LAST, vl.first_seen_at DESC
             LIMIT ${PAGE_SIZE} OFFSET ${offset}
           `;
@@ -457,6 +466,7 @@ export async function getVendorInventory(
               AND vl.last_seen_at > ${fourteenDaysAgo}
               AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
               AND (${includeOOSParam}::boolean OR vl.in_stock = true)
+              AND vl.is_auction = false
             ORDER BY vl.current_price DESC NULLS LAST, vl.first_seen_at DESC
             LIMIT ${PAGE_SIZE} OFFSET ${offset}
           `;
@@ -478,6 +488,7 @@ export async function getVendorInventory(
             AND vl.last_seen_at > ${fourteenDaysAgo}
             AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
             AND (${includeOOSParam}::boolean OR vl.in_stock = true)
+            AND vl.is_auction = false
           ORDER BY vl.first_seen_at DESC
           LIMIT ${PAGE_SIZE} OFFSET ${offset}
         `;
@@ -494,7 +505,12 @@ export async function getVendorInventory(
       // Cache persists across deploys, so stale-shape entries deserialize the new
       // fields as undefined for up to the revalidate window, breaking medal
       // render on cached pages.
-      'getVendorInventoryV5',
+      // V6 (CTK-042): the result SET narrows (auction rows gated out via
+      // is_auction = false). Not a shape-widen, but stale entries would keep
+      // serving auction rows for up to the 300s revalidate window — bump forces
+      // an immediate clean re-query so the Tier 1B leak clears on deploy, not on
+      // revalidate.
+      'getVendorInventoryV6',
       String(vendorId),
       String(page),
       sort,
@@ -535,14 +551,19 @@ export async function getVendorInventoryTotal(
           AND vl.last_seen_at > ${fourteenDaysAgo}
           AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
           AND (${includeOOSParam}::boolean OR vl.in_stock = true)
+          AND vl.is_auction = false
       `) as unknown as { total: number | string }[];
       const first = rows[0];
       return first ? Number(first.total) : 0;
     },
     [
-      // Cache-key stays V2 — return shape is `number`, unaffected by Listing
-      // widens.
-      'getVendorInventoryTotalV2',
+      // V3 (CTK-042): the count VALUE changed — auction rows are now gated out
+      // (is_auction = false), matching getVendorInventory's narrowed set. Must
+      // bump in lockstep with getVendorInventoryV6: gating the rows without the
+      // count = phantom pages (count includes auctions the row feed omits). The
+      // return shape is still `number`; this bump is for value-staleness, not
+      // shape.
+      'getVendorInventoryTotalV3',
       String(vendorId),
       category ?? '_',
       includeOOS ? '1' : '0',

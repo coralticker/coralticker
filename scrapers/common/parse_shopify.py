@@ -34,6 +34,16 @@ FILTER_AXES = (
     "title_denylist_prefix",
 )
 
+# CTK-160: the coral-gate ALLOWLIST axes — the ones _should_keep(skip_allowlists
+# =True) bypasses for the auction-keep override. Declared next to FILTER_AXES so
+# the membership lives in one place; a test asserts every "*_allowlist" axis in
+# FILTER_AXES is listed here, so a future allowlist axis can't silently escape
+# the skip path.
+_ALLOWLIST_AXES = (
+    "product_type_allowlist",
+    "tag_allowlist",
+)
+
 _TRUE_STRINGS = frozenset({"true", "1", "yes", "on"})
 
 
@@ -217,7 +227,9 @@ def fetch_and_parse(config: dict) -> ParseResult:
         # accumulated across pages and logged at parse-end below. Permissive
         # default — config without category_filter block bypasses the gate.
         for p in products:
-            if not _should_keep(p, category_filter, in_stock_only, tag_denylist_norm):
+            if not _should_keep_with_auction_override(
+                p, category_filter, auction_detection, in_stock_only, tag_denylist_norm,
+            ):
                 # CTK-088 fold #4: attribute the drop. An unavailable item is
                 # short-circuited by the availability gate FIRST, so under
                 # in_stock_only any sold-out row is an availability drop; a
@@ -344,11 +356,20 @@ def _should_keep(
     category_filter: dict | None,
     in_stock_only: bool = False,
     tag_denylist_norm: set[str] | None = None,
+    skip_allowlists: bool = False,
 ) -> bool:
     """CTK-037 category-filter gate. Returns True if product passes; False if
     rejected by the availability gate, the allowlist, the tag-denylist, or the
     title-denylist. None or empty dict category_filter = no category gate
     (permissive default for Phase 2 vendor onboarding inheritance).
+
+    CTK-160: skip_allowlists=True bypasses the coral-gate ALLOWLIST axes
+    (the _ALLOWLIST_AXES set: product_type_allowlist + tag_allowlist) while
+    keeping the availability gate + every denylist (junk-gate). The auction-keep
+    override (_should_keep_with_auction_override) uses it so an in-scope auction
+    bypasses the coral allowlist but still faces the junk-gate — the allowlist-
+    class membership stays declared once, here next to the axis logic, instead of
+    a hardcoded strip-set elsewhere.
 
     Six filter axes, AND-semantics when more than one is configured:
       - in_stock_only (CTK-088) — when True, drop any product with no buyable
@@ -414,7 +435,7 @@ def _should_keep(
     title_denylist_prefix = category_filter.get("title_denylist_prefix") or []  # CTK-119: anchored variant
     product_type = product.get("product_type") or ""  # CTK-037 Session 5.5: normalize None/absent to "" so allowlist entry "" matches both shapes
     tags = product.get("tags") or []
-    if allowlist and product_type not in allowlist:
+    if not skip_allowlists and allowlist and product_type not in allowlist:
         if in_stock_only and product_type not in _KNOWN_EXCLUDED_PRODUCT_TYPES:
             # CTK-088 fold #3: under in_stock_only, reaching this point means the
             # product is BUYABLE (it passed the availability gate above) but its
@@ -444,7 +465,7 @@ def _should_keep(
     # allocation per axis per call. Bounded today by ~10-13 entries × ~5 tags
     # × catalog-size — non-load-bearing perf, but the pre-fold comment
     # under-stated cost by a factor of ~5 (tags/row).
-    if tag_allowlist:
+    if not skip_allowlists and tag_allowlist:
         tag_allowlist_lc = {e.lower() for e in tag_allowlist}
         if not any(t.lower() in tag_allowlist_lc for t in tags):
             return False
@@ -470,6 +491,36 @@ def _should_keep(
         if title_lower.startswith(tuple(e.lower() for e in title_denylist_prefix)):
             return False
     return True
+
+
+def _should_keep_with_auction_override(
+    product: dict,
+    category_filter: dict | None,
+    auction_detection: dict | None,
+    in_stock_only: bool = False,
+    tag_denylist_norm: set[str] | None = None,
+) -> bool:
+    """CTK-160 (Option B) — `_should_keep` plus the auction-keep override.
+
+    A product the normal gate KEEPS is kept. A product the normal gate REJECTS
+    is kept iff it is an auction (`_is_auction`) AND clears the gate with the
+    coral-gate allowlists skipped (`_should_keep(..., skip_allowlists=True)`):
+    auctions bypass the allowlist because they are in-scope per
+    [[project_auctions_in_scope]], but still face the junk-gate (tag/title
+    denylists) + the availability gate. The kept auction is price-nulled
+    downstream in `_normalize_product` and, because it is kept, never enters
+    `filtered_urls` — so it participates in the normal cohort-OOS lifecycle
+    (fixes the freeze that stranded it in_stock at a stale buy-price). When
+    `auction_detection` is unconfigured the override is a pure no-op
+    (pre-CTK-160 behavior)."""
+    if _should_keep(product, category_filter, in_stock_only, tag_denylist_norm):
+        return True
+    if auction_detection and _is_auction(product, auction_detection):
+        return _should_keep(
+            product, category_filter, in_stock_only, tag_denylist_norm,
+            skip_allowlists=True,
+        )
+    return False
 
 
 def _is_auction(product: dict, auction_detection: dict) -> bool:
@@ -514,6 +565,14 @@ def _normalize_product(
     matches, current_price is null-out'd so the frontend renders "price on
     request" via formatPrice(null) instead of the Shopify variant placeholder.
     Permissive default — None = no-op (matches the category_filter shape).
+
+    CTK-042: the same _is_auction match sets is_auction=true on the persisted
+    row (the acute auction-leak gate's discriminator). One detection call
+    drives both the price null-out and the boolean — no re-implemented
+    detection. is_auction rides through diff.py's UPSERT row-build so the
+    reader gate (get_listing_lead_event + getVendorInventory) can exclude
+    auction rows without false-positiving on legitimately null-priced
+    fixed-price rows.
     """
     raw_title = product.get("title", "")
     handle = product.get("handle", "")
@@ -524,8 +583,9 @@ def _normalize_product(
     current_price = normalize.coerce_price(variants)
     sku = next((v.get("sku") for v in variants if v.get("sku")), None)
 
-    if auction_detection and _is_auction(product, auction_detection):
-        log.info("auction detected: %s — null-out current_price", handle)
+    is_auction = bool(auction_detection and _is_auction(product, auction_detection))
+    if is_auction:
+        log.info("auction detected: %s — null-out current_price + is_auction=true", handle)
         current_price = None
 
     # CTK-100 L4: sequence AFTER the auction null-out so compare_at_price
@@ -547,6 +607,8 @@ def _normalize_product(
         "compare_at_price": compare_at_price,  # CTK-100: vendor-set markdown reference; NULL when no markdown / stale / auction
         "currency": "USD",                     # Phase 1 vendors all USD per Q1-3
         "in_stock": in_stock,
+        "is_auction": is_auction,              # CTK-042: tag-detected auction discriminator; gates reader surfaces
+
         "vendor_image_url": vendor_image_url,  # raw vendor URL; image-pipeline decides what becomes image_url
         "category": normalize.infer_category(product),
         "lineage_flag": normalize.infer_lineage_flag(raw_title),
