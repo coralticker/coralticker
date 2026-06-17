@@ -603,11 +603,11 @@ def run(slug: str) -> int:
         # the contract; populated by the three CTK-094 parser edits.
         pages_fetched = result.pages_fetched
         per_category_counts = result.per_category_counts
-        # CTK-094 fold #4 (/code-review F4): URLs the parser actively
-        # rejected via YAML filter. diff.classify excludes these from the
-        # cohort-OOS absent-set so parser-filter rejection (vendor re-
-        # categorized item to a non-allowlisted bucket) doesn't conflate
-        # with vendor-sold-out.
+        # CTK-106 admitted-set contract (decision #83): URLs the parser
+        # actively rejected via YAML filter. No longer excluded from the
+        # cohort-OOS absent-set — a filter-rejected row exits the admitted
+        # set and flips like any other absence. diff.classify consumes the
+        # set for the filtered-stuck flip count log line only.
         filtered_urls = result.filtered_urls
         log.info(
             "parsed %d items; html_hash=%s; pages_fetched=%s; filtered_urls=%d",

@@ -123,13 +123,13 @@ class ParseResult:
     # URLs the parser actively rejected via YAML filter (in_stock_only sold-
     # out drop, product_type_allowlist mismatch, tag_allowlist miss,
     # tag_denylist match, title_denylist / title_denylist_prefix match
-    # (CTK-119)). diff.classify excludes these
-    # from the cohort-OOS absent-set so a parser-filter rejection (vendor
-    # re-categorized item to a non-allowlisted bucket, vendor renamed item
-    # to hit a title-denylist substring) doesn't conflate with vendor-sold-
-    # out. parse_bigcommerce + tidal_gardens return empty set (no filter
-    # axis today; plumbing exists for future filter additions on those
-    # platforms).
+    # (CTK-119)). Post-CTK-106 (admitted-set contract, decision #83) these
+    # are observability-only: diff.classify counts them for the filtered-
+    # stuck flip log line but no longer excludes them from the cohort-OOS
+    # absent-set — a filter-rejected row exits the admitted set and flips
+    # OOS like any other absence. parse_bigcommerce + tidal_gardens return
+    # empty set (no filter axis today; plumbing exists for future filter
+    # additions on those platforms).
     filtered_urls: set = field(default_factory=set)
 
 
@@ -151,7 +151,7 @@ def fetch_and_parse(config: dict) -> ParseResult:
     skipped_unavailable = 0  # CTK-088 fold #4: dropped by the in_stock_only availability gate
     skipped_category = 0     # CTK-088 fold #4: dropped by product_type_allowlist / tag_allowlist / tag_denylist
     skipped_title_denylist = 0  # CTK-096 D-1: dropped by title_denylist axis (split out from skipped_category so an operator can tell which YAML axis catches the row); CTK-119 prefix-axis drops share this counter (same title-axis bucket)
-    filtered_urls: set[str] = set()  # CTK-094 fold #4: URLs rejected by _should_keep, excluded from cohort absent-set
+    filtered_urls: set[str] = set()  # CTK-094 fold #4: URLs rejected by _should_keep; observability-only post-CTK-106 (no cohort exclusion)
     html_hash: str | None = None
     http_status_last: int | None = None
     pages_fetched = 0        # CTK-094 §4.2 completeness signal — increment per fetched page
@@ -236,12 +236,13 @@ def fetch_and_parse(config: dict) -> ParseResult:
                 # buyable row that still got dropped failed the category filter.
                 # CTK-094 Session 4 fold #1 (/code-review F1): filtered_urls
                 # only collects category-rejected URLs (vendor still buyable).
-                # Sold-out rejects (skipped_unavailable) ARE the cohort-OOS
-                # signal — they must NOT enter filtered_urls or diff.classify
-                # will exclude them from the cohort absent-set and the in_stock
-                # row stays TRUE despite the vendor selling out (Session 3
-                # fold-batch regressed this for the POTO in_stock_only + cohort
-                # combo; Session 4 restores the discrimination).
+                # Sold-out rejects (skipped_unavailable) stay out so the set
+                # means one thing: parser-active rejection of a buyable row.
+                # Post-CTK-106 (admitted-set contract) the set is
+                # observability-only — membership no longer spares a row from
+                # the cohort flip — but the discrimination keeps the
+                # filtered-stuck log count honest: sold-out absences are the
+                # plain cohort signal, not filtered-stuck.
                 if in_stock_only and not any(v.get("available") for v in (p.get("variants") or [])):
                     skipped_unavailable += 1
                 else:
@@ -292,11 +293,12 @@ def fetch_and_parse(config: dict) -> ParseResult:
                     # CTK-094 fold #4 + Session 4 fold #1: scope-gated to
                     # category-rejection only. URL shape matches
                     # _normalize_product (base_url + /products/handle).
-                    # CTK-096 note: title_denylist drops also enter filtered_urls
-                    # (parser-active rejection on a buyable row; same cohort-
-                    # OOS exclusion contract as category-axis drops — a vendor
-                    # renaming a buyable item to hit title_denylist would
-                    # otherwise mass-fire false OOS).
+                    # CTK-096 note: title_denylist drops also enter
+                    # filtered_urls (parser-active rejection on a buyable
+                    # row, same as category-axis drops). Post-CTK-106 these
+                    # URLs flip OOS through the cohort pass like any other
+                    # admitted-set exit; the set feeds the filtered-stuck
+                    # log count only.
                     handle = p.get("handle", "")
                     if handle:
                         filtered_urls.add(f"{base_url}/products/{handle}")

@@ -114,15 +114,40 @@ def classify(
     `per_item_decisions` matches the pre-CTK-094 return list and the empty
     cohort list extends to a no-op at the caller.
 
-    CTK-094 fold #4 (/code-review F4): `filtered_urls` carries URLs the
-    parser actively rejected via YAML filter (in_stock_only sold-out drop,
-    product_type_allowlist mismatch, tag_denylist match). The cohort pass
-    EXCLUDES these URLs from the absent-set — a vendor re-categorizing
-    item X into a non-allowlisted bucket drops X from `items` but X is
-    still buyable on-vendor; flipping X to OOS would be a false signal.
-    Defaulted to None (treated as empty set) for callers that don't pass
-    the parameter — preserves byte-equivalence for tests + non-cohort
-    paths.
+    CTK-106 admitted-set contract (decision #83; supersedes the CTK-094
+    fold-#4 exclusion): `in_stock=true` is asserted only while a row is in
+    the vendor's current admitted set — parsed from the feed AND passed the
+    YAML category filter. A previously-admitted row that exits the admitted
+    set flips OOS through this pass for EITHER cause: vendor-recat (vendor
+    moved the item to a non-allowlisted bucket; may still be buyable
+    on-vendor) or operator-tighten (YAML filter edit denies a class we no
+    longer track). Both mean CoralTicker has stopped observing the row, and
+    a frozen `in_stock=true` at a stale price overstates (the trust-floor
+    failure class) where a conservative OOS merely understates. So
+    `filtered_urls` no longer gates membership — it feeds the
+    filtered-stuck flip count in the log line only. Defaulted to None
+    (treated as empty set); empty-set runs are byte-equivalent to the
+    pre-CTK-106 predicate. Flips are one-shot and self-terminating: once
+    `in_stock=false`, the `existing.get("in_stock")` guard skips the row
+    on every later run.
+
+    Guard routing (CTK-106 D-3): filtered-flips share the Stage-5.65 flip
+    cap + CTK-137 K=3 convergence with the rest of the absent-set — one
+    mass-flip guard covers the overbroad-YAML-edit failure mode (load-time
+    schema validation catches malformed configs, not overbroad ones).
+    Named limitation: a >cap tightening on a high-churn vendor may never
+    K-converge (ordinary delist churn perturbs the absent-set hash each
+    run, breaking the K-stable chain); the operator one-shot
+    `cohort_flip_cap` raise is the documented fast-path — pair any
+    tightening expected to deny >25% of a vendor's in-stock rows with a
+    one-run cap raise in the same commit.
+
+    Flap honesty (CTK-106 D-5): a vendor oscillating an item across the
+    filter boundary (rotating promo product_types) produces OOS/restock
+    cycles — the flip here, the recovery via the per-item `restocked`
+    branch on readmission. Accepted: each state is honest at observation
+    time; the status-quo alternative (frozen stale-available at the
+    pre-promo price) is worse wrong-info.
     """
     _filtered = filtered_urls or set()
     per_item_decisions: list[ItemDecision] = []
@@ -147,15 +172,19 @@ def classify(
 
     cohort_oos_decisions: list[ItemDecision] = []
     if cohort_oos_at_persist:
-        # Cohort-absent pass — URLs in DB with in_stock=true that didn't
-        # appear in this scrape AND weren't actively rejected by the parser
-        # filter (CTK-094 fold #4). Synthetic ItemDecision carries only the
-        # minimal shape that persist_phase_a's decision=="oos" branch
-        # touches: product_url for join + in_stock=false. Other
-        # vendor_listings columns stay at their existing values via the
-        # direct UPDATE-by-id path (see persist_phase_a synthetic branch).
+        # Cohort-absent pass — URLs in DB with in_stock=true that exited
+        # the admitted set this scrape (absent from the feed OR rejected by
+        # the parser filter — CTK-106 admitted-set contract, see docstring).
+        # Synthetic ItemDecision carries only the minimal shape that
+        # persist_phase_a's decision=="oos" branch touches: product_url for
+        # join + in_stock=false. Other vendor_listings columns stay at
+        # their existing values via the direct UPDATE-by-id path (see
+        # persist_phase_a synthetic branch).
+        filtered_stuck = 0
         for url, existing in existing_by_url.items():
-            if existing.get("in_stock") and url not in seen_urls and url not in _filtered:
+            if existing.get("in_stock") and url not in seen_urls:
+                if url in _filtered:
+                    filtered_stuck += 1
                 cohort_oos_decisions.append(ItemDecision(
                     item={
                         "product_url": url,
@@ -173,6 +202,13 @@ def classify(
                     decision="oos",
                     existing_id=existing["id"],
                 ))
+        if filtered_stuck:
+            # CTK-106 D-2 observability — filtered-stuck flips are admitted-
+            # set exits the retired fold-#4 predicate would have spared.
+            log.info(
+                "cohort absent-pass: %d of %d flips are filtered-stuck (parser-rejected, exited admitted set)",
+                filtered_stuck, len(cohort_oos_decisions),
+            )
 
     return per_item_decisions, cohort_oos_decisions
 
