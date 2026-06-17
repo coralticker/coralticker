@@ -161,9 +161,10 @@ def _le_row(event, *, coral_id=1, coral="WWC Sunkist Bounce", vendor="WWC",
     }
 
 
-def _carrier(*, coral_id=1, coral="WWC Sunkist Bounce", vendor_id=10, vendor="WWC",
+def _carrier(*, id=1, coral_id=1, coral="WWC Sunkist Bounce", vendor_id=10, vendor="WWC",
              price=Decimal("250"), at="2026-06-16T12:00:00Z"):
     return {
+        "id": id,
         "named_coral_id": coral_id,
         "named_coral_canonical_name": coral,
         "vendor_id": vendor_id,

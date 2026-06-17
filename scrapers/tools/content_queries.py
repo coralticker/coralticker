@@ -697,7 +697,7 @@ def select_f9_lineage(conn, sample_cap: int = 9):
         # newest-first order — the dict values are already event_at-DESC, no re-sort.
         eligible = sorted(
             (r for r in group if is_surface_b_card_eligible(r)),
-            key=lambda r: r["event_at"], reverse=True,
+            key=lambda r: (r["event_at"], r["id"]), reverse=True,
         )
         by_vendor: dict = {}
         for r in eligible:

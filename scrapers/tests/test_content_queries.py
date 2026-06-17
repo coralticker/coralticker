@@ -322,10 +322,13 @@ def _le_row(event, *, coral_id=1, coral="WWC Sunkist Bounce", vendor="WWC",
     }
 
 
-def _carrier(*, coral_id=1, coral="WWC Sunkist Bounce", vendor_id=10, vendor="WWC",
+def _carrier(*, id=1, coral_id=1, coral="WWC Sunkist Bounce", vendor_id=10, vendor="WWC",
              price=Decimal("250"), at="2026-06-16T12:00:00Z"):
-    """A get_cross_vendor_carriers-shaped row (only the fields the F9 selector uses)."""
+    """A get_cross_vendor_carriers-shaped row (only the fields the F9 selector uses).
+    `id` is the vendor_listings PK — the per-vendor inner pick tie-breaks on it
+    (event_at, id) so a same-event_at tie is deterministic (retro #2)."""
     return {
+        "id": id,
         "named_coral_id": coral_id,
         "named_coral_canonical_name": coral,
         "vendor_id": vendor_id,
@@ -454,6 +457,29 @@ def test_f9_falls_to_renderable_runner_up_not_none():
     assert vendor_count == 2 and len(items) == 2
     # When NO >= 2-vendor coral has a priced inner -> None.
     assert select_f9_lineage(_FakeConn(rows[:3])) is None
+
+
+def test_f9_inner_pick_deterministic_on_event_at_tie():
+    # Retro #2: one vendor carries the coral twice at the SAME event_at but
+    # different ids. The inner pick tie-breaks on id (highest wins), so the chosen
+    # listing is the same regardless of input row order — not whichever the
+    # (untied) sort happened to surface. A second vendor satisfies the >= 2 gate.
+    tied_a = _carrier(id=100, coral_id=1, vendor_id=10, vendor="WWC", price=Decimal("250"), at="2026-06-16T12:00:00Z")
+    tied_b = _carrier(id=200, coral_id=1, vendor_id=10, vendor="WWC", price=Decimal("260"), at="2026-06-16T12:00:00Z")
+    other = _carrier(id=300, coral_id=1, vendor_id=11, vendor="TSA", price=Decimal("240"), at="2026-06-16T11:00:00Z")
+
+    def _price(item):
+        return next(f["value"] for f in item["fields"] if f["label"] == "Price")
+
+    forward = select_f9_lineage(_FakeConn([tied_a, tied_b, other]))
+    reversed_ = select_f9_lineage(_FakeConn([tied_b, tied_a, other]))
+    assert forward is not None and reversed_ is not None
+    # Vendor 10 dedupes to ONE inner — the id=200 (higher-id) tie winner, $260.00,
+    # regardless of input order. Without the id tiebreak this picks whichever the
+    # untied sort happened to surface (flaky across runs).
+    v10 = [it for it in forward[2] if it["vendor"] == "WWC"]
+    assert len(v10) == 1 and _price(v10[0]) == "$260.00"
+    assert [_price(it) for it in forward[2]] == [_price(it) for it in reversed_[2]]
 
 
 def _run_all():
