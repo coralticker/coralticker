@@ -91,7 +91,7 @@ def test_f7_arrivals_carousel_render(tmp_path):
     # Cover-rides-the-reel: cover + 1 inner -> one concatenated reel (~2*7s).
     out = tmp_path / "f7.mp4"
     result = data_card.render_f7_arrivals(
-        count=23,
+        count=23, composition="all-restocks",
         items=[{"name": "WWC Sunkist Bounce Mushroom", "vendor": "WWC",
                 "event_phrase": "back in stock", "fields": _fields("$250.00")}],
         now=NOW, out_path=out,

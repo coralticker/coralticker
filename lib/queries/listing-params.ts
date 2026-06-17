@@ -6,7 +6,7 @@
 // Invalid URL inputs silently default (sort → 'newest', category → null) — no
 // error states for URL tampering, the bare default is always the fallback.
 
-import type { ListingCategory, ListingSort } from './listings';
+import type { ListingCategory, ListingSort, ListingWindow } from './listings';
 
 // Symbol register (↑ / ↓) carries direction-as-data; word-pair LOW-TO-HIGH
 // register rejected (extra chars, less data-density, register-conflict with
@@ -74,6 +74,32 @@ export function parseCategory(
 
 export function parseIncludeOOS(raw: string | string[] | undefined): boolean {
   return firstValue(raw) === '1';
+}
+
+// /new view-window filter (CTK-169). No UI label record — window is reached via
+// the IG bio-link URL, not a SORT/FILTER-style chip. This module stays free of
+// any runtime import from listings.ts (only type imports) so it loads in the
+// node test runner without next/cache + the @/ alias chain; the allowlist
+// therefore can't derive from listings.ts's WINDOW record. The local
+// Record<ListingWindow, true> literal is the substitute single-source: it forces
+// every ListingWindow member to appear (Record requires all keys) and rejects
+// non-members (excess-property check), so the allowlist breaks the build if the
+// union grows — same exhaustiveness Object.keys(LABELS) gives the siblings.
+// Allowlist-parse + array-guard mirror parseSort: a concrete default, not
+// nullable. Unknown / absent → 'day' (the bare-/new 24h feed).
+const WINDOW_ALLOWLIST = Object.keys({
+  day: true,
+  week: true,
+} satisfies Record<ListingWindow, true>) as readonly ListingWindow[];
+
+export function parseWindow(
+  raw: string | string[] | undefined,
+): ListingWindow {
+  const single = firstValue(raw);
+  if (!single) return 'day';
+  return (WINDOW_ALLOWLIST as readonly string[]).includes(single)
+    ? (single as ListingWindow)
+    : 'day';
 }
 
 // /search query normalizer. Mirrors the scrape-side runtime normalization that

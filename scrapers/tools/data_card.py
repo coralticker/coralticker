@@ -157,15 +157,30 @@ def render_carousel(
     return out_path
 
 
-def f7_cover_stat_html(count: int) -> str:
-    """F7 cover .stat markup. Copy provisional (mirrors /designer's frame; the
-    locked stat-wrapper copy system is /brand-manager's rev1)."""
-    return f'<span class="num">{count}</span> new arrivals this week.'
+# F7 cover copy register — /brand-manager cover-stat lock (branding-guide.md
+# §"IG data-post copy" + CTK-161 rev2 L177-179). The cover names exactly what the
+# inners contain, picked by the event COMPOSITION over the FULL window population
+# (not the sample): all-arrivals -> "new arrivals", all-restocks -> "back in
+# stock", mixed -> "drops". {count} is the TRUE full-window count (the honest-
+# count guard, rev2 L182), never the sample size.
+_F7_COVER_COPY = {
+    "all-arrivals": "new arrivals this week.",
+    "all-restocks": "back in stock this week.",
+    "mixed": "drops this week.",
+}
+
+
+def f7_cover_stat_html(count: int, composition: str) -> str:
+    """F7 cover .stat markup, picked by event composition per the cover register
+    lock. composition is one of all-arrivals / all-restocks / mixed (derived over
+    the full window population by content_queries.select_f7_arrivals)."""
+    return f'<span class="num">{count}</span> {_F7_COVER_COPY[composition]}'
 
 
 def f9_cover_stat_html(coral: str, vendor_count: int) -> str:
     """F9 cover .stat markup — the dash is a near-black PROSE dash (it sits in
-    .stat, not a .row .sep forest separator). Copy provisional (mirrors frame)."""
+    .stat, not a .row .sep forest separator), per the cover register lock
+    (branding-guide.md §"IG data-post copy" + CTK-161 rev2 L225/L230)."""
     return (
         f'<span class="name">{_esc(coral)}</span> — at '
         f'<span class="num">{vendor_count} vendors</span> right now.'
@@ -173,12 +188,20 @@ def f9_cover_stat_html(coral: str, vendor_count: int) -> str:
 
 
 def render_f7_arrivals(
-    *, count: int, items: list[dict], now: datetime, out_path: str | Path, work_dir: str | Path | None = None,
+    *, count: int, composition: str, items: list[dict], now: datetime,
+    out_path: str | Path, work_dir: str | Path | None = None,
 ) -> Path:
-    """F7 arrivals/back-in-stock carousel: a stat-only cover ("{count} new arrivals
-    this week.") + one inner per item. Each item: {name, vendor, event_phrase,
-    fields}."""
-    cover = render_cover_html("reel-frame-f7-arrivals-cover.html", f7_cover_stat_html(count))
+    """F7 arrivals/back-in-stock carousel: a stat-only cover (composition-picked
+    per the cover register — "{count} new arrivals / back in stock / drops this
+    week.") + one inner per item. Each item: {name, vendor, event_phrase, fields}.
+    composition (all-arrivals / all-restocks / mixed) comes from select_f7_arrivals,
+    derived over the full window population.
+
+    composition is REQUIRED (no default): the cover stat is the honest-claim surface,
+    and a missing composition silently mislabelling a restock/mixed cover as "new
+    arrivals" is the exact lie the F7/F8/F9 honest-count split exists to prevent.
+    The driver always passes the selector's real composition."""
+    cover = render_cover_html("reel-frame-f7-arrivals-cover.html", f7_cover_stat_html(count, composition))
     inners = [
         render_inner_html(
             "reel-frame-f7-arrivals.html",
@@ -197,7 +220,7 @@ def render_f9_lineage(
     """F9 lineage spotlight carousel: a stat-only cover ("{coral} — at {n} vendors
     right now.", the dash a near-black PROSE dash, not a forest field separator) +
     one inner per carrying vendor. Each item: {name, vendor, fields} (event is
-    'listed'). Cover copy provisional (mirrors /designer's frame)."""
+    'listed'). Cover copy per the register lock (see f9_cover_stat_html)."""
     cover = render_cover_html("reel-frame-f9-lineage-cover.html", f9_cover_stat_html(coral, vendor_count))
     inners = [
         render_inner_html(

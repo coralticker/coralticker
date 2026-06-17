@@ -10,6 +10,7 @@ import {
   parseIncludeOOS,
   parseSearchQuery,
   parseSort,
+  parseWindow,
 } from './listing-params.ts';
 
 test('parseSort: every allowlisted value round-trips', () => {
@@ -167,4 +168,19 @@ test('duplicate-key arrays: first value wins across all three parsers (CTK-128 f
   assert.equal(parseIncludeOOS(['1', '0']), true);
   assert.equal(parseIncludeOOS(['0', '1']), false);
   assert.equal(parseIncludeOOS([]), false);
+});
+
+test('parseWindow: week round-trips; day + absent + tampered fall back to day (CTK-169)', () => {
+  assert.equal(parseWindow('week'), 'week');
+  assert.equal(parseWindow('day'), 'day'); // explicit default value is valid input
+  assert.equal(parseWindow(undefined), 'day');
+  assert.equal(parseWindow(''), 'day');
+  assert.equal(parseWindow('WEEK'), 'day'); // case-sensitive by design
+  assert.equal(parseWindow('month'), 'day'); // unknown window
+  assert.equal(parseWindow('week;DROP TABLE'), 'day');
+});
+
+test('parseWindow: array input (duplicate ?window= keys) takes the first value (CTK-169)', () => {
+  assert.equal(parseWindow(['week', 'day']), 'week');
+  assert.equal(parseWindow(['bogus', 'week']), 'day'); // first wins, then allowlist
 });
