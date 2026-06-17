@@ -44,6 +44,7 @@ from scrapers.tools.ig_spotlight import (
     NAME_PLACEHOLDER,
     NICHE_PROMPT,
     VENDOR_IG,
+    clean_descriptive_title,
     event_verb,
     lineage_hashtag,
     render_caption,
@@ -142,9 +143,42 @@ def test_caption_named_match():
     assert NAME_PLACEHOLDER not in line1
 
 
-def test_caption_no_named_match():
-    line1 = render_caption(Candidate.from_row(_cand_row())).split("\n")[0]
-    assert line1.startswith(f"{NAME_PLACEHOLDER} — "), line1
+def test_clean_descriptive_title():
+    # WYSIWYG in its three forms, all stripped; the real name survives.
+    assert clean_descriptive_title("WWC Sunkist Bounce -WYSIWYG") == "WWC Sunkist Bounce"
+    assert clean_descriptive_title("WWC Sunkist Bounce WYSIWYG") == "WWC Sunkist Bounce"
+    assert clean_descriptive_title("(WYSIWYG) Rainbow Acan") == "Rainbow Acan"
+    # frag-pack / pack-size / lot tags shed.
+    assert clean_descriptive_title("Rainbow Acan Frag Pack") == "Rainbow Acan"
+    assert clean_descriptive_title("Zoa Garden 5-Pack") == "Zoa Garden"
+    assert clean_descriptive_title("Zoa Garden 3 pack") == "Zoa Garden"
+    assert clean_descriptive_title("Mystery Coral Lot") == "Mystery Coral"
+    # Mixed case, multiple tokens.
+    assert clean_descriptive_title("Acan wysiwyg LOT") == "Acan"
+    # Control: a real-name word that CONTAINS a denylist substring is NOT stripped
+    # (word-boundaried — 'lot' inside 'Pilot' survives), and a clean title passes verbatim.
+    assert clean_descriptive_title("Pilot Whale Paly") == "Pilot Whale Paly"
+    assert clean_descriptive_title("WWC Eye of the Storm Chalice") == "WWC Eye of the Storm Chalice"
+    # Nothing but mechanism tokens -> empty (caller falls back to placeholder).
+    assert clean_descriptive_title("WYSIWYG Lot") == ""
+
+
+def test_caption_unmatched_with_title_prefills_cleaned():
+    # Unmatched (no named_coral_id) WITH a raw_title: Line 1 pre-fills the CLEANED
+    # title (mechanism tags shed), never a fabricated lineage name, never the placeholder.
+    c = Candidate.from_row(_cand_row(raw_title="WWC Eye of the Storm Chalice WYSIWYG"))
+    line1 = render_caption(c).split("\n")[0]
+    assert line1.startswith("WWC Eye of the Storm Chalice — "), line1
+    assert NAME_PLACEHOLDER not in line1
+
+
+def test_caption_unmatched_without_title_falls_back():
+    # No raw_title -> the {coral name} placeholder.
+    c = Candidate.from_row(_cand_row(raw_title=""))
+    assert render_caption(c).split("\n")[0].startswith(f"{NAME_PLACEHOLDER} — ")
+    # A raw_title that cleans to empty (all mechanism tokens) also falls back.
+    c2 = Candidate.from_row(_cand_row(raw_title="WYSIWYG Lot"))
+    assert render_caption(c2).split("\n")[0].startswith(f"{NAME_PLACEHOLDER} — ")
 
 
 def test_caption_detail_blank():

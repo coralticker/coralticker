@@ -75,6 +75,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -128,9 +129,46 @@ EVENT_VERB: dict[str, str] = {
     "price-dropped": "Price dropped",
 }
 
-# Line-1 name slot when there is no named_corals match: a fill-prompt, NOT a
-# guess. Raw vendor titles aren't searchable lineage names (rev4 L39).
+# Line-1 name slot when there is no named_corals match AND no raw_title to clean:
+# a fill-prompt, NOT a guess. Raw vendor titles aren't searchable lineage names
+# (rev4 L39), but a CLEANED title (mechanism tags shed) is a better Line-1 seed
+# than a bare placeholder when an unmatched candidate wins (clean_descriptive_title).
 NAME_PLACEHOLDER = "{coral name}"
+
+# Listing-mechanism denylist for clean_descriptive_title (/brand-manager ruling
+# 2026-06-17, after the unmatched-$9.59-frag misfire). Case-insensitive, word-
+# boundaried regexes; strip ONLY these tokens (listing mechanics, never coral
+# description), collapse leftover separators, never reword. Seeded from the ruling
+# (WYSIWYG in its -WYSIWYG / WYSIWYG / (WYSIWYG) forms; frag pack / frag-pack; lot;
+# pack-size tags); extend as new mechanism tags surface. Sized/multiword patterns
+# precede bare words so e.g. "frag pack" and "3-pack" strip before any bare token.
+_TITLE_DENYLIST = (
+    r"\bWYSIWYG\b",
+    r"\bfrag[\s-]*pack\b",          # "frag pack" / "frag-pack"
+    r"\b\d+\s*-?\s*pack\b",         # pack-size tags: "3 pack" / "5-pack" / "2pack"
+    r"\bpack\s+of\s+\d+\b",         # "pack of 3"
+    r"\blot\b",                     # word-boundaried: never touches "Pilot" etc.
+)
+
+
+def clean_descriptive_title(raw_title: str) -> str:
+    """Shed listing-mechanism suffixes from a vendor raw_title for the Line-1 name
+    slot when an UNMATCHED candidate wins (/brand-manager ruling 2026-06-17). Strips
+    only the _TITLE_DENYLIST tokens (case-insensitive), removes empty parens left
+    behind, collapses leftover separators, and trims dangling edge punctuation. It
+    NEVER rewords and NEVER invents a lineage/strain name (the provenance bar) — the
+    output is the vendor's own words minus the mechanism tags. May return "" if the
+    title was nothing but mechanism tokens; the caller then falls back to the
+    placeholder."""
+    text = raw_title or ""
+    for pattern in _TITLE_DENYLIST:
+        text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\(\s*\)", " ", text)        # empty parens a stripped token left
+    text = re.sub(r"\s+", " ", text)             # collapse whitespace runs
+    text = re.sub(r"\s+([,.;:])", r"\1", text)   # tidy space-before-punctuation
+    text = re.sub(r"\s*[-–—]\s*$", "", text)     # trailing dangling dash
+    text = re.sub(r"^\s*[-–—]\s*", "", text)     # leading dangling dash
+    return text.strip(" -–—,").strip()
 
 # Line-1 em-dash detail: the human photo-observation D-1 forbids auto-generating.
 # Rendered as a fill-prompt so the blank slot is unambiguous in the operator
@@ -226,8 +264,16 @@ def lineage_hashtag(coral_slug: str | None) -> str | None:
 def render_caption(c: Candidate) -> str:
     """The three-line caption skeleton (Line 0 omitted; Line 1 name-filled,
     detail-blank; Line 2 fully rendered; Line 3 verbatim closer). The poster
-    fills the Line-1 detail and may prepend an optional Line 0."""
-    name = c.coral_name if c.named_coral_id is not None and c.coral_name else NAME_PLACEHOLDER
+    fills the Line-1 detail and may prepend an optional Line 0.
+
+    Line-1 name slot (2026-06-17): matched -> the canonical coral name; unmatched
+    with a raw_title -> the cleaned descriptive title (mechanism tags shed, never a
+    fabricated lineage name); unmatched with no raw_title (or one that cleans to
+    empty) -> the {coral name} placeholder."""
+    if c.named_coral_id is not None and c.coral_name:
+        name = c.coral_name
+    else:
+        name = clean_descriptive_title(c.raw_title) or NAME_PLACEHOLDER
     v = vendor_attribution(c.vendor_slug)
     line1 = f"{name} — {DETAIL_PROMPT}"
     line2 = f"{event_verb(c.arm)} at {v.shorthand} ({v.handle})."

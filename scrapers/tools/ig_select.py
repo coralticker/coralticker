@@ -36,30 +36,33 @@ Pipeline (Slice A — T1/T2/T3):
                                                null-priced — nothing to show;
                                                'price on request' per
                                                lib/format/listing-price.ts).
+                           below-price-floor : current_price < MIN_SPOTLIGHT_PRICE
+                                               (2026-06-17) — too low-value for the
+                                               daily hero slot (the $9.59-frag
+                                               misfire). A hard cut, not a soft score
+                                               penalty; threshold from the live
+                                               distribution (see results.md).
 
   T3  scoring          — weighted sort over the gated set; weights are the
-                         WEIGHT_* named constants below (compute_score). v1
-                         ordering (CTK-159 Q1, /brand-manager re-locks the
-                         durable canon in the CTK-157 session before channel-go):
-                         cross-vendor "cheapest" > named-coral + big drop >
-                         drop-magnitude alone > named-coral / just-listed >
-                         recency (tiebreak). Cross-vendor is a WEIGHT, not a hard
-                         gate — a strong single-vendor drop still wins on a day
-                         nothing crosses vendors. Three signals the tool computes
-                         itself on top of T1:
+                         WEIGHT_* named constants below (compute_score). Ordering
+                         (CTK-159 Q1; drop term rebalanced 2026-06-17 after the
+                         $9.59-frag misfire): cross-vendor "cheapest" dominates; then a
+                         high-dollar drop; named-coral is a +30 booster (NOT a gate —
+                         confirmed brand call); recency the tiebreak. The misfire fix
+                         is the hard price FLOOR (T2), not a value-reward term —
+                         absolute price does NOT score (see the weights note).
+                         Cross-vendor is a WEIGHT, not a hard gate. Signals on top of T1:
                            - named-coral demand   : named_coral_id present (binary
-                                                    v1; matcher covers ~20/91 named
-                                                    corals early, so this + the
-                                                    cross-vendor term fire rarely
-                                                    at first — drop-magnitude is
-                                                    the de-facto early driver, by
-                                                    design).
+                                                    booster; matcher covers ~20/91
+                                                    named corals early).
                            - price-drop magnitude : CTK-047 medal data via
                                                     get_recent_price_drops(days) —
                                                     the canonical medal surface;
                                                     already carries INV-05 on both
-                                                    arms. pct = drop fraction,
-                                                    clamped 0..1.
+                                                    arms. v1 scores the ABSOLUTE
+                                                    dollar drop / DOLLAR_FULL (an $80
+                                                    markdown beats a 50%-off $10 frag),
+                                                    not the percent.
                            - cross-vendor cheapest: lowest current_price among
                                                     in_stock, NON-AUCTION, priced
                                                     listings sharing a
@@ -108,6 +111,7 @@ from decimal import Decimal
 # tests) keep resolving them from ig_select.
 from scrapers.tools.content_queries import (  # noqa: F401  (intentional re-export)
     MIRROR_HOST,
+    MedalMagnitude,
     cross_vendor_cheapest_ids,
     drop_fraction,
     fetch_cross_vendor_cheapest,
@@ -128,27 +132,48 @@ WINDOW_HOURS = {"daily": 24, "weekly-roundup": 168}
 DEFAULT_TOP_N = {"daily": 1, "weekly-roundup": 7}
 
 # ---------------------------------------------------------------------------
-# IG-worthiness weights (CTK-159 Q1 — v1 DEFAULTS, not the durable canon).
-# /brand-manager re-locks these in the CTK-157 session before channel-go; the
-# values below encode the v1 ordering and are deliberately NOT tuned against a
-# few sparse early days (named-coral + cross-vendor terms fire rarely until the
-# matcher expands past ~20/91 corals — Jon guardrail).
+# IG-worthiness weights (CTK-159; rebalanced 2026-06-17 after the misfire where an
+# unmatched $9.59 frag won the daily slot). The misfire fix is the hard PRICE FLOOR
+# (MIN_SPOTLIGHT_PRICE, a T2 gate cut), plus the drop term being ABSOLUTE DOLLARS,
+# not percent (a 50%-off $10 frag saves $5; a 20%-off $400 coral saves $80 — the
+# latter is the better post). Per the /brand-manager rulings 2026-06-17.
 #
-# Ordering they produce (most→least postable), for a meaningful drop:
-#   cross-vendor cheapest  (+100 flat; the unfair-advantage post only we can make)
-#   named-coral + big drop (30 + 80*pct; e.g. pct .6 -> 78)
-#   drop-magnitude alone   (80*pct;     e.g. pct .6 -> 48)
-#   named-coral / just-listed (30 / 0)
+# NO price-VALUE reward term: the final directive dropped it. With the diversity
+# guard (Item C) deferred, a value-reward would re-introduce the high-end skew the
+# floor removes by subtraction — so absolute price intentionally does NOT score. The
+# floor sets the lower bound; nothing rewards being expensive above it.
+#
+# Ordering they produce (most→least postable), realistic day:
+#   cross-vendor cheapest  (+100; the dominant signal — the unfair-advantage post)
+#   high-$ drop            (WEIGHT_DROP * clamp(dollars_saved / DOLLAR_FULL), up to 50)
+#   named-coral booster    (+30; a booster, NOT a gate — confirmed brand call)
 #   recency                (<=10; tiebreak only)
-# Cross-vendor is additive, not a gate: a strong single-vendor drop (drop term)
-# still wins on a day nothing crosses vendors.
-WEIGHT_CROSS_VENDOR_CHEAPEST = 100.0
-WEIGHT_PRICE_DROP_MAGNITUDE = 80.0   # multiplied by drop fraction (0..1)
-WEIGHT_NAMED_CORAL = 30.0            # binary: named_coral_id present
-WEIGHT_RECENCY = 10.0               # multiplied by recency factor (0..1)
+# Cross-vendor stays additive, not a gate (long-standing Q1 guardrail) — but with the
+# value term gone the max non-cross score is 30+50+10 = 90 < 100, so a cross-vendor
+# pick now reliably tops.
+WEIGHT_CROSS_VENDOR_CHEAPEST = 100.0  # binary: dominant signal
+WEIGHT_DROP = 50.0                    # * clamp(dollars_saved / DOLLAR_FULL, 0, 1)
+WEIGHT_NAMED_CORAL = 30.0             # binary: named_coral_id present (booster, not a gate)
+WEIGHT_RECENCY = 10.0                 # * recency factor (0..1); tiebreak
+
+# Scoring thresholds — picked from the live in-stock candidate + dollar-drop
+# distributions on prod Neon 2026-06-17 (scripts/diag_ig_spotlight_thresholds.py),
+# NOT guessed. See CTK-159 results.md for the percentiles + worked examples.
+#   MIN_SPOTLIGHT_PRICE  hard T2 floor — a spotlight piece must clear "modest value".
+#                        $25 cuts the cheapest ~17% of in-stock candidates (p25-ish)
+#                        and cuts the $9.59 misfire decisively. THE actual misfire fix.
+#   DOLLAR_FULL          dollar drop at which the drop term saturates (p90 of observed
+#                        drops, ~$100 — a $100 markdown is a strong drop).
+MIN_SPOTLIGHT_PRICE = 25.0
+DOLLAR_FULL = 100.0
 
 # Title truncation in the printed line — keep it scannable.
 TITLE_TRUNC = 70
+
+
+def _clamp01(x: float) -> float:
+    """Clamp to [0, 1] — the shared shape for every continuous score term."""
+    return max(0.0, min(1.0, x))
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +204,8 @@ class Candidate:
     product_url: str
 
     # Scoring fields — populated by the I/O shell before rank() (T3).
-    medal_pct: float = 0.0
+    medal_pct: float = 0.0          # drop fraction (0..1) — informational; not scored in v1
+    dollars_saved: float = 0.0      # absolute dollar drop — the scored drop magnitude
     is_cross_vendor_cheapest: bool = False
     score: float = 0.0
     score_breakdown: dict | None = None
@@ -206,16 +232,21 @@ class Candidate:
 
 
 def image_gate_reject(c: Candidate) -> str | None:
-    """Return the drop-reason if this candidate fails the hard pre-filter, else
-    None. The gate predicate is derived from MIRROR_HOST (no inlined literal);
-    a non-mirror or absent image, or a null price, is not postable. Reason order
-    is image-before-price so a row that fails both surfaces the image cause."""
+    """Return the drop-reason if this candidate fails the hard T2 candidate gate,
+    else None. The image predicate is derived from MIRROR_HOST (no inlined literal);
+    a non-mirror or absent image, or a null price, is not postable. The price FLOOR
+    (below-price-floor) is the 2026-06-17 add: a piece under MIN_SPOTLIGHT_PRICE is
+    too low-value for the daily hero slot (the $9.59-frag misfire) — a hard cut, not
+    a soft score penalty. Reason order: image first (a row failing image surfaces the
+    image cause), then price-on-request, then the floor."""
     if c.image_url is None:
         return "no-image"
     if not c.image_url.startswith(MIRROR_HOST + "/"):
         return "non-mirror-image"
     if c.current_price is None:
         return "price-on-request"
+    if float(c.current_price) < MIN_SPOTLIGHT_PRICE:
+        return "below-price-floor"
     return None
 
 
@@ -236,22 +267,27 @@ def recency_factor(event_at: datetime, now: datetime, window_hours: int) -> floa
 def compute_score(
     *,
     has_named_coral: bool,
-    medal_pct: float,
+    dollars_saved: float,
     is_cross_vendor_cheapest: bool,
     recency: float,
 ) -> tuple[float, dict]:
     """The IG-worthiness score (T3). Additive weighted sum; returns
     (total, breakdown) so the printed/emitted candidate can show WHY it ranked.
-    Cross-vendor is additive (not a gate) per Q1 guardrail."""
+
+    The drop term is ABSOLUTE dollars (2026-06-17): WEIGHT_DROP * clamp(dollars_saved
+    / DOLLAR_FULL), so an $80 markdown outranks a 50%-off $10 frag ($5) — no percent
+    kicker. Absolute price does NOT score (the final directive dropped the value-reward
+    term; the floor is the only price lever — see the weights note). Cross-vendor stays
+    additive (not a gate) per the Q1 guardrail."""
     cross = WEIGHT_CROSS_VENDOR_CHEAPEST if is_cross_vendor_cheapest else 0.0
     named = WEIGHT_NAMED_CORAL if has_named_coral else 0.0
-    drop = WEIGHT_PRICE_DROP_MAGNITUDE * max(0.0, min(1.0, medal_pct))
-    rec = WEIGHT_RECENCY * max(0.0, min(1.0, recency))
+    drop = WEIGHT_DROP * _clamp01(dollars_saved / DOLLAR_FULL)
+    rec = WEIGHT_RECENCY * _clamp01(recency)
     total = cross + named + drop + rec
     return total, {
         "cross_vendor_cheapest": cross,
         "named_coral": named,
-        "drop_magnitude": round(drop, 2),
+        "drop_dollars": round(drop, 2),
         "recency": round(rec, 2),
     }
 
@@ -283,19 +319,22 @@ def fetch_candidates(conn, window_hours: int) -> list[Candidate]:
 
 def score_candidates(
     candidates: list[Candidate],
-    medal_by_id: dict[int, float],
+    medal_by_id: dict[int, MedalMagnitude],
     cross_vendor_ids: set[int],
     now: datetime,
     window_hours: int,
 ) -> None:
-    """Populate .medal_pct / .is_cross_vendor_cheapest / .score / .score_breakdown
-    on each candidate in place (T3)."""
+    """Populate .medal_pct / .dollars_saved / .is_cross_vendor_cheapest / .score /
+    .score_breakdown on each candidate in place (T3). medal_by_id carries both the
+    drop fraction (informational) and the absolute dollars (the scored magnitude)."""
     for c in candidates:
-        c.medal_pct = medal_by_id.get(c.listing_id, 0.0)
+        mag = medal_by_id.get(c.listing_id)
+        c.medal_pct = mag.fraction if mag else 0.0
+        c.dollars_saved = mag.dollars if mag else 0.0
         c.is_cross_vendor_cheapest = c.listing_id in cross_vendor_ids
         c.score, c.score_breakdown = compute_score(
             has_named_coral=c.named_coral_id is not None,
-            medal_pct=c.medal_pct,
+            dollars_saved=c.dollars_saved,
             is_cross_vendor_cheapest=c.is_cross_vendor_cheapest,
             recency=recency_factor(c.event_at, now, window_hours),
         )

@@ -113,6 +113,32 @@ def drop_fraction(prior_price, current_price, compare_at_price) -> float:
     return 0.0
 
 
+def drop_dollars(prior_price, current_price, compare_at_price) -> float:
+    """Absolute dollar drop for the medal — baseline (CT-observed prior_price, else
+    the vendor markdown compare_at_price; the SAME baseline drop_fraction picks)
+    minus current_price, floored at 0. Returns 0.0 when neither reference is usable.
+    The CTK-159 spotlight v1 scores the absolute dollars (a $100 markdown on a $500
+    coral outranks a $10 markdown on a $20 frag), not the percent — see ig_select."""
+    for baseline in (prior_price, compare_at_price):
+        if baseline is None or current_price is None:
+            continue
+        baseline = float(baseline)
+        if baseline <= 0:
+            continue
+        return max(0.0, baseline - float(current_price))
+    return 0.0
+
+
+@dataclass(frozen=True)
+class MedalMagnitude:
+    """One listing's price-drop medal magnitude, both shapes: `fraction` (drop as a
+    0..1 fraction, the CTK-047 percent) and `dollars` (the absolute dollar drop). The
+    CTK-159 spotlight score uses `dollars` (v1, pure absolute); `fraction` is carried
+    alongside for display / future use."""
+    fraction: float
+    dollars: float
+
+
 # ---------------------------------------------------------------------------
 # Format descriptors — the per-format COMPARATIVE flag (D-2).
 # ---------------------------------------------------------------------------
@@ -330,21 +356,27 @@ def fetch_cross_vendor_cheapest(conn) -> list[dict]:
     return rows
 
 
-def fetch_medal_magnitudes(conn, window_days: int) -> dict[int, float]:
+def fetch_medal_magnitudes(conn, window_days: int) -> dict[int, MedalMagnitude]:
     """CTK-047 medal magnitude per listing via the canonical medal surface
     get_recent_price_drops(). Already carries INV-05 on both arms — no residual to
-    re-assert. Returns {listing_id: drop_fraction}; the max fraction per listing
-    if a row appears under more than one arm. (ig_select's score path consumes
-    this; the content single-drop FORMAT consumes fetch_recent_price_drops for the
-    render-ready rows.)"""
-    out: dict[int, float] = {}
+    re-assert. Returns {listing_id: MedalMagnitude} carrying BOTH the drop fraction
+    and the absolute dollar drop; when a listing appears under more than one arm,
+    keeps the arm with the larger DOLLAR drop (the spotlight score's magnitude — so
+    the carried fraction is the one belonging to that same arm, no cross-arm mix).
+    (ig_select's score path consumes this; the content single-drop FORMAT consumes
+    fetch_recent_price_drops for the render-ready rows.)"""
+    out: dict[int, MedalMagnitude] = {}
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM get_recent_price_drops(%s)", (window_days,))
         for r in cur.fetchall():
-            frac = drop_fraction(r.get("prior_price"), r.get("current_price"), r.get("compare_at_price"))
+            prior, current, compare = r.get("prior_price"), r.get("current_price"), r.get("compare_at_price")
+            mag = MedalMagnitude(
+                fraction=drop_fraction(prior, current, compare),
+                dollars=drop_dollars(prior, current, compare),
+            )
             lid = r["id"]
-            if frac > out.get(lid, 0.0):
-                out[lid] = frac
+            if mag.dollars > out.get(lid, MedalMagnitude(0.0, 0.0)).dollars:
+                out[lid] = mag
     return out
 
 

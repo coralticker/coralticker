@@ -41,7 +41,9 @@ from scrapers.common import images
 from scrapers.tools import ig_select
 from scrapers.tools.ig_select import (
     Candidate,
+    MIN_SPOTLIGHT_PRICE,
     MIRROR_HOST,
+    WEIGHT_NAMED_CORAL,
     compute_score,
     cross_vendor_cheapest_ids,
     drop_fraction,
@@ -112,6 +114,18 @@ def test_gate_image_reason_precedes_price():
     assert image_gate_reject(c) == "no-image"
 
 
+def test_gate_drops_below_price_floor():
+    # Today's misfire: an unmatched $9.59 frag — below MIN_SPOTLIGHT_PRICE, hard-cut.
+    c = Candidate.from_row(_cand_row(current_price=Decimal("9.59")))
+    assert image_gate_reject(c) == "below-price-floor"
+    # At the floor it passes (boundary: < floor, not <=).
+    at_floor = Candidate.from_row(_cand_row(current_price=Decimal(str(MIN_SPOTLIGHT_PRICE))))
+    assert image_gate_reject(at_floor) is None
+    # Image cause still precedes the floor (a below-floor row with no image -> no-image).
+    no_img = Candidate.from_row(_cand_row(image_url=None, current_price=Decimal("9.59")))
+    assert image_gate_reject(no_img) == "no-image"
+
+
 # --- T3 cross-vendor cheapest -------------------------------------------
 
 def test_cross_vendor_cheapest_basic():
@@ -172,29 +186,48 @@ def test_cross_vendor_price_tie():
 
 # --- T3 scoring + ranking ------------------------------------------------
 
-def _score(has_named=False, medal=0.0, cross=False, rec=0.0) -> float:
+def _score(has_named=False, dollars=0.0, cross=False, rec=0.0) -> float:
     total, _ = compute_score(
-        has_named_coral=has_named, medal_pct=medal,
+        has_named_coral=has_named, dollars_saved=dollars,
         is_cross_vendor_cheapest=cross, recency=rec,
     )
     return total
 
 
 def test_score_ordering_v1():
-    # Q1 ordering, for a meaningful drop (pct .6):
-    # cross-vendor > named+big-drop > drop-alone > named-alone > recency-only
-    cross_vendor = _score(cross=True, has_named=True, medal=0.6)
-    named_big_drop = _score(has_named=True, medal=0.6)
-    drop_alone = _score(medal=0.6)
-    named_alone = _score(has_named=True)
-    recency_only = _score(rec=1.0)
-    assert cross_vendor > named_big_drop > drop_alone > named_alone > recency_only
+    # 2026-06-17 ordering: cross-vendor dominates; then a high-$ drop; named is a
+    # booster; recency only the tiebreak. No value term — absolute price doesn't score.
+    cross_vendor = _score(cross=True)                  # 100
+    big_drop = _score(dollars=100.0)                   # 50
+    named_only = _score(has_named=True)                # 30
+    recency_only = _score(rec=1.0)                     # 10
+    assert cross_vendor > big_drop > named_only > recency_only
 
 
-def _scored_cand(lid, *, named=False, medal=0.0, cross=False, rec=0.0, ev=NOW):
+def test_score_absolute_dollar_drop_ordering():
+    # The misfire fix: ABSOLUTE dollars, not percent. A 20%-off $400 piece (~$80
+    # saved) outranks a 50%-off $10 frag ($5 saved) even though its percent is
+    # bigger — on the dollar-drop term alone (no value term in play). (The $10 frag
+    # is also below the floor — gated out upstream.)
+    big = _score(dollars=80.0)
+    frag = _score(dollars=5.0)
+    assert big > frag
+
+
+def test_score_named_is_booster_not_gate():
+    # Named adds a flat +30 but does NOT gate: an unnamed high-$-drop piece still
+    # outranks a named no-drop one.
+    named_weak = _score(has_named=True)              # 30
+    unnamed_strong = _score(dollars=100.0)            # 50
+    assert unnamed_strong > named_weak
+    # And the boost is purely additive — same piece, exactly +WEIGHT_NAMED_CORAL.
+    assert _score(has_named=True, dollars=20.0) == _score(dollars=20.0) + WEIGHT_NAMED_CORAL
+
+
+def _scored_cand(lid, *, named=False, dollars=0.0, cross=False, rec=0.0, ev=NOW):
     c = Candidate.from_row(_cand_row(id=lid, event_at=ev))
     c.score, _ = compute_score(
-        has_named_coral=named, medal_pct=medal,
+        has_named_coral=named, dollars_saved=dollars,
         is_cross_vendor_cheapest=cross, recency=rec,
     )
     return c
@@ -202,16 +235,16 @@ def _scored_cand(lid, *, named=False, medal=0.0, cross=False, rec=0.0, ev=NOW):
 
 def test_score_cross_vendor_not_a_gate():
     # Guardrail (Jon): cross-vendor is a WEIGHT, not a hard gate. On a day
-    # NOTHING crosses vendors, a strong single-vendor drop must still be
+    # NOTHING crosses vendors, a strong single-vendor piece must still be
     # selectable (not filtered out); and when a cross-vendor row IS present it
     # wins as the top signal WITHOUT gating the others out. Exercised through
     # the real compute_score + rank, not bare score arithmetic.
     cross_less = [
-        _scored_cand(1, medal=0.9),       # strong single-vendor drop
-        _scored_cand(2, named=True),       # named-coral, no drop
-        _scored_cand(3, rec=1.0),          # recency only
+        _scored_cand(1, dollars=100.0),    # strong $ drop
+        _scored_cand(2, named=True),        # named-coral, no drop
+        _scored_cand(3, rec=1.0),           # recency only
     ]
-    # No cross-vendor bonus anywhere -> the strong drop is selected, not gated.
+    # No cross-vendor bonus anywhere -> the strong piece is selected, not gated.
     assert rank(cross_less, 1)[0].listing_id == 1
 
     with_cross = cross_less + [_scored_cand(4, cross=True)]
