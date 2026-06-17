@@ -178,11 +178,16 @@ def f7_cover_stat_html(count: int, composition: str) -> str:
 
 
 def f9_cover_stat_html(coral: str, vendor_count: int) -> str:
-    """F9 cover .stat markup — the dash is a near-black PROSE dash (it sits in
-    .stat, not a .row .sep forest separator), per the cover register lock
-    (branding-guide.md §"IG data-post copy" + CTK-161 rev2 L225/L230)."""
+    """F9 cover .stat markup — "carried at," not a bare "at": vendor_count is
+    the in-stock carrier count INCLUDING price-on-request carriers (a carry
+    fact), but the reel renders only the priced cards, so a bare "at {N}
+    vendors" reads as "buyable at {N} vendors" — false for the price-on-request
+    carriers. "Carried" is a stock claim, not a buy claim. The dash is a
+    near-black PROSE dash (it sits in .stat, not a .row .sep forest separator),
+    per the cover register lock (branding-guide.md §"IG data-post copy" F7/F9
+    cover-stat bullet, 2026-06-17)."""
     return (
-        f'<span class="name">{_esc(coral)}</span> — at '
+        f'<span class="name">{_esc(coral)}</span> — carried at '
         f'<span class="num">{vendor_count} vendors</span> right now.'
     )
 

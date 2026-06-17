@@ -164,7 +164,7 @@ def test_f9_cover_prose_dash_and_listed_lead():
     from scrapers.tools.data_card import f9_cover_stat_html, render_cover_html, _lead_html
     cover = render_cover_html("reel-frame-f9-lineage-cover.html", f9_cover_stat_html("WWC Sunkist Bounce", 4))
     text = BeautifulSoup(cover, "html.parser").find("p", class_="stat").get_text()
-    assert text == "WWC Sunkist Bounce — at 4 vendors right now."   # prose dash inside .stat
+    assert text == "WWC Sunkist Bounce — carried at 4 vendors right now."   # prose dash inside .stat; "carried at" = stock claim not buy claim (CTK-161 retro #4)
     # F9 inner lead uses 'listed at', and Listed. (not Back.) is the row's event field.
     assert _lead_html("WWC Sunkist Bounce Mushroom", "TSA", "listed") == (
         '<span class="name">WWC Sunkist Bounce Mushroom</span> listed at TSA.'
