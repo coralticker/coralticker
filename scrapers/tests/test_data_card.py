@@ -134,9 +134,18 @@ def test_f7_cover_and_inner_builders():
     from scrapers.tools.data_card import (
         f7_cover_stat_html, render_cover_html, render_inner_html, _lead_html,
     )
-    cover = render_cover_html("reel-frame-f7-arrivals-cover.html", f7_cover_stat_html(23))
+    cover = render_cover_html("reel-frame-f7-arrivals-cover.html", f7_cover_stat_html(23, "all-arrivals"))
     assert "{{" not in cover
     assert BeautifulSoup(cover, "html.parser").find("p", class_="stat").get_text() == "23 new arrivals this week."
+    # Cover copy is composition-picked per the register lock (rev2 L177-179);
+    # the count rides a .num span, so the strip yields "{N} {copy}".
+    def _stat_text(n, comp):
+        return BeautifulSoup(
+            render_cover_html("reel-frame-f7-arrivals-cover.html", f7_cover_stat_html(n, comp)),
+            "html.parser",
+        ).find("p", class_="stat").get_text()
+    assert _stat_text(5, "all-restocks") == "5 back in stock this week."
+    assert _stat_text(47, "mixed") == "47 drops this week."
 
     fields = build_card_fields(price_value="$250.00", origin="WWC", year=None,
                                listed_at="2026-06-16T12:00:00Z")

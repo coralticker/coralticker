@@ -151,8 +151,12 @@ from scrapers.tools.content_queries import (  # noqa: E402
     build_card_fields,
     drop_price_value,
     is_single_card_eligible,
+    is_surface_b_card_eligible,
     lineage_value,
     plain_price_value,
+    select_f7_arrivals,
+    select_f9_lineage,
+    select_superlative_drop,
     single_card_reject,
     superlative_drop_sane,
     superlative_post_worthy,
@@ -233,11 +237,223 @@ def test_superlative_fields_drop_baseline():
     assert f2[0]["value"]["newValue"] == "$174.99"
 
 
+def test_superlative_pct_matches_rendered_pair():
+    # The F8 headline % derives from the SAME baseline + current the rendered Price.
+    # pair shows, so headline and on-card receipt can never disagree (%-parity gate).
+    from scrapers.tools.content_queries import superlative_fields, superlative_pct
+    from datetime import datetime, timezone
+    ev = datetime(2026, 6, 16, 12, 0, 0, tzinfo=timezone.utc)
+
+    def _pct_from_rendered_pair(row):
+        pair = superlative_fields(row)[0]["value"]   # the rendered Price. drop pair
+        old = float(pair["oldValue"].lstrip("$"))
+        new = float(pair["newValue"].lstrip("$"))
+        return round((old - new) / old * 100)
+
+    # CT-observed arm: $650 -> $455 = exactly 30%.
+    r = _drop_row(prior_price=Decimal("650"), current_price=Decimal("455"),
+                  named_coral_origin_vendor="WWC", event_at=ev)
+    assert superlative_pct(r) == 30
+    assert superlative_pct(r) == _pct_from_rendered_pair(r)
+    # Markdown arm: baseline falls back to compare_at_price ($250 -> $174.99 ~= 30%);
+    # % still computes off the rendered pair, not a separate value.
+    r2 = _drop_row(prior_price=None, compare_at_price=Decimal("250"),
+                   current_price=Decimal("174.99"), named_coral_origin_vendor="WWC", event_at=ev)
+    assert superlative_pct(r2) == _pct_from_rendered_pair(r2)
+    # >2-decimal price straddling a half-percent boundary: the RAW ratio is
+    # (100-50.504)/100 = 49.496% -> 49, but the rendered pair shows $100.00 -> $50.50
+    # = 49.5% -> 50. superlative_pct must follow the DISPLAYED pair (50), not the raw
+    # input — the parity guarantee holds for non-2dp inputs, not just clean ones.
+    r3 = _drop_row(prior_price=Decimal("100"), current_price=Decimal("50.504"),
+                   named_coral_origin_vendor="WWC", event_at=ev)
+    assert superlative_pct(r3) == 50
+    assert superlative_pct(r3) == _pct_from_rendered_pair(r3)
+
+
 def test_price_value_helpers():
     assert plain_price_value(Decimal("250")) == "$250.00"
     assert drop_price_value(Decimal("650"), Decimal("455")) == {
         "kind": "price-drop-new", "oldValue": "$650.00", "newValue": "$455.00",
     }
+
+
+# ---------------------------------------------------------------------------
+# Surface-B card eligibility (no image gate) + the F7/F8/F9 selectors.
+# The selectors take a conn; _FakeConn returns canned dict rows so the SELECTION
+# logic is exercised purely (no DB) — the SQL itself is the DB parity test's job.
+# ---------------------------------------------------------------------------
+
+
+class _FakeCursor:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, sql, params=None):
+        self._sql = sql
+
+    def fetchall(self):
+        return self._rows
+
+
+class _FakeConn:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def cursor(self):
+        return _FakeCursor(self._rows)
+
+
+def _le_row(event, *, coral_id=1, coral="WWC Sunkist Bounce", vendor="WWC",
+            price=Decimal("250"), at="2026-06-16T12:00:00Z"):
+    """A get_listing_lead_event-shaped row (only the fields the F7 selector uses)."""
+    return {
+        "event": event,
+        "named_coral_id": coral_id,
+        "named_coral_canonical_name": coral,
+        "vendor_display_name": vendor,
+        "current_price": price,
+        "event_at": at,
+    }
+
+
+def _carrier(*, coral_id=1, coral="WWC Sunkist Bounce", vendor_id=10, vendor="WWC",
+             price=Decimal("250"), at="2026-06-16T12:00:00Z"):
+    """A get_cross_vendor_carriers-shaped row (only the fields the F9 selector uses)."""
+    return {
+        "named_coral_id": coral_id,
+        "named_coral_canonical_name": coral,
+        "vendor_id": vendor_id,
+        "vendor_display_name": vendor,
+        "current_price": price,
+        "event_at": at,
+    }
+
+
+def test_surface_b_card_eligible_no_image_gate():
+    # matched + priced clears the floor REGARDLESS of image (surface-B is photo-less).
+    assert is_surface_b_card_eligible(_drop_row()) is True
+    assert is_surface_b_card_eligible(_drop_row(image_url=None)) is True
+    assert is_surface_b_card_eligible(_drop_row(image_url="https://vendor.example/x.jpg")) is True
+    # matched-only + priced still bind.
+    assert is_surface_b_card_eligible(_drop_row(named_coral_id=None)) is False
+    assert is_surface_b_card_eligible(_drop_row(current_price=None)) is False
+
+
+def test_f8_swap_admits_imageless_keeps_glitch_and_worthiness_gates():
+    # Image-less but matched + priced + 30% drop + $455 post-drop: now F8-eligible
+    # (was rejected 'no-image' under the old image-bearing predicate).
+    winner = _drop_row(image_url=None)
+    assert select_superlative_drop(_FakeConn([winner])) is winner
+    # Glitch (98% off) still rejected even image-less -> no post.
+    glitch = _drop_row(image_url=None, prior_price=Decimal("650"), current_price=Decimal("9.99"))
+    assert select_superlative_drop(_FakeConn([glitch])) is None
+    # Unworthy (sub-$100 post-drop coral) still rejected even image-less -> no post.
+    cheap = _drop_row(image_url=None, prior_price=Decimal("120"), current_price=Decimal("90"))
+    assert select_superlative_drop(_FakeConn([cheap])) is None
+
+
+def test_f7_composition_tracks_population_not_sample():
+    # Full population: both arms present -> composition is mixed. But the only
+    # card-eligible rows are arrivals (the restock is unmatched), so the SAMPLE is
+    # single-arm. The cover variant must follow the POPULATION (mixed), not the
+    # sample (all-arrivals) — the honest-count guard.
+    rows = [
+        _le_row("just-listed", coral_id=1, vendor="WWC"),
+        _le_row("just-listed", coral_id=2, coral="TSA Bounce", vendor="TSA"),
+        _le_row("back-in-stock", coral_id=None),   # unmatched -> not card-eligible
+    ]
+    true_count, composition, items = select_f7_arrivals(_FakeConn(rows))
+    assert composition == "mixed"                  # population has both arms
+    assert true_count == 3                          # full population, not the sample
+    assert len(items) == 2                          # only the matched arrivals sampled
+    assert true_count != len(items)                 # cover count never the sample size
+    assert all(it["event_phrase"] == "listed" for it in items)
+    # Every inner field list routes through build_card_fields (INV-01): Price. — Listed.
+    assert [f["label"] for f in items[0]["fields"]] == ["Price", "Listed"]
+
+
+def test_f7_composition_single_arm_variants():
+    arr = [_le_row("just-listed"), _le_row("just-listed", coral_id=2)]
+    assert select_f7_arrivals(_FakeConn(arr))[1] == "all-arrivals"
+    res = [_le_row("back-in-stock"), _le_row("back-in-stock", coral_id=2)]
+    assert select_f7_arrivals(_FakeConn(res))[1] == "all-restocks"
+
+
+def test_f7_sample_capped():
+    rows = [_le_row("just-listed", coral_id=i) for i in range(20)]
+    true_count, composition, items = select_f7_arrivals(_FakeConn(rows), sample_cap=9)
+    assert true_count == 20 and len(items) == 9    # honest count, deflated sample
+
+
+def test_f9_single_vendor_returns_none():
+    # A coral carried by only 1 distinct vendor is not a lineage spotlight.
+    rows = [_carrier(coral_id=1, vendor_id=10), _carrier(coral_id=1, vendor_id=10)]
+    assert select_f9_lineage(_FakeConn(rows)) is None
+    # No carriers at all -> None.
+    assert select_f9_lineage(_FakeConn([])) is None
+
+
+def test_f9_honest_count_with_deflated_sample():
+    # Coral 1 carried at 3 distinct vendors, but one carrier is price-on-request
+    # (not card-eligible). vendor_count is the TRUE 3; the inner sample is the 2
+    # priced carriers. The cover count (3) never collapses to the sample (2).
+    rows = [
+        _carrier(coral_id=1, vendor_id=10, vendor="WWC", price=Decimal("250"), at="2026-06-16T12:00:00Z"),
+        _carrier(coral_id=1, vendor_id=11, vendor="TSA", price=Decimal("230"), at="2026-06-15T12:00:00Z"),
+        _carrier(coral_id=1, vendor_id=12, vendor="ASD", price=None, at="2026-06-14T12:00:00Z"),
+    ]
+    result = select_f9_lineage(_FakeConn(rows))
+    assert result is not None
+    coral, vendor_count, items = result
+    assert coral == "WWC Sunkist Bounce"
+    assert vendor_count == 3            # TRUE distinct carriers (price-blind)
+    assert len(items) == 2             # only the priced carriers render as inners
+    assert vendor_count > len(items)   # deflated sample, honest cover count
+    # Recency-ordered (event_at DESC): WWC (06-16) before TSA (06-15).
+    assert [it["vendor"] for it in items] == ["WWC", "TSA"]
+    assert [f["label"] for f in items[0]["fields"]] == ["Price", "Listed"]
+
+
+def test_f9_picks_widest_spread_and_dedupes_per_vendor():
+    rows = [
+        # coral 1: 2 distinct vendors (one with a duplicate listing -> one inner).
+        _carrier(coral_id=1, coral="Coral One", vendor_id=10, at="2026-06-16T10:00:00Z"),
+        _carrier(coral_id=1, coral="Coral One", vendor_id=10, at="2026-06-16T09:00:00Z"),
+        _carrier(coral_id=1, coral="Coral One", vendor_id=11, at="2026-06-16T08:00:00Z"),
+        # coral 2: 3 distinct vendors -> widest spread, wins the pick.
+        _carrier(coral_id=2, coral="Coral Two", vendor_id=20, at="2026-06-16T07:00:00Z"),
+        _carrier(coral_id=2, coral="Coral Two", vendor_id=21, at="2026-06-16T06:00:00Z"),
+        _carrier(coral_id=2, coral="Coral Two", vendor_id=22, at="2026-06-16T05:00:00Z"),
+    ]
+    coral, vendor_count, items = select_f9_lineage(_FakeConn(rows))
+    assert coral == "Coral Two" and vendor_count == 3 and len(items) == 3
+    # And the dedupe holds for the runner-up shape: re-run with only coral 1.
+    coral1, vc1, items1 = select_f9_lineage(_FakeConn(rows[:3]))
+    assert coral1 == "Coral One" and vc1 == 2 and len(items1) == 2   # 3 rows, 2 vendors
+
+
+def test_f9_falls_to_renderable_runner_up_not_none():
+    # The widest-spread coral is all price-on-request (no renderable inner); a
+    # narrower >= 2-vendor coral IS renderable. The selector must return the
+    # narrower one, NOT None (runner-up-starvation fix).
+    rows = [
+        _carrier(coral_id=1, coral="Wide Coral", vendor_id=10, price=None, at="2026-06-16T12:00:00Z"),
+        _carrier(coral_id=1, coral="Wide Coral", vendor_id=11, price=None, at="2026-06-16T11:00:00Z"),
+        _carrier(coral_id=1, coral="Wide Coral", vendor_id=12, price=None, at="2026-06-16T10:00:00Z"),
+        _carrier(coral_id=2, coral="Narrow Coral", vendor_id=20, price=Decimal("250"), at="2026-06-15T12:00:00Z"),
+        _carrier(coral_id=2, coral="Narrow Coral", vendor_id=21, price=Decimal("230"), at="2026-06-15T11:00:00Z"),
+    ]
+    coral, vendor_count, items = select_f9_lineage(_FakeConn(rows))
+    assert coral == "Narrow Coral"     # not the starved wider coral, not None
+    assert vendor_count == 2 and len(items) == 2
+    # When NO >= 2-vendor coral has a priced inner -> None.
+    assert select_f9_lineage(_FakeConn(rows[:3])) is None
 
 
 def _run_all():

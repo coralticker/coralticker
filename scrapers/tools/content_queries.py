@@ -158,14 +158,16 @@ CONTENT_FORMATS: dict[str, FormatDescriptor] = {
 # ---------------------------------------------------------------------------
 # Listing-line contract (D-4) — row -> DataRowField[].
 #
-# PROVISIONAL field selection (Q3 — locked 2026-06-15): the exact labels and
-# field order for each content format are /brand-manager's content-class voice
-# canon (CTK-161 parallel brand lane), unresolved at this layer. The order below
-# mirrors the email digest's Price-first shape (lib/email/digest.ts:buildFields)
-# as a defensible default; it is NOT canon. The DataRowField[] SHAPE (the
-# contract every consumer renders against) is locked; the field CHOICE layers on
-# top and may change when the brand canon lands. Tagged provisional so a future
-# reader doesn't mistake the digest-mirror for a brand decision.
+# Field selection is CANON (D-5 — /brand-manager 2026-06-17, branding-guide.md
+# §"IG data-post copy" listing-line field contract; Q3 cleared). Price-leading on
+# every format and surface — channel parity with the web <DataRow> + email digest,
+# not a digest coincidence: a reader finds Price. in the same slot everywhere. The
+# `Vendor.` field is COMPARATIVE-ONLY — the cross-vendor formats render
+# `Price. — Vendor.` (vendor is the load-bearing fact, no single-vendor lead to
+# ride); non-comparative formats (F7/F8/F9, the most-restocked drill-in) carry NO
+# Vendor. field (vendor rides the lead) and render `Price. — Listed.` via
+# build_card_fields. The DataRowField[] SHAPE stays locked under INV-01; the field
+# CHOICE layers on top and is now equally locked.
 # ---------------------------------------------------------------------------
 
 
@@ -179,12 +181,23 @@ def _format_price(value) -> str:
     return f"${float(value):.2f}"
 
 
+def _displayed_price(value):
+    """The numeric value _format_price renders — rounded to the SAME 2 decimals via
+    the same `.2f` rounding (so it is byte-faithful to the displayed price, not just
+    for already-2dp inputs). None passes through. Used by superlative_pct so the
+    headline % is computed off the displayed pair, never the raw input."""
+    return None if value is None else float(f"{float(value):.2f}")
+
+
 def cross_vendor_cheapest_line(row: dict) -> list[dict]:
     """The DataRowField[] listing line for one cross-vendor-cheapest crowned row
-    (the "Cheapest [coral] across N vendors" format — COMPARATIVE). Provisional
-    per Q3: Price then Vendor, mirroring the digest's Price-first order. The coral
-    NAME and the "across N vendors" wrap are aggregate copy (outside INV-01, owned
-    by /copy-writer); this builder emits only the INV-01-bound listing line."""
+    (the "Cheapest [coral] across N vendors" format — COMPARATIVE). Price then
+    Vendor per D-5 canon: Price leads (channel parity), and `Vendor.` is the
+    comparative-only field — the cross-vendor formats are the ONLY ones carrying
+    it (the vendor is the row's load-bearing fact and there is no single-vendor
+    lead to ride). The coral NAME and the "across N vendors" wrap are aggregate
+    copy (outside INV-01, owned by /copy-writer); this builder emits only the
+    INV-01-bound listing line."""
     return [
         {"label": "Price", "value": _format_price(row.get("current_price"))},
         {"label": "Vendor", "value": row.get("vendor_display_name") or ""},
@@ -246,6 +259,22 @@ def superlative_fields(row: dict) -> list[dict]:
         year=None,
         listed_at=row.get("event_at"),
     )
+
+
+def superlative_pct(row: dict) -> int:
+    """The F8 headline drop percent, computed from the SAME 2-decimal values the
+    rendered Price. pair shows: baseline + current are rounded through _displayed_price
+    (the _format_price `.2f` rounding drop_price_value renders with) BEFORE the ratio,
+    then rounded to a whole percent. So the headline % and the on-card receipt can
+    never disagree — true by construction, not only for already-2dp inputs — which is
+    the /brand-manager F8 %-parity gate (the % computes from the rendered pair, e.g.
+    $650 -> $455 = 30%, never a separately rounded value). Baseline selection +
+    fraction reuse drop_fraction (the same shape the ranker crowns on)."""
+    return round(drop_fraction(
+        _displayed_price(row.get("prior_price")),
+        _displayed_price(row.get("current_price")),
+        _displayed_price(row.get("compare_at_price")),
+    ) * 100)
 
 
 def build_card_fields(*, price_value, origin: str | None = None, year=None, listed_at=None) -> list[dict]:
@@ -372,19 +401,45 @@ def card_image_price_reject(row: dict) -> str | None:
 
 
 def single_card_reject(row: dict) -> str | None:
-    """Junk floor for the single-listing CARD formats (F7/F8/F9 inners). Adds
-    matched-corals-only to the image+price pre-filter: the Lineage. field needs a
-    named coral to render, AND matched-only is what drops the unmatched ALL-CAPS
-    gimmick rows that otherwise auto-win a raw biggest-drop (no separate junk list
-    — CTK-155 purged the seeds). Reason order: coral -> image -> price."""
+    """Junk floor for IMAGE-BEARING single-listing card formats: matched-corals-
+    only ON TOP of the image+price pre-filter. matched-only drops the unmatched
+    ALL-CAPS gimmick rows that otherwise auto-win a raw biggest-drop (no separate
+    junk list — CTK-155 purged the seeds); it stands on its own as the gimmick
+    floor. Reason order: coral -> image -> price.
+
+    NOT the surface-B floor: F7/F8/F9 render no vendor photo and gate on
+    is_surface_b_card_eligible (matched + price, no image) — surface-B is photo-
+    less (branding-guide.md L187: the data is the hook). This predicate is retained
+    for any future photo-on-card format that genuinely needs a mirror image. (The
+    earlier 'Lineage. field needs a named coral' rationale is stale — Lineage. is
+    dropped in v1; matched-only carries the floor regardless.)"""
     if row.get("named_coral_id") is None:
         return "unmatched"
     return card_image_price_reject(row)
 
 
 def is_single_card_eligible(row: dict) -> bool:
-    """True when the row clears the single-listing-card junk floor."""
+    """True when the row clears the IMAGE-BEARING single-card junk floor.
+
+    Deliberately retained though it has no live caller post-2026-06-17 (F7/F8/F9
+    moved to is_surface_b_card_eligible): this is the documented image-bearing
+    floor a future photo-on-card format reinstates, and the contrast it draws is
+    what is_surface_b_card_eligible's docstring points at. Not orphaned — kept."""
     return single_card_reject(row) is None
+
+
+def is_surface_b_card_eligible(row: dict) -> bool:
+    """Junk floor for the photo-less surface-B card inners (F7/F8/F9): matched
+    (named_coral_id) + priced (current_price is not None). NO image requirement —
+    the surface-B owned card carries no vendor photo (branding-guide.md L187: the
+    data is the hook), so the mirror-image arm of single_card_reject would gate on
+    a photo the card never renders. matched-only drops the unmatched ALL-CAPS
+    gimmick rows (CTK-155 purged the seeds); price is the rendered Price. field.
+
+    Distinct from is_single_card_eligible (the image-BEARING card predicate,
+    retained for a future photo-on-card format) and from card_image_price_reject
+    (the A-path / ig_select image gate, where the photo IS the post)."""
+    return row.get("named_coral_id") is not None and row.get("current_price") is not None
 
 
 # Superlative GLITCH-rejection bounds — NOT editorial post-worthiness. The "is
@@ -437,7 +492,8 @@ def superlative_post_worthy(row: dict) -> bool:
 
 def select_superlative_drop(conn, window_days: int = 7) -> dict | None:
     """F8 superlative content selector: the biggest single-listing price drop
-    among CARD-eligible rows (matched + image + price) that pass BOTH the glitch-
+    among CARD-eligible rows (matched + price; surface-B is photo-less, so no image
+    gate — shares is_surface_b_card_eligible with F7/F9) that pass BOTH the glitch-
     rejection bounds (superlative_drop_sane) AND the /brand-manager post-worthiness
     gate (superlative_post_worthy), over the window. Wraps fetch_recent_price_drops;
     does NOT touch get_recent_price_drops (/deals reads that unfiltered).
@@ -447,7 +503,7 @@ def select_superlative_drop(conn, window_days: int = 7) -> dict | None:
     rows = fetch_recent_price_drops(conn, window_days)
     eligible = [
         r for r in rows
-        if is_single_card_eligible(r) and superlative_drop_sane(r) and superlative_post_worthy(r)
+        if is_surface_b_card_eligible(r) and superlative_drop_sane(r) and superlative_post_worthy(r)
     ]
     if not eligible:
         return None
@@ -475,3 +531,147 @@ def fetch_velocity(conn, window_days: int | None = None) -> list[dict]:
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM get_velocity_listings(%s)", (window_days,))
         return cur.fetchall()
+
+
+# ---------------------------------------------------------------------------
+# Surface-B card content selectors — F7 (arrivals/restock carousel) + F9
+# (lineage spotlight). Each returns the render-ready shape data_card.render_f7_
+# arrivals / render_f9_lineage consume. Every inner field list routes through
+# build_card_fields (INV-01 — the card adapter pins to data_row via the parity
+# test); inner eligibility is is_surface_b_card_eligible (matched + price, no
+# image — the photo-less surface-B floor).
+#
+# HONEST-COUNT (load-bearing, branding-guide §"IG data-post copy" rev2 L182/L231):
+# the cover stat names the TRUE full-population count; the carousel shows a capped
+# (<= sample_cap) sample. The cover count is NEVER len(items) — a sample relabeled
+# "all N" is the lie this split exists to prevent.
+# ---------------------------------------------------------------------------
+
+# F7 lead-event arms + their render mappings. The event verb set is closed (no new
+# verb minted — branding-guide §"IG data-post copy" Zone A); 'just-listed' renders
+# 'listed', 'back-in-stock' renders 'back in stock'.
+_F7_ARRIVAL_EVENT = "just-listed"
+_F7_RESTOCK_EVENT = "back-in-stock"
+_F7_EVENT_PHRASE = {_F7_ARRIVAL_EVENT: "listed", _F7_RESTOCK_EVENT: "back in stock"}
+
+
+def _f7_composition(rows: list[dict]) -> str:
+    """The cover-copy variant key, derived from the `event` column over the FULL
+    population (not the sample): all just-listed -> all-arrivals, all back-in-stock
+    -> all-restocks, both present -> mixed. Empty population defaults to
+    all-arrivals (true_count is 0 there; the caller skips the post)."""
+    events = {r["event"] for r in rows}
+    has_arrival = _F7_ARRIVAL_EVENT in events
+    has_restock = _F7_RESTOCK_EVENT in events
+    if has_arrival and has_restock:
+        return "mixed"
+    if has_restock:
+        return "all-restocks"
+    return "all-arrivals"
+
+
+def _card_item(row: dict, *, event_phrase: str | None = None) -> dict:
+    """One surface-B inner card item — the SINGLE shape F7 and F9 inners share, so
+    both provably render the same Price. — Listed. row via build_card_fields
+    (INV-01). name is the canonical coral name (matched-only by eligibility, so it
+    is present). event_phrase is carried only for F7 (just-listed / back-in-stock);
+    F9's lead is always 'listed' and its render hardcodes it, so the key is omitted
+    there (no event_phrase) rather than carrying a redundant value."""
+    item = {
+        "name": row["named_coral_canonical_name"],
+        "vendor": row["vendor_display_name"],
+        "fields": build_card_fields(
+            price_value=plain_price_value(row.get("current_price")),
+            listed_at=row.get("event_at"),
+        ),
+    }
+    if event_phrase is not None:
+        item["event_phrase"] = event_phrase
+    return item
+
+
+def select_f7_arrivals(conn, window_hours: int = 168, sample_cap: int = 9):
+    """F7 arrivals/back-in-stock carousel selector. Returns
+    (true_count, composition, items):
+      - true_count  — the FULL count of arrival + restock lead-events over the
+        window (len of the UNCAPPED get_listing_lead_event population — row_limit
+        NULL, so a busy week is never silently truncated at the default 100). This
+        is the honest cover count, NOT len(items).
+      - composition — all-arrivals / all-restocks / mixed, over that full
+        population (drives the cover copy variant).
+      - items       — <= sample_cap is_surface_b_card_eligible inners, recency-
+        ordered (the query returns event_at DESC), each via _f7_item.
+
+    The window is a lead-event-precedence query (one row per listing, its lead
+    event), event_filter-scoped to just-listed + back-in-stock — auctions are
+    already gated out across all arms (CTK-042, migration 0039)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM get_listing_lead_event(%s, %s, %s, %s)",
+            (None, window_hours, [_F7_ARRIVAL_EVENT, _F7_RESTOCK_EVENT], None),
+        )
+        rows = cur.fetchall()
+    true_count = len(rows)
+    composition = _f7_composition(rows)
+    eligible = [r for r in rows if is_surface_b_card_eligible(r)]
+    items = [_card_item(r, event_phrase=_F7_EVENT_PHRASE[r["event"]]) for r in eligible[:sample_cap]]
+    return true_count, composition, items
+
+
+def select_f9_lineage(conn, sample_cap: int = 9):
+    """F9 lineage-spotlight selector over get_cross_vendor_carriers(). Returns
+    (coral, vendor_count, items), or None when no coral qualifies (the caller
+    falls back to an A-path spotlight or an F7 inner).
+
+    Pick: among corals carried in-stock at >= 2 distinct vendors, walk widest-
+    spread-first (tie-break most-recent carrier, then coral id — deterministic) and
+    take the FIRST that yields >= 1 renderable (priced) inner. The widest coral can
+    be all price-on-request — that is not a reason to drop to None when a narrower
+    >= 2-vendor coral is renderable (the runner-up-starvation fix). None only when
+    NO >= 2-vendor coral has any priced inner.
+
+    vendor_count is the chosen coral's TRUE distinct carrying-vendor count — image-
+    blind AND price-blind (the cover is an availability claim, "at N vendors right
+    now"; a price-on-request carrier still carries the coral). The inner SAMPLE is
+    narrower: is_surface_b_card_eligible (priced) listings, ONE per vendor (most
+    recent), recency-ordered, <= sample_cap. So vendor_count >= len(items) by
+    construction — the deflated sample never relabels the cover count."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM get_cross_vendor_carriers()")
+        rows = cur.fetchall()
+    if not rows:
+        return None
+
+    by_coral: dict[int, list[dict]] = {}
+    for r in rows:
+        by_coral.setdefault(r["named_coral_id"], []).append(r)
+
+    # TRUE distinct carrying vendors per coral (image-blind + price-blind) + the
+    # most-recent carrier event_at per coral (the deterministic tiebreak), both
+    # precomputed once so the candidate sort key is a dict lookup, not a re-scan.
+    spread = {cid: len({r["vendor_id"] for r in group}) for cid, group in by_coral.items()}
+    recent = {cid: max(r["event_at"] for r in group) for cid, group in by_coral.items()}
+    candidates = sorted(
+        (cid for cid, n in spread.items() if n >= 2),
+        key=lambda cid: (spread[cid], recent[cid], cid),
+        reverse=True,
+    )
+
+    for cid in candidates:
+        group = by_coral[cid]
+        # Inner sample: priced (card-eligible), one listing per vendor (most
+        # recent), recency-ordered, capped. eligible is event_at-DESC, so iterating
+        # it and keeping the first row per vendor inserts vendors into by_vendor in
+        # newest-first order — the dict values are already event_at-DESC, no re-sort.
+        eligible = sorted(
+            (r for r in group if is_surface_b_card_eligible(r)),
+            key=lambda r: r["event_at"], reverse=True,
+        )
+        by_vendor: dict = {}
+        for r in eligible:
+            by_vendor.setdefault(r["vendor_id"], r)
+        ordered = list(by_vendor.values())[:sample_cap]
+        if ordered:
+            items = [_card_item(r) for r in ordered]
+            return group[0]["named_coral_canonical_name"], spread[cid], items
+    return None
