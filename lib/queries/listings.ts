@@ -12,11 +12,11 @@ const PAGE_SIZE = 50; // vendor-inventory pagination chunk.
 // string move with it.
 export const CORAL_RECENCY_DAYS = 7; // /coral/[slug] availability window.
 const VENDOR_RECENCY_DAYS = 14; // /vendor/[slug] inventory window.
-// /new lead-event window — passed to get_listing_lead_event() below AND the
-// source for app/new/page.tsx's user-facing window copy (downtime fallback,
-// filtered-empty line, filtered-zero eyebrow chunk). Window drift stays
-// grep-able: query arg and label move together.
-export const ARRIVALS_WINDOW_HOURS = 24;
+// /new lead-event window values live in the WINDOW record (below, beside the
+// ListingWindow type) — one source feeds the get_listing_lead_event() hour arg
+// AND windowDurationLabel()'s user-facing copy, so query arg and label can't
+// drift. Day = 24h (the bare-/new default), week = 168h (the ?window=week variant
+// that mirrors the F7 IG cover's uncapped population; CTK-169).
 // /new page cap — get_listing_lead_event's row_limit DEFAULT 100 truncated
 // INSIDE the RPC, before the wrapper's category filter, so filtered /new sampled
 // the global newest-100. The bind now passes row_limit NULL (uncapped — LIMIT
@@ -402,6 +402,28 @@ export type ListingCategory =
   | 'chalice'
   | 'anemone'
   | 'clam';
+
+// /new view-window filter (CTK-169). 'day' is the bare-/new default (24h, all
+// three lead events, capped); 'week' is the ?window=week variant (168h,
+// arrivals+restocks only, uncapped) that lands the IG bio-link on the same
+// population the F7 cover counts. Discriminated like ListingSort (always resolves
+// to a concrete value), not nullable like category.
+export type ListingWindow = 'day' | 'week';
+
+// Per-window metadata in one co-located record: the query's hour arg
+// (getRecentArrivals reads .hours) and the user-facing duration label
+// (windowDurationLabel reads .label) share one source, so they can't drift.
+// Replaces the old ARRIVALS_WINDOW_HOURS const. .label is the duration only
+// ('24 hours' / '7 days'); call sites keep their own 'last '/'LAST ' prefix, so
+// the day-view copy stays byte-identical to the pre-CTK-169 hardcoded string.
+export const WINDOW: Record<ListingWindow, { hours: number; label: string }> = {
+  day: { hours: 24, label: '24 hours' },
+  week: { hours: 168, label: '7 days' },
+};
+
+export function windowDurationLabel(window: ListingWindow): string {
+  return WINDOW[window].label;
+}
 
 export async function getVendorInventory(
   vendorId: number,
@@ -845,38 +867,59 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
 
 // sort + category params via the shared orderedEventRows wrapper (see the
 // helper's header for the sql.unsafe constants-only invariant). row_limit binds
-// explicit NULL and ARRIVALS_PAGE_CAP caps wrapper-side, so filtered/sorted /new
-// admits the full 24h window instead of sampling the RPC's internal newest-100.
-// Cache key carries (sort, category); revalidate 300 per page cadence.
+// explicit NULL and the page cap wrapper-side, so filtered/sorted /new admits the
+// full window instead of sampling the RPC's internal newest-100.
+//
+// `window` selects the RPC call + cap ONLY (CTK-169); sort + category flow
+// through orderedEventRows unchanged on both branches:
+//   - 'day'  (bare /new, unchanged): 24h, NULL event-filter (all three lead
+//     events incl. price-dropped), capped at ARRIVALS_PAGE_CAP.
+//   - 'week' (?window=week): 168h, event-filter scoped to just-listed +
+//     back-in-stock, UNCAPPED (cap omitted → LIMIT NULL). Mirrors the F7 IG
+//     cover selector (content_queries.py:select_f7_arrivals) so the feed's row
+//     count reconciles to the cover's uncapped true_count.
+// Both fnCall strings stay constants-only (WINDOW.*.hours values are module
+// constants, the event-filter is a string literal) per the sql.unsafe invariant
+// — `window` never reaches fnCall as a bind.
+// Cache key carries (window, sort, category); revalidate 300 per page cadence.
 export async function getRecentArrivals(
   sort: ListingSort = 'newest',
   category: ListingCategory | null = null,
+  window: ListingWindow = 'day',
 ): Promise<ArrivalListing[]> {
+  // Explicit fourth RPC arg NULL = row_limit uncapped on both branches (the
+  // silent DEFAULT 100 truncated pre-filter); day truncates wrapper-side via the
+  // page cap, week stays fully uncapped.
+  const fnCall =
+    window === 'week'
+      ? `get_listing_lead_event(NULL, ${WINDOW.week.hours}, ARRAY['just-listed','back-in-stock']::text[], NULL)`
+      : `get_listing_lead_event(NULL, ${WINDOW.day.hours}, NULL, NULL)`;
+  const cap = window === 'week' ? undefined : ARRIVALS_PAGE_CAP;
+
   return unstable_cache(
     async () => {
       const rows = (await orderedEventRows(
-        // Explicit fourth arg NULL = row_limit uncapped — the silent DEFAULT 100
-        // truncated pre-filter; the wrapper cap below truncates post-filter/sort
-        // instead.
-        `get_listing_lead_event(NULL, ${ARRIVALS_WINDOW_HOURS}, NULL, NULL)`,
+        fnCall,
         sort,
         category,
-        ARRIVALS_PAGE_CAP,
+        cap,
       )) as unknown as RpcArrivalRow[];
 
       return rows.map(rpcRowToArrival);
     },
     [
-      // Bump the prefix when the served set changes (row_limit NULL + wrapper cap
-      // widened it to full-window admission) — the Data Cache persists across
-      // deploys.
-      'getRecentArrivalsV2',
+      // V2→V3: the served set now varies by window (the uncapped 168h
+      // arrivals+restocks population vs. the 24h all-events capped set). The Data
+      // Cache persists across deploys, so window MUST be in the key or the week
+      // feed serves the day-shape cached entry.
+      'getRecentArrivalsV3',
+      window,
       sort,
       category ?? '_',
     ],
     {
       revalidate: 300,
-      tags: [`recent-arrivals-${sort}-${category ?? '_'}`],
+      tags: [`recent-arrivals-${window}-${sort}-${category ?? '_'}`],
     },
   )();
 }

@@ -16,13 +16,15 @@ import {
   chromeCategoryLabel,
   parseCategory,
   parseSort,
+  parseWindow,
 } from '@/lib/queries/listing-params';
 import {
-  ARRIVALS_WINDOW_HOURS,
   getRecentArrivals,
+  windowDurationLabel,
   type ArrivalListing,
   type ListingCategory,
   type ListingSort,
+  type ListingWindow,
 } from '@/lib/queries/listings';
 
 // The searchParams read below flips this route dynamic at runtime;
@@ -40,24 +42,24 @@ export const metadata: Metadata = {
 };
 
 interface PageProps {
-  searchParams: Promise<{ sort?: string; category?: string }>;
+  searchParams: Promise<{ sort?: string; category?: string; window?: string }>;
 }
 
 const SKELETON_ROW_COUNT = 6;
 
-// Window label derives from the same constant the query passes to
-// get_listing_lead_event() (one-constant pattern), so it can't drift from the
-// actual window.
-const ARRIVALS_WINDOW = `${ARRIVALS_WINDOW_HOURS} hours`;
-
-const DOWNTIME_FALLBACK = `No new arrivals in the last ${ARRIVALS_WINDOW}. I'll surface them as vendors list.`;
+// Window copy derives from the active window via windowDurationLabel() (the same
+// one-source record the query reads for its hour arg), so it tracks ?window=week
+// and can't drift from the actual window. Day-view strings are byte-identical to
+// the pre-CTK-169 hardcoded copy ("last 24 hours" / "LAST 24 HOURS").
+const downtimeFallback = (window: ListingWindow) =>
+  `No new arrivals in the last ${windowDurationLabel(window)}. I'll surface them as vendors list.`;
 
 // Arg-taking is load-bearing: a no-arg wrapper would serve one cached shape
 // for all filter states in a request tree; React cache() keys per-request
-// dedup by the (sort, category) args.
+// dedup by the (sort, category, window) args.
 const arrivalsCached = cache(
-  (sort: ListingSort, category: ListingCategory | null) =>
-    getRecentArrivals(sort, category),
+  (sort: ListingSort, category: ListingCategory | null, window: ListingWindow) =>
+    getRecentArrivals(sort, category, window),
 );
 
 function rowToProps(arrival: ArrivalListing) {
@@ -72,11 +74,13 @@ function rowToProps(arrival: ArrivalListing) {
 async function Eyebrow({
   sort,
   category,
+  window,
 }: {
   sort: ListingSort;
   category: ListingCategory | null;
+  window: ListingWindow;
 }) {
-  const arrivals = await arrivalsCached(sort, category);
+  const arrivals = await arrivalsCached(sort, category, window);
 
   if (arrivals.length === 0) {
     // Bare zero — eyebrow suppressed; the downtime fallback owns the surface.
@@ -88,7 +92,7 @@ async function Eyebrow({
       <PageEyebrow
         chunks={[
           `0 ${chromeCategoryLabel(category)} ARRIVALS`,
-          `LAST ${ARRIVALS_WINDOW.toUpperCase()}`,
+          `LAST ${windowDurationLabel(window).toUpperCase()}`,
         ]}
       />
     );
@@ -113,28 +117,30 @@ async function Eyebrow({
 async function ArrivalsFeed({
   sort,
   category,
+  window,
 }: {
   sort: ListingSort;
   category: ListingCategory | null;
+  window: ListingWindow;
 }) {
-  const arrivals = await arrivalsCached(sort, category);
+  const arrivals = await arrivalsCached(sort, category, window);
 
   if (arrivals.length === 0) {
     // Filtered-empty line: a filter miss is an honest zero, not a coverage
     // gap — no I-voice second sentence, no promise. Category renders
     // prose-register via the formatTypeLabel three-class resolver. Bare-URL
-    // zero keeps DOWNTIME_FALLBACK.
+    // zero keeps the downtime fallback.
     if (category !== null) {
       return (
         <p role="status" className="text-base text-ink py-6">
           No {formatTypeLabel(category).display} arrivals in the last{' '}
-          {ARRIVALS_WINDOW}.
+          {windowDurationLabel(window)}.
         </p>
       );
     }
     return (
       <p role="status" className="text-base text-ink py-6">
-        {DOWNTIME_FALLBACK}
+        {downtimeFallback(window)}
       </p>
     );
   }
@@ -185,25 +191,28 @@ export default async function NewArrivalsPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const sort = parseSort(sp.sort);
   const category = parseCategory(sp.category);
+  const window = parseWindow(sp.window);
 
   return (
     <section className="px-6 py-12 max-w-3xl mx-auto">
       <Suspense fallback={<PageEyebrowSkeleton />}>
-        <Eyebrow sort={sort} category={category} />
+        <Eyebrow sort={sort} category={category} window={window} />
       </Suspense>
       <PageH1 className="mb-8">
         New arrivals.
       </PageH1>
       {/* Two axes only — no INCLUDE OUT OF STOCK on feed surfaces
-          (includeOOS omitted → axis not rendered). */}
+          (includeOOS omitted → axis not rendered). window passed so sort/category
+          clicks preserve ?window=week (CTK-169); /vendor + /deals omit it. */}
       <SortFilterBar
         basePath="/new"
         sort={sort}
         category={category}
+        window={window}
         ariaLabel="Sort and filter listings"
       />
       <Suspense fallback={<FeedSkeleton />}>
-        <ArrivalsFeed sort={sort} category={category} />
+        <ArrivalsFeed sort={sort} category={category} window={window} />
       </Suspense>
     </section>
   );

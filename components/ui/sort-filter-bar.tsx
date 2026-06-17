@@ -29,7 +29,11 @@
 // this component.
 
 import Link from 'next/link';
-import type { ListingCategory, ListingSort } from '@/lib/queries/listings';
+import type {
+  ListingCategory,
+  ListingSort,
+  ListingWindow,
+} from '@/lib/queries/listings';
 import { CATEGORY_LABELS, SORT_LABELS } from '@/lib/queries/listing-params';
 
 interface SortFilterBarProps {
@@ -40,6 +44,12 @@ interface SortFilterBarProps {
   // undefined = OOS axis not rendered (feed surfaces); boolean = axis
   // rendered with that toggle state (inventory-recon surfaces).
   includeOOS?: boolean;
+  // CTK-169 opt-in view-window passthrough — only /new passes it, so sort/category
+  // clicks preserve ?window=week instead of silently snapping back to the 24h day
+  // feed. Omitted (undefined) on /vendor + /deals → window never enters their
+  // hrefs (byte-identical to pre-CTK-169). 'day' is treated as omit too
+  // (canonical-chain default-omission), so even /new emits the param only on week.
+  window?: ListingWindow;
   // Feeds pass "Sort and filter listings"; the default keeps the inventory
   // wording on /vendor/[slug].
   ariaLabel?: string;
@@ -59,17 +69,20 @@ const CATEGORY_OPTIONS = (
 // Href builder per canonical-chain discipline: default values omit their
 // param; page param is dropped on every filter/sort change (filter-change
 // resets pagination to page=1 → bare-route). undefined includeOOS (feed
-// surfaces) never emits the param.
+// surfaces) never emits the param; undefined/'day' window (every surface but
+// /new?window=week) never emits the window param.
 function buildHref(
   basePath: string,
   sort: ListingSort,
   category: ListingCategory | null,
   includeOOS: boolean | undefined,
+  window: ListingWindow | undefined,
 ): string {
   const params = new URLSearchParams();
   if (sort !== 'newest') params.set('sort', sort);
   if (category !== null) params.set('category', category);
   if (includeOOS) params.set('include-oos', '1');
+  if (window === 'week') params.set('window', 'week');
   const qs = params.toString();
   return qs ? `${basePath}?${qs}` : basePath;
 }
@@ -79,6 +92,7 @@ export function SortFilterBar({
   sort,
   category,
   includeOOS,
+  window,
   ariaLabel = 'Sort and filter inventory',
 }: SortFilterBarProps) {
   const linkClass =
@@ -111,7 +125,7 @@ export function SortFilterBar({
           const isActive = sort === opt.value;
           // Active option clicks clear back to default sort ('newest').
           const targetSort: ListingSort = isActive ? 'newest' : opt.value;
-          const href = buildHref(basePath, targetSort, category, includeOOS);
+          const href = buildHref(basePath, targetSort, category, includeOOS, window);
           const isLast = i === SORT_OPTIONS.length - 1;
           // Mid-dot TRAILS the preceding option so wrap-breaks keep the dot
           // at end-of-line-N with the previous label, not at start-of-line-N+1
@@ -139,7 +153,7 @@ export function SortFilterBar({
           const targetCategory: ListingCategory | null = isActive
             ? null
             : opt.value;
-          const href = buildHref(basePath, sort, targetCategory, includeOOS);
+          const href = buildHref(basePath, sort, targetCategory, includeOOS, window);
           const isLast = i === CATEGORY_OPTIONS.length - 1;
           return (
             <span key={opt.value}>
@@ -159,7 +173,7 @@ export function SortFilterBar({
       {includeOOS !== undefined && (
         <div>
           <Link
-            href={buildHref(basePath, sort, category, !includeOOS)}
+            href={buildHref(basePath, sort, category, !includeOOS, window)}
             className={includeOOS ? activeClass : linkClass}
             aria-current={includeOOS ? 'true' : undefined}
           >
