@@ -222,8 +222,8 @@ def render_f9_lineage(
     *, coral: str, vendor_count: int, items: list[dict], now: datetime,
     out_path: str | Path, work_dir: str | Path | None = None,
 ) -> Path:
-    """F9 lineage spotlight carousel: a stat-only cover ("{coral} — at {n} vendors
-    right now.", the dash a near-black PROSE dash, not a forest field separator) +
+    """F9 lineage spotlight carousel: a stat-only cover ("{coral} — carried at {n}
+    vendors right now.", the dash a near-black PROSE dash, not a forest field separator) +
     one inner per carrying vendor. Each item: {name, vendor, fields} (event is
     'listed'). Cover copy per the register lock (see f9_cover_stat_html)."""
     cover = render_cover_html("reel-frame-f9-lineage-cover.html", f9_cover_stat_html(coral, vendor_count))
