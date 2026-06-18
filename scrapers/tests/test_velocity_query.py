@@ -16,9 +16,16 @@ asserts what the SQL crowns:
      before its first in-stock observation)     never saw it appear)
   S  still in stock                          -> EXCLUDED (the piece is not gone)
   U  unnamed (named_coral_id IS NULL)        -> EXCLUDED (can't name the coral)
+  AE auction with a real end_time            -> EXCLUDED (its OOS is the clock
+                                                closing, not demand velocity —
+                                                INV-05 residual, migration 0046)
+  PA pseudo-auction (is_auction, no end_time)-> EXCLUDED (CTK-042 gate; bidding
+                                                mechanics, not a demand sellout)
 
-DB-GATED: requires a live NEON_DATABASE_URL + migration 0042 applied. Skips cleanly
-(exit 0) when no DB is reachable or the function is absent — NOT part of the pure
+DB-GATED: requires a live NEON_DATABASE_URL + migration 0046 applied (the AE/PA
+auction-exclusion cases + the prior_run_finished_at column are 0046, not 0042 —
+against a 0042-only DB this test goes RED, not skip). Skips cleanly (exit 0) only
+when no DB is reachable or the function is wholly absent — NOT part of the pure
 suite. Run where a DB is available:
   python -m scrapers.tests.test_velocity_query
 """
@@ -28,7 +35,15 @@ from __future__ import annotations
 import sys
 from datetime import datetime, timezone
 
+import pytest
+
 from scrapers.tools.content_queries import fetch_velocity
+
+# DB-integration test (live NEON + migration 0046). Deselected in CI via
+# `-m "not requires_db"` — without this marker pytest collects test_velocity_query,
+# finds no `conn` fixture, and errors (the script-mode `python -m` path supplies the
+# conn itself). Matches the requires_db pattern the other live-DB suites carry.
+pytestmark = pytest.mark.requires_db
 
 
 def _ts(s: str) -> datetime:
@@ -50,7 +65,7 @@ _LISTINGS = {
             (False, "2026-06-08 12:00:00")],
         expect_included=True,
         first_seen="2026-06-06 12:00:00", last_in_stock="2026-06-07 12:00:00",
-        first_oos="2026-06-08 12:00:00",
+        first_oos="2026-06-08 12:00:00", prior_run=RUN_FINISHED,
     ),
     # F — first OBSERVED OOS (a prior state), then restocked, then gone. first_oos_at
     # must be the transition AFTER first_seen (06-09), never the earlier 06-05 false.
@@ -60,7 +75,7 @@ _LISTINGS = {
             (False, "2026-06-09 00:00:00")],
         expect_included=True,
         first_seen="2026-06-06 00:00:00", last_in_stock="2026-06-06 00:00:00",
-        first_oos="2026-06-09 00:00:00",
+        first_oos="2026-06-09 00:00:00", prior_run=RUN_FINISHED,
     ),
     # C — first in-stock observation during the cold-start scrape (no successful run
     # finished before 00:03). Clean appeared->gone shape, but fictional: excluded.
@@ -78,6 +93,22 @@ _LISTINGS = {
     # U — unnamed: can't carry the coral identity line.
     "U": dict(
         in_stock_now=False, named=False,
+        ph=[(True, "2026-06-06 12:00:00"), (False, "2026-06-08 12:00:00")],
+        expect_included=False,
+    ),
+    # AE — real auction (ReefnBid-style, auction_end_time set): same watched
+    # appear-and-go shape as R, but its OOS is the auction CLOCK closing, not
+    # demand. A velocity ("gone fast") claim over it is false. EXCLUDED (0046).
+    "AE": dict(
+        in_stock_now=False, named=True, auction_end_time="2026-06-08 12:00:00",
+        ph=[(True, "2026-06-06 12:00:00"), (False, "2026-06-08 12:00:00")],
+        expect_included=False,
+    ),
+    # PA — pseudo-auction (is_auction = true, no end_time): a Shopify bidding-style
+    # listing that PASSES auction_end_time IS NULL but is availability-deceptive
+    # (CTK-042). Same appear-and-go shape; EXCLUDED by the is_auction gate.
+    "PA": dict(
+        in_stock_now=False, named=True, is_auction=True,
         ph=[(True, "2026-06-06 12:00:00"), (False, "2026-06-08 12:00:00")],
         expect_included=False,
     ),
@@ -111,8 +142,9 @@ def _seed(cur) -> tuple[dict[str, int], list[int]]:
     for label, spec in _LISTINGS.items():
         cur.execute(
             "INSERT INTO vendor_listings "
-            "(vendor_id, product_url, raw_title, normalized_title, in_stock, current_price, named_coral_id) "
-            "VALUES (%s, %s, %s, %s, %s, 100, %s) RETURNING id",
+            "(vendor_id, product_url, raw_title, normalized_title, in_stock, current_price, "
+            "named_coral_id, is_auction, auction_end_time) "
+            "VALUES (%s, %s, %s, %s, %s, 100, %s, %s, %s) RETURNING id",
             (
                 vendor_id,
                 f"https://vel.invalid/p/{label}",
@@ -120,6 +152,8 @@ def _seed(cur) -> tuple[dict[str, int], list[int]]:
                 f"velocity listing {label}",
                 spec["in_stock_now"],
                 coral_id if spec["named"] else None,
+                spec.get("is_auction", False),
+                _ts(spec["auction_end_time"]) if spec.get("auction_end_time") else None,
             ),
         )
         lid = cur.fetchone()["id"]
@@ -159,14 +193,17 @@ def test_velocity_query(conn) -> None:
                 ("first_seen_at", spec["first_seen"]),
                 ("last_in_stock_at", spec["last_in_stock"]),
                 ("first_oos_at", spec["first_oos"]),
+                ("prior_run_finished_at", spec["prior_run"]),
             ):
                 assert row[field] == _ts(want), (
                     f"listing {label}: {field} = {row[field]}, want {_ts(want)}"
                 )
-            # The honesty invariant the whole format rests on.
-            assert row["first_seen_at"] <= row["last_in_stock_at"] < row["first_oos_at"], (
-                f"listing {label}: lifecycle invariant violated"
-            )
+            # The honesty invariant the whole format rests on — now anchored on the
+            # prior successful run (the render's window starts there, not at first_seen).
+            assert (
+                row["prior_run_finished_at"] < row["first_seen_at"]
+                <= row["last_in_stock_at"] < row["first_oos_at"]
+            ), f"listing {label}: lifecycle invariant violated"
     finally:
         conn.rollback()
 
@@ -190,8 +227,8 @@ def _run_all() -> int:
     except Exception as e:  # noqa: BLE001
         import psycopg
         if isinstance(e, psycopg.errors.UndefinedFunction):
-            print("SKIP test_velocity_query: migration 0042 not applied "
-                  "(get_velocity_listings absent)")
+            print("SKIP test_velocity_query: velocity migration not applied "
+                  "(get_velocity_listings absent; needs 0046)")
             return 0
         print(f"ERROR test_velocity_query: {type(e).__name__}: {e}")
         return 1

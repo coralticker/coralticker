@@ -556,15 +556,23 @@ def select_superlative_drop(conn, window_days: int = 7) -> dict | None:
 
 def fetch_velocity(conn, window_days: int | None = None) -> list[dict]:
     """Velocity (listed-and-gone) rows via get_velocity_listings(). One row per
-    still-OOS, matched listing whose full first lifecycle we OBSERVED, carrying the
-    three raw timestamps the render derives its window from (first_seen_at,
-    last_in_stock_at, first_oos_at) plus the coral/vendor identity fields.
+    still-OOS, matched, non-auction listing whose full first lifecycle we OBSERVED,
+    carrying the timestamps the render derives its window from plus the coral/vendor
+    identity fields:
+      - first_seen_at / last_in_stock_at / first_oos_at — the observed lifecycle.
+      - prior_run_finished_at — the last successful scrape that COMPLETED before the
+        first in-stock sighting. The render's window anchor: window = first_oos_at -
+        prior_run_finished_at, rounded UP (the widest HONEST upper bound — the piece
+        could have been listed any time after that run found the catalog without it).
 
     The SQL excludes cold-start listings (no successful scrape finished before the
     first in-stock observation — we never watched them appear, so their lifespan is
-    fictional) — a claim-honesty correctness gate, not a tunable. window_days is an
-    optional recency selector on the gone-event (NULL = all); it is NOT a scrape
-    interval — no cadence config is threaded, the render is self-contained per row.
+    fictional) — a claim-honesty correctness gate, not a tunable; that exclusion is
+    now the prior_run_finished_at IS NOT NULL filter (migration 0046). It also gates
+    out auctions (auction_end_time / is_auction) — an auction's OOS is its clock, not
+    demand, so it carries no velocity claim. window_days is an optional recency
+    selector on the gone-event (NULL = all); it is NOT a scrape interval — no cadence
+    config is threaded, the render is self-contained per row.
 
     Claim-neutral by construction: the rows say WHEN, never WHY. Cause-neutral
     templating ("gone" / "didn't last", never "sold out") is the render's job
@@ -572,6 +580,48 @@ def fetch_velocity(conn, window_days: int | None = None) -> list[dict]:
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM get_velocity_listings(%s)", (window_days,))
         return cur.fetchall()
+
+
+def _velocity_window(row: dict):
+    """The observed lifespan upper bound for a velocity row: first_oos_at -
+    prior_run_finished_at (a timedelta). The selector scores on this raw delta
+    (smallest = went fastest); the render rounds it UP to a cadence-keyed unit. None
+    when either anchor is missing — defensive only: the SQL guarantees both non-NULL
+    (prior_run_finished_at IS NOT NULL is the cold-start gate)."""
+    anchor = row.get("prior_run_finished_at")
+    gone = row.get("first_oos_at")
+    if anchor is None or gone is None:
+        return None
+    return gone - anchor
+
+
+def select_velocity(conn, window_days: int | None = None) -> dict | None:
+    """Velocity single-stat selector: among watched-appear-and-gone listings, the one
+    that went FASTEST — the smallest observed lifespan window (_velocity_window:
+    first_oos_at - prior_run_finished_at). Smallest window = the strongest honest "it
+    didn't last" story. Pure data/scoring; no render (the render — unit bucketing,
+    per-vendor cadence floor, cause-neutral copy — is Wave 2, gated on the /designer
+    velocity frame).
+
+    Returns the winning row (the fetch_velocity dict, carrying the identity fields +
+    timestamps + prior_run_finished_at the render derives {window} from), or None —
+    None is a clean no-post (no velocity-worthy piece this window), the caller skips
+    velocity, NOT an error. Mirrors select_superlative_drop's no-forced-weak-post shape.
+
+    Tie-break on id for determinism (a batch scrape can produce equal windows).
+
+    window_days scopes the gone-event recency (NULL = all); NOT a scrape interval.
+
+    No MAX-window post-worthiness floor yet: on a quiet window this returns the
+    fastest available even if that is days, not hours. A max-window gate (the velocity
+    analogue of F8's provisional MIN_DROP_FRACTION) is a /brand-manager editorial
+    call; it slots in here as a pre-filter on `scored` without changing the min-pick.
+    Flagged to /lead-backend -> /brand-manager."""
+    rows = fetch_velocity(conn, window_days)
+    scored = [r for r in rows if _velocity_window(r) is not None]
+    if not scored:
+        return None
+    return min(scored, key=lambda r: (_velocity_window(r), r["id"]))
 
 
 # ---------------------------------------------------------------------------
