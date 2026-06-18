@@ -29,3 +29,14 @@ phase[0-9]-*.log
 *_run.log
 curl-*-body.txt
 .neon-migration/
+
+# IG / video binaries — keep them out of the public repo (CTK-166 leak guard).
+# The IG *code* belongs here; rendered reels, captured frames, and mirrored vendor
+# photos pulled for posting do NOT. Reels default to build/reels (already covered by
+# /build above + uploaded as GH Actions run artifacts); pulled photos / working assets
+# land in the gitignored dirs below. Scoped on purpose — no global *.png/*.webp, so the
+# tracked assets/brand/ build assets stay versioned.
+/ig-assets/
+/.ig-work/
+*.mp4
+*.mov
