@@ -81,6 +81,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from scrapers.tools import ig_select
 from scrapers.tools.ig_select import Candidate, DEFAULT_TOP_N
 from scrapers.tools.content_queries import CONTENT_FORMATS, FormatDescriptor
 
@@ -169,6 +170,99 @@ def clean_descriptive_title(raw_title: str) -> str:
     text = re.sub(r"\s*[-–—]\s*$", "", text)     # trailing dangling dash
     text = re.sub(r"^\s*[-–—]\s*", "", text)     # leading dangling dash
     return text.strip(" -–—,").strip()
+
+
+# ---------------------------------------------------------------------------
+# Fold #3 (CTK-170, retro /code-review; fallback revised per Jon ruling 2026-06-17)
+# — coral-type-noun survival gate, deciding CLEANED-vs-RAW for the Line-1 seed.
+#
+# clean_descriptive_title sheds mechanism tags but can leave a MANGLED remnant: a
+# mid-string strip leaving an edge-connector fragment ('Frag Pack of Chalices' ->
+# 'of Chalices') or a bare 1-token remnant ('WYSIWYG Frag' -> 'Frag') no longer
+# cleanly NAMES the piece. The gate (descriptive_name) returns the cleaned title when
+# it is NOT an edge-connector fragment AND (a coral-type noun survives OR it is a
+# >= 2-token descriptive phrase) — the multi-word arm (close-pass #1) keeps a clean
+# typeless title like 'Rainbow Showpiece' instead of leaking 'WYSIWYG' to the raw
+# fallback; otherwise it returns None.
+#
+# The render_caption LADDER (Jon ruling 2026-06-17): matched -> coral_name; else the
+# cleaned title when the gate accepts it; else the RAW raw_title VERBATIM; else
+# NAME_PLACEHOLDER only when raw_title is empty. Line 1 is an operator SEED Jon edits
+# before posting, so a noisy-but-real vendor title beats a placeholder — and verbatim
+# vendor words honor the provenance bar (no fabrication, no rewording). The gate is
+# the cleaned-vs-raw decision; the placeholder is the no-title-at-all floor.
+#
+# No runtime coral-type vocabulary exists to reuse: the matcher (scrapers/common/
+# matcher.py) runs on named_corals + aliases + trigram, with no type/genus lexicon,
+# and the seed list's type/genus columns live in research markdown, not code. So
+# this is a hand-rolled curated lexicon of reef coral TYPES + common genera/groups —
+# the words that signal "this string describes a coral". Matched word-boundaried,
+# case-insensitive, with a trailing-'s' plural tolerance (so 'chalices' -> 'chalice',
+# 'acans' -> 'acan'). Extend as new type words surface; over-inclusion only widens
+# what substitutes (cleaned vs. the raw title — both are real vendor words).
+# ---------------------------------------------------------------------------
+_CORAL_TYPE_NOUNS = frozenset({
+    # Broad type buckets.
+    "sps", "lps", "softie", "zoa", "zoanthid", "paly", "palythoa", "mushroom",
+    "shroom", "anemone", "bta", "rbta", "nem", "coral", "clam", "chalice",
+    # Genera + common trade group names.
+    "acropora", "acro", "millepora", "milli", "tenuis", "montipora", "monti",
+    "cap", "digitata", "euphyllia", "torch", "hammer", "frogspawn", "favia",
+    "favites", "acan", "acanthastrea", "micromussa", "micro", "lobophyllia",
+    "lobo", "scoly", "scolymia", "blasto", "blastomussa", "goniopora", "gonio",
+    "alveopora", "leptoseris", "lepto", "cyphastrea", "psammocora", "stylophora",
+    "stylo", "stylocoeniella", "seriatopora", "birdsnest", "turbinaria",
+    "porites", "anacropora", "pavona", "echinophyllia", "echino", "mycedium",
+    "duncan", "candycane", "caulastrea", "trumpet", "ricordea", "ric",
+    "discosoma", "rhodactis", "bounce", "gsp", "xenia", "clove", "leather",
+    "fungia", "plate", "wellso", "wellsophyllia", "trachyphyllia", "trach",
+    "brain", "lobophytum", "sinularia", "nepthea", "cespitularia", "goni",
+})
+
+# Orphan connector words: a cleaned title that OPENS or CLOSES on one ('Frag Pack of
+# Chalices' -> 'of Chalices') is the signature of a mid-string strip that left a
+# fragment, not a name. The gate rejects such fragments to the raw fallback. Interior
+# connectors are fine — 'WWC Eye of the Storm Chalice' keeps its 'of'.
+_ORPHAN_EDGE_WORDS = frozenset({
+    "of", "the", "a", "an", "and", "with", "for", "in", "on", "by", "to", "from",
+})
+
+
+def _contains_coral_type_noun(text: str) -> bool:
+    """True when any whole word in `text` is a known coral-type noun (case-
+    insensitive, trailing-'s' plural tolerant). The signal that a cleaned title
+    still NAMES a coral rather than being a mechanism-only remnant."""
+    for tok in re.findall(r"[A-Za-z]+", text.lower()):
+        if tok in _CORAL_TYPE_NOUNS or (tok.endswith("s") and tok[:-1] in _CORAL_TYPE_NOUNS):
+            return True
+    return False
+
+
+def descriptive_name(raw_title: str) -> str | None:
+    """The CLEANED Line-1 seed for an UNMATCHED winner when it still cleanly NAMES the
+    piece, else None — the cleaned-vs-raw gate (fold #3; the raw fallback lives in
+    render_caption per the Jon ruling 2026-06-17). clean_descriptive_title sheds the
+    mechanism tags; this ACCEPTS the result when it is not an edge-connector fragment
+    AND (a coral-type noun survives OR it is a >= 2-token descriptive phrase). The
+    multi-word arm (close-pass #1 fix) keeps a clean typeless title like 'Rainbow
+    Showpiece WYSIWYG' -> 'Rainbow Showpiece' instead of leaking the WYSIWYG by
+    falling to raw. REJECTED (-> None -> raw fallback): a bare 1-token remnant
+    ('WYSIWYG Frag' -> 'Frag'), an edge-connector fragment ('Frag Pack of Chalices' ->
+    'of Chalices'), and '' / a mechanism-only title (cleans empty). A None routes the
+    caller to the raw title, NOT the placeholder — verbatim vendor words beat a
+    fragment (provenance-safe)."""
+    cleaned = clean_descriptive_title(raw_title)
+    if not cleaned:
+        return None
+    toks = cleaned.split()
+    if (toks[0].lower().strip(",.;:") in _ORPHAN_EDGE_WORDS
+            or toks[-1].lower().strip(",.;:") in _ORPHAN_EDGE_WORDS):
+        return None  # edge-connector fragment -> mangled; prefer the raw title
+    alpha_tokens = re.findall(r"[A-Za-z]+", cleaned)
+    if _contains_coral_type_noun(cleaned) or len(alpha_tokens) >= 2:
+        return cleaned
+    return None  # bare 1-token typeless remnant -> prefer the raw title
+
 
 # Line-1 em-dash detail: the human photo-observation D-1 forbids auto-generating.
 # Rendered as a fill-prompt so the blank slot is unambiguous in the operator
@@ -266,14 +360,17 @@ def render_caption(c: Candidate) -> str:
     detail-blank; Line 2 fully rendered; Line 3 verbatim closer). The poster
     fills the Line-1 detail and may prepend an optional Line 0.
 
-    Line-1 name slot (2026-06-17): matched -> the canonical coral name; unmatched
-    with a raw_title -> the cleaned descriptive title (mechanism tags shed, never a
-    fabricated lineage name); unmatched with no raw_title (or one that cleans to
-    empty) -> the {coral name} placeholder."""
+    Line-1 name slot ladder (fold #3, Jon ruling 2026-06-17): matched -> the canonical
+    coral name; else the cleaned descriptive title when it still NAMES a coral (a
+    coral-type noun survives the mechanism strip, no edge-connector mangle); else the
+    RAW raw_title VERBATIM (a noisy-but-real vendor title beats a placeholder — Line 1
+    is an operator seed Jon edits pre-post, and verbatim vendor words honor the
+    provenance bar); else the {coral name} placeholder ONLY when there is no raw_title
+    at all. Never a fabricated lineage name at any rung."""
     if c.named_coral_id is not None and c.coral_name:
         name = c.coral_name
     else:
-        name = clean_descriptive_title(c.raw_title) or NAME_PLACEHOLDER
+        name = descriptive_name(c.raw_title) or (c.raw_title if c.raw_title.strip() else NAME_PLACEHOLDER)
     v = vendor_attribution(c.vendor_slug)
     line1 = f"{name} — {DETAIL_PROMPT}"
     line2 = f"{event_verb(c.arm)} at {v.shorthand} ({v.handle})."
@@ -334,25 +431,36 @@ def render_notification(mode: str, candidate_count: int, gated_count: int,
 # ---------------------------------------------------------------------------
 
 
+def _post_and_record(conn, message: str, picks: list[Candidate], mode: str) -> int:
+    """The shared non-dry-run tail of run()/run_reels(): POST the operator message,
+    then record the surfaced picks to the band-history (Item C). Records AFTER a
+    successful post so the balance window reflects what went out (D-1: surfaced-pick
+    proxy). Returns the rows recorded. post_slack stays a local import so the module
+    doesn't drag the Slack client at load."""
+    from scrapers.common.cohort_signal import post_slack
+    post_slack(message)
+    return ig_select.record_picks(conn, picks, mode)
+
+
 def run(mode: str, top_n: int, dry_run: bool = False) -> int:
     from scrapers.common import db
-    from scrapers.tools import ig_select
 
     conn = db.get_conn()
     try:
         candidates, gated, selected = ig_select.select(conn, mode, top_n)
+
+        message = render_notification(mode, len(candidates), len(gated), selected)
+
+        if dry_run:
+            print(message)
+            return 0
+
+        recorded = _post_and_record(conn, message, selected, mode)
     finally:
         conn.close()
 
-    message = render_notification(mode, len(candidates), len(gated), selected)
-
-    if dry_run:
-        print(message)
-        return 0
-
-    from scrapers.common.cohort_signal import post_slack
-    post_slack(message)
-    print(f"ig-spotlight {mode}: posted {len(selected)} candidate(s) to the operator channel.")
+    print(f"ig-spotlight {mode}: posted {len(selected)} candidate(s) to the operator "
+          f"channel ({recorded} recorded to pick history).")
     return 0
 
 
@@ -397,8 +505,6 @@ def render_batch(conn, mode: str, top_n: int, out_dir: str | Path):
     render failure skips that candidate (logged) rather than crashing the batch
     — the grid-stocking pass should bank the reels that do render. Returns
     (all_candidates, gated, results) where results is [(Candidate, Path|None)]."""
-    from scrapers.tools import ig_select
-
     candidates, gated, selected = ig_select.select(conn, mode, top_n)
     Path(out_dir).mkdir(parents=True, exist_ok=True)
 
@@ -452,19 +558,22 @@ def run_reels(mode: str, top_n: int, out_dir: str | Path, dry_run: bool = False)
     conn = db.get_conn()
     try:
         candidates, gated, results = render_batch(conn, mode, top_n, out_dir)
+
+        message = render_reel_notification(mode, len(candidates), len(gated), results, out_dir)
+
+        if dry_run:
+            print(message)
+            return 0
+
+        # Record the surfaced picks (the selected candidates, not the render outcome)
+        # so a render miss still counts as "this band went to the queue".
+        recorded = _post_and_record(conn, message, [c for c, _ in results], mode)
     finally:
         conn.close()
 
-    message = render_reel_notification(mode, len(candidates), len(gated), results, out_dir)
-
-    if dry_run:
-        print(message)
-        return 0
-
-    from scrapers.common.cohort_signal import post_slack
-    post_slack(message)
     rendered = sum(1 for _, p in results if p is not None)
-    print(f"ig-spotlight {mode} reels: {rendered} rendered to {out_dir}; notified operator channel.")
+    print(f"ig-spotlight {mode} reels: {rendered} rendered to {out_dir}; notified operator "
+          f"channel ({recorded} recorded to pick history).")
     return 0
 
 

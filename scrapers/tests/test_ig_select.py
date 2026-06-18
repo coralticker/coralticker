@@ -43,13 +43,26 @@ from scrapers.tools.ig_select import (
     Candidate,
     MIN_SPOTLIGHT_PRICE,
     MIRROR_HOST,
+    PRICE_BANDS,
+    RECENT_PICK_WINDOW,
+    WEIGHT_BAND_BALANCE,
+    WEIGHT_CROSS_VENDOR_CHEAPEST,
+    WEIGHT_DROP,
     WEIGHT_NAMED_CORAL,
+    WEIGHT_RECENCY,
+    MedalMagnitude,
+    band_overrep_penalty,
+    band_shares,
     compute_score,
     cross_vendor_cheapest_ids,
     drop_fraction,
+    fetch_recent_pick_bands,
     image_gate_reject,
+    price_band,
     rank,
     recency_factor,
+    record_picks,
+    score_candidates,
 )
 
 NOW = datetime(2026, 6, 14, 12, 0, 0, tzinfo=timezone.utc)
@@ -292,6 +305,220 @@ def test_recency_factor_bounds():
     assert recency_factor(NOW, NOW, 24) == 1.0
     assert recency_factor(NOW - timedelta(hours=24), NOW, 24) == 0.0
     assert recency_factor(NOW - timedelta(hours=48), NOW, 24) == 0.0  # clamped
+
+
+# --- Item C: price bands ------------------------------------------------
+
+def test_price_band_boundaries():
+    # Lower-inclusive / upper-exclusive at every edge.
+    assert price_band(25.0) == "<$150"          # floor lands in band 1
+    assert price_band(149.99) == "<$150"
+    assert price_band(150.0) == "$150-400"       # edge -> upper band
+    assert price_band(399.99) == "$150-400"
+    assert price_band(400.0) == "$400-800"
+    assert price_band(799.99) == "$400-800"
+    assert price_band(800.0) == "$800+"
+    assert price_band(99999.0) == "$800+"
+    # Decimal input bands the same as float.
+    assert price_band(Decimal("150.00")) == "$150-400"
+    assert price_band(Decimal("400.00")) == "$400-800"
+
+
+def test_band_shares():
+    assert band_shares([]) == {}
+    s = band_shares(["<$150", "<$150", "$800+"])
+    assert abs(s["<$150"] - 2 / 3) < 1e-9
+    assert abs(s["$800+"] - 1 / 3) < 1e-9
+    assert "$150-400" not in s  # absent band -> not in the map
+
+
+# --- Item C: band over-representation penalty ----------------------------
+
+def test_band_penalty_zero_without_history():
+    # No recent picks (empty shares) -> no down-weight for any band.
+    assert band_overrep_penalty("$400-800", {}) == 0.0
+    assert band_overrep_penalty(None, {"<$150": 1.0}) == 0.0
+
+
+def test_band_penalty_zero_at_or_below_fair_share():
+    fair = 1.0 / len(PRICE_BANDS)  # 0.25 for the 4 seed bands
+    # Exactly at fair rotation -> no penalty (only OVER-representation is penalized).
+    assert band_overrep_penalty("<$150", {"<$150": fair}) == 0.0
+    # Below fair -> still 0 (clamped).
+    assert band_overrep_penalty("<$150", {"<$150": fair / 2}) == 0.0
+
+
+def test_band_penalty_saturated_is_full_weight():
+    # A band that fills the whole recent window -> the full WEIGHT_BAND_BALANCE.
+    assert abs(band_overrep_penalty("$400-800", {"$400-800": 1.0}) - WEIGHT_BAND_BALANCE) < 1e-9
+
+
+def test_band_penalty_monotonic_in_share():
+    # More-represented -> larger down-weight (the diversity gradient).
+    low = band_overrep_penalty("<$150", {"<$150": 0.5})
+    high = band_overrep_penalty("<$150", {"<$150": 0.83})
+    assert 0.0 < low < high <= WEIGHT_BAND_BALANCE
+
+
+def test_band_balance_below_cross_vendor_margin():
+    # THE D-3 guardrail as a static invariant: the max band down-weight must stay
+    # STRICTLY below the cross-vendor lead, so a band-penalized cross-vendor pick
+    # (100 - penalty) can never fall under an unpenalized non-cross pick (<= 90).
+    max_non_cross = WEIGHT_DROP + WEIGHT_NAMED_CORAL + WEIGHT_RECENCY
+    cross_margin = WEIGHT_CROSS_VENDOR_CHEAPEST - max_non_cross
+    assert WEIGHT_BAND_BALANCE < cross_margin, (
+        f"WEIGHT_BAND_BALANCE {WEIGHT_BAND_BALANCE} >= cross margin {cross_margin}: "
+        "a saturated cross-vendor pick could be unseated by the diversity guard"
+    )
+
+
+# --- Item C: compute_score band term -------------------------------------
+
+def test_compute_score_band_penalty_subtracts():
+    base, _ = compute_score(has_named_coral=False, dollars_saved=100.0,
+                            is_cross_vendor_cheapest=False, recency=0.0)
+    penalized, bd = compute_score(has_named_coral=False, dollars_saved=100.0,
+                                  is_cross_vendor_cheapest=False, recency=0.0,
+                                  band_penalty=WEIGHT_BAND_BALANCE)
+    assert abs(penalized - (base - WEIGHT_BAND_BALANCE)) < 1e-9
+    assert bd["band_diversity"] == -round(WEIGHT_BAND_BALANCE, 2)
+
+
+# --- Item C: scoring + ranking with the band guard -----------------------
+
+def _med(**by_id):
+    """{id: MedalMagnitude(dollars=...)} from id->dollars kwargs (band test fixtures)."""
+    return {int(k[1:]): MedalMagnitude(fraction=0.0, dollars=v) for k, v in by_id.items()}
+
+
+def test_band_guard_reorders_non_cross_picks():
+    # The down-weight FLIPS order among same-tier non-cross picks. X has the bigger
+    # raw drop but sits in the saturated band; Y is smaller but in a fresh band.
+    #   X: drop 30 + recency 10 - penalty 8 = 32   ($500 -> "$400-800", saturated)
+    #   Y: drop 25 + recency 10 - penalty 0 = 35   ($100 -> "<$150", fresh)
+    x = Candidate.from_row(_cand_row(id=1, current_price=Decimal("500.00"), event_at=NOW))
+    y = Candidate.from_row(_cand_row(id=2, current_price=Decimal("100.00"), event_at=NOW))
+    shares = {"$400-800": 1.0}  # the whole recent window is "$400-800"
+    score_candidates([x, y], _med(c1=60.0, c2=50.0), set(), NOW, 24, shares)
+    assert x.band == "$400-800" and y.band == "<$150"
+    assert rank([x, y], 1)[0].listing_id == 2, "fresh-band pick must win once the saturated band is penalized"
+    # Control: with NO history (empty shares) the bigger raw drop wins — proving the
+    # penalty, not the drop, is what flipped the order.
+    x2 = Candidate.from_row(_cand_row(id=1, current_price=Decimal("500.00"), event_at=NOW))
+    y2 = Candidate.from_row(_cand_row(id=2, current_price=Decimal("100.00"), event_at=NOW))
+    score_candidates([x2, y2], _med(c1=60.0, c2=50.0), set(), NOW, 24, {})
+    assert rank([x2, y2], 1)[0].listing_id == 1
+
+
+def test_band_guard_never_unseats_cross_vendor():
+    # The guardrail: even a fully-saturated band penalty leaves a cross-vendor pick
+    # on top of the strongest possible non-cross pick.
+    #   A (cross): 100 - penalty 8 = 92            ($500 -> "$400-800", saturated)
+    #   B (non-cross, max): drop 50 + named 30 + recency 10 = 90  ($100 -> "<$150", fresh)
+    a = Candidate.from_row(_cand_row(id=1, current_price=Decimal("500.00"), event_at=NOW))
+    b = Candidate.from_row(_cand_row(id=2, current_price=Decimal("100.00"),
+                                     named_coral_id=100, event_at=NOW))
+    shares = {"$400-800": 1.0}
+    score_candidates([a, b], _med(a1=0.0, b2=100.0), {1}, NOW, 24, shares)
+    ranked = rank([a, b], 2)
+    assert ranked[0].listing_id == 1, "a saturated-band cross-vendor pick must still top"
+    assert {c.listing_id for c in ranked} == {1, 2}, "nothing gated out — soft down-weight only"
+
+
+# --- Item C: pick-history I/O (offline, fake conn) -----------------------
+
+class _FakeTxn:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def __enter__(self):
+        self.conn.transactions += 1
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class _FakeCursor:
+    def __init__(self, rows):
+        self._rows = rows
+        self.calls = []
+        self.many_calls = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, sql, params=None):
+        self.calls.append((sql, params))
+
+    def executemany(self, sql, seq):
+        self.many_calls.append((sql, list(seq)))
+
+    def fetchall(self):
+        return self._rows
+
+
+class _FakeConn:
+    def __init__(self, rows=None):
+        self.cur = _FakeCursor(rows or [])
+        self.transactions = 0
+
+    def cursor(self):
+        return self.cur
+
+    def transaction(self):
+        return _FakeTxn(self)
+
+
+def test_fetch_recent_pick_bands_reads_window():
+    conn = _FakeConn(rows=[{"band": "<$150"}, {"band": "$800+"}])
+    bands = fetch_recent_pick_bands(conn, "daily")
+    assert bands == ["<$150", "$800+"]
+    # Mode-scoped + windowed: the query binds (mode, RECENT_PICK_WINDOW).
+    _, params = conn.cur.calls[0]
+    assert params == ("daily", RECENT_PICK_WINDOW)
+
+
+def test_record_picks_atomic_single_round_trip():
+    # #2 fold: one executemany inside one transaction (not a per-row execute loop).
+    conn = _FakeConn()
+    sel = [
+        Candidate.from_row(_cand_row(id=11, current_price=Decimal("90.00"))),
+        Candidate.from_row(_cand_row(id=12, current_price=Decimal("250.00"))),
+    ]
+    sel[0].band = "<$150"
+    sel[1].band = "$150-400"
+    n = record_picks(conn, sel, "daily")
+    assert n == 2
+    assert conn.transactions == 1, "insert must be wrapped in a transaction (atomic)"
+    assert conn.cur.calls == [], "no per-row execute() — executemany only"
+    assert len(conn.cur.many_calls) == 1, "single round-trip"
+    assert conn.cur.many_calls[0][1] == [(11, "<$150", "daily"), (12, "$150-400", "daily")]
+    # Empty selection -> no write, no transaction.
+    conn2 = _FakeConn()
+    assert record_picks(conn2, [], "daily") == 0
+    assert conn2.cur.many_calls == [] and conn2.transactions == 0
+
+
+def test_record_picks_bands_from_price_when_unset():
+    # A candidate whose .band was not pre-set falls back to price_band(current_price).
+    conn = _FakeConn()
+    c = Candidate.from_row(_cand_row(id=20, current_price=Decimal("500.00")))
+    assert c.band is None
+    record_picks(conn, [c], "weekly-roundup")
+    assert conn.cur.many_calls[0][1] == [(20, "$400-800", "weekly-roundup")]
+
+
+def test_record_picks_skips_unbandable_candidate():
+    # #7 guard: a candidate with neither a band nor a price is skipped, not crashed on.
+    conn = _FakeConn()
+    c = Candidate.from_row(_cand_row(id=30, current_price=None))
+    c.band = None
+    assert record_picks(conn, [c], "daily") == 0
+    assert conn.cur.many_calls == []
 
 
 def _run_all():
