@@ -45,6 +45,7 @@ from scrapers.tools.ig_spotlight import (
     NICHE_PROMPT,
     VENDOR_IG,
     clean_descriptive_title,
+    descriptive_name,
     event_verb,
     lineage_hashtag,
     render_caption,
@@ -163,22 +164,95 @@ def test_clean_descriptive_title():
     assert clean_descriptive_title("WYSIWYG Lot") == ""
 
 
+def test_descriptive_name_type_noun_survival():
+    # Fold #3 — the gate returns the CLEANED title ONLY when a coral-type noun
+    # survives the strip (and it isn't an edge-connector fragment); else None.
+    # 'WYSIWYG Frag' cleans to 'Frag' (NOT a coral type) -> None.
+    assert descriptive_name("WYSIWYG Frag") is None
+    # A clean typed title passes through (type noun present, interior 'of' kept).
+    assert descriptive_name("WWC Eye of the Storm Chalice") == "WWC Eye of the Storm Chalice"
+    # 'Rainbow Lot Chalice': 'lot' is stripped mid-string, but 'Chalice' survives and
+    # the result isn't an edge-connector fragment -> a clean noun-bearing seed.
+    rlc = descriptive_name("Rainbow Lot Chalice")
+    assert rlc is not None and "Chalice" in rlc
+    assert not rlc.lower().startswith(("of ", "the ", "and "))  # no orphan-connector lead
+
+
+def test_descriptive_name_rejects_edge_connector_fragment():
+    # 'Frag Pack of Chalices' -> mechanism strip leaves 'of Chalices', a fragment that
+    # OPENS on the connector 'of'. Even though 'Chalices' is a type noun, the gate
+    # rejects the fragment (-> None) so the caller falls back to the RAW title, not the
+    # mangled fragment (Jon ruling 2026-06-17).
+    assert descriptive_name("Frag Pack of Chalices") is None
+
+
+def test_descriptive_name_accepts_multiword_typeless():
+    # #1 fold: a clean, >= 2-token descriptive title with NO coral-type noun is still
+    # accepted (mechanism tags shed) — it names the piece without leaking 'WYSIWYG'.
+    assert descriptive_name("Rainbow Showpiece WYSIWYG") == "Rainbow Showpiece"
+    assert descriptive_name("Mystery Showpiece Colony") == "Mystery Showpiece Colony"
+
+
+def test_descriptive_name_rejects_bare_and_empty():
+    # A bare 1-token remnant is not a name -> None (falls to raw); empty / cleans-empty
+    # -> None.
+    assert descriptive_name("WYSIWYG Frag") is None   # cleans to the 1-token 'Frag'
+    assert descriptive_name("") is None
+    assert descriptive_name("WYSIWYG Lot") is None    # cleans to empty
+
+
+def test_caption_multiword_typeless_renders_cleaned():
+    # #1 regression fix at the caption level: an unmatched 'Rainbow Showpiece WYSIWYG'
+    # renders the CLEANED 'Rainbow Showpiece' (WYSIWYG shed), not the raw title with
+    # the mechanism tag still on it.
+    c = Candidate.from_row(_cand_row(raw_title="Rainbow Showpiece WYSIWYG"))
+    line1 = render_caption(c).split("\n")[0]
+    assert line1.startswith("Rainbow Showpiece — "), line1
+    assert "WYSIWYG" not in line1
+
+
+def test_caption_misfire_shape_falls_back_to_raw():
+    # The exact #3 misfire shape at the caption level: an unmatched 'WYSIWYG Frag' has
+    # no surviving type noun, so Line 1 now renders the RAW vendor title verbatim (an
+    # operator seed Jon edits pre-post), NOT the placeholder and NOT the 'Frag' fragment.
+    c = Candidate.from_row(_cand_row(raw_title="WYSIWYG Frag"))
+    line1 = render_caption(c).split("\n")[0]
+    assert line1.startswith("WYSIWYG Frag — "), line1
+    assert NAME_PLACEHOLDER not in line1
+
+
+def test_caption_mangled_fragment_falls_back_to_raw():
+    # 'Frag Pack of Chalices' cleans to the edge-connector fragment 'of Chalices' ->
+    # gate rejects -> Line 1 renders the RAW title verbatim, never 'of Chalices'.
+    c = Candidate.from_row(_cand_row(raw_title="Frag Pack of Chalices"))
+    line1 = render_caption(c).split("\n")[0]
+    assert line1.startswith("Frag Pack of Chalices — "), line1
+    assert not line1.startswith("of Chalices")
+    assert NAME_PLACEHOLDER not in line1
+
+
 def test_caption_unmatched_with_title_prefills_cleaned():
-    # Unmatched (no named_coral_id) WITH a raw_title: Line 1 pre-fills the CLEANED
-    # title (mechanism tags shed), never a fabricated lineage name, never the placeholder.
+    # Unmatched (no named_coral_id) WITH a raw_title that still names a coral: Line 1
+    # pre-fills the CLEANED title (mechanism tags shed), never a fabricated lineage name.
     c = Candidate.from_row(_cand_row(raw_title="WWC Eye of the Storm Chalice WYSIWYG"))
     line1 = render_caption(c).split("\n")[0]
     assert line1.startswith("WWC Eye of the Storm Chalice — "), line1
     assert NAME_PLACEHOLDER not in line1
 
 
-def test_caption_unmatched_without_title_falls_back():
-    # No raw_title -> the {coral name} placeholder.
+def test_caption_empty_title_uses_placeholder():
+    # The placeholder is the floor — ONLY when there is no raw_title at all.
     c = Candidate.from_row(_cand_row(raw_title=""))
     assert render_caption(c).split("\n")[0].startswith(f"{NAME_PLACEHOLDER} — ")
-    # A raw_title that cleans to empty (all mechanism tokens) also falls back.
-    c2 = Candidate.from_row(_cand_row(raw_title="WYSIWYG Lot"))
-    assert render_caption(c2).split("\n")[0].startswith(f"{NAME_PLACEHOLDER} — ")
+
+
+def test_caption_mechanism_only_title_falls_back_to_raw():
+    # A raw_title that cleans to empty (all mechanism tokens) is still non-empty, so it
+    # renders the RAW title verbatim — placeholder is reserved for an empty raw_title.
+    c = Candidate.from_row(_cand_row(raw_title="WYSIWYG Lot"))
+    line1 = render_caption(c).split("\n")[0]
+    assert line1.startswith("WYSIWYG Lot — "), line1
+    assert NAME_PLACEHOLDER not in line1
 
 
 def test_caption_detail_blank():

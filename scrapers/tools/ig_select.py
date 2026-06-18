@@ -156,6 +156,47 @@ WEIGHT_DROP = 50.0                    # * clamp(dollars_saved / DOLLAR_FULL, 0, 
 WEIGHT_NAMED_CORAL = 30.0             # binary: named_coral_id present (booster, not a gate)
 WEIGHT_RECENCY = 10.0                 # * recency factor (0..1); tiebreak
 
+# ---------------------------------------------------------------------------
+# Item C (CTK-170, 2026-06-17) — bracket-diversity guard. A SOFT down-weight on a
+# price band over-represented in the recent picks, so the week's spotlights span
+# brackets instead of clustering where the scoring pulls (the floor + the absolute-
+# dollar drop term skew picks toward higher-dollar pieces; without a diversity
+# signal the grid reads same-y). The down-weight is SUBTRACTED in compute_score.
+#
+# GUARDRAIL (D-3, the load-bearing constraint): the down-weight is tiebreak-class —
+# it reorders same-tier picks but NEVER unseats the dominant cross-vendor pick. The
+# max non-cross score is WEIGHT_DROP + WEIGHT_NAMED_CORAL + WEIGHT_RECENCY = 90, so
+# a cross-vendor pick (100) leads by a margin of 10. Keeping WEIGHT_BAND_BALANCE
+# STRICTLY below that 10-point margin guarantees a band-saturated cross-vendor pick
+# (100 - penalty) still tops an unpenalized non-cross pick (<= 90). NO price-VALUE
+# reward term is re-added (D-4 LOCKED — B dropped it; C is the band-balance
+# mechanism it was a crude proxy for).
+#
+# Bands are a TRACKING dimension, not posting slots / not quotas: a band quota that
+# could override cross-vendor would re-break the Q1 guardrail. Edges are human-
+# legible reef-market tiers (entry / mid / upper / grail), confirmed against the
+# prod Neon candidate distribution 2026-06-17 (scripts/diag_ig_band_distribution.py;
+# percentiles + band fill in results.md): the $150/$400/$800 edges land at ~p72/p95/
+# p99 of the in-stock priced non-auction pool, so each band is a meaningfully distinct
+# price class rather than an arbitrary cut.
+WEIGHT_BAND_BALANCE = 8.0  # max diversity down-weight; < the 10-pt cross-vendor margin by design
+
+# Price-band edges (upper-exclusive). A price maps to the FIRST band whose upper
+# bound it is below; lower-inclusive / upper-exclusive ($150 -> "$150-400",
+# $400 -> "$400-800", $800 -> "$800+"). Gate survivors are all >= MIN_SPOTLIGHT_PRICE,
+# so the "<$150" band is really [$25, $150).
+PRICE_BANDS: tuple[tuple[str, float], ...] = (
+    ("<$150", 150.0),
+    ("$150-400", 400.0),
+    ("$400-800", 800.0),
+    ("$800+", float("inf")),
+)
+
+# Trailing pick count read for the band-balance signal (the "last 5-7 picks"
+# window). Mode-scoped: the daily rotation balances against recent daily picks
+# (~a week at one/day). ~6 is a week of daily picks without over-weighting stale ones.
+RECENT_PICK_WINDOW = 6
+
 # Scoring thresholds — picked from the live in-stock candidate + dollar-drop
 # distributions on prod Neon 2026-06-17 (scripts/diag_ig_spotlight_thresholds.py),
 # NOT guessed. See CTK-159 results.md for the percentiles + worked examples.
@@ -174,6 +215,49 @@ TITLE_TRUNC = 70
 def _clamp01(x: float) -> float:
     """Clamp to [0, 1] — the shared shape for every continuous score term."""
     return max(0.0, min(1.0, x))
+
+
+def price_band(price) -> str:
+    """The Item C price band for a current_price (Decimal/float). Lower-inclusive,
+    upper-exclusive against PRICE_BANDS — a price maps to the first band whose upper
+    bound it is below ($150 -> "$150-400", $400 -> "$400-800", $800 -> "$800+")."""
+    p = float(price)
+    for label, upper in PRICE_BANDS:
+        if p < upper:
+            return label
+    return PRICE_BANDS[-1][0]
+
+
+def band_shares(recent_bands: list[str]) -> dict[str, float]:
+    """Each band's share (0..1) of the recent pick window. Empty window -> {} (no
+    signal yet -> every band penalty is 0). Bands absent from the window are simply
+    missing (share 0), so band_overrep_penalty returns 0 for them."""
+    n = len(recent_bands)
+    if n == 0:
+        return {}
+    shares: dict[str, float] = {}
+    for b in recent_bands:
+        shares[b] = shares.get(b, 0.0) + 1.0 / n
+    return shares
+
+
+def band_overrep_penalty(band: str | None, shares: dict[str, float]) -> float:
+    """The SOFT down-weight for a candidate's band given the recent-window shares.
+    Penalty rises only ABOVE the uniform fair share (1 / number-of-bands): a band at
+    or below fair rotation gets 0; a band saturating the whole window gets the full
+    WEIGHT_BAND_BALANCE. Scaled so it stays tiebreak-class and never unseats a
+    cross-vendor pick (the D-3 guardrail — WEIGHT_BAND_BALANCE < the cross margin).
+
+      penalty = WEIGHT_BAND_BALANCE * clamp((share - fair) / (1 - fair), 0, 1)
+
+    fair = 1/len(PRICE_BANDS); (1 - fair) normalizes so an all-one-band window hits
+    exactly the full weight."""
+    if band is None or not shares:
+        return 0.0
+    fair = 1.0 / len(PRICE_BANDS)
+    share = shares.get(band, 0.0)
+    over = (share - fair) / (1.0 - fair)
+    return WEIGHT_BAND_BALANCE * _clamp01(over)
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +291,7 @@ class Candidate:
     medal_pct: float = 0.0          # drop fraction (0..1) — informational; not scored in v1
     dollars_saved: float = 0.0      # absolute dollar drop — the scored drop magnitude
     is_cross_vendor_cheapest: bool = False
+    band: str | None = None          # Item C price band — set by score_candidates / price_band
     score: float = 0.0
     score_breakdown: dict | None = None
 
@@ -270,25 +355,34 @@ def compute_score(
     dollars_saved: float,
     is_cross_vendor_cheapest: bool,
     recency: float,
+    band_penalty: float = 0.0,
 ) -> tuple[float, dict]:
-    """The IG-worthiness score (T3). Additive weighted sum; returns
-    (total, breakdown) so the printed/emitted candidate can show WHY it ranked.
+    """The IG-worthiness score (T3). Additive weighted sum minus the Item C band
+    down-weight; returns (total, breakdown) so the printed/emitted candidate can
+    show WHY it ranked.
 
     The drop term is ABSOLUTE dollars (2026-06-17): WEIGHT_DROP * clamp(dollars_saved
     / DOLLAR_FULL), so an $80 markdown outranks a 50%-off $10 frag ($5) — no percent
     kicker. Absolute price does NOT score (the final directive dropped the value-reward
     term; the floor is the only price lever — see the weights note). Cross-vendor stays
-    additive (not a gate) per the Q1 guardrail."""
+    additive (not a gate) per the Q1 guardrail.
+
+    band_penalty (Item C) is SUBTRACTED — a soft, tiebreak-class down-weight on a
+    price band over-represented in the recent picks (band_overrep_penalty). It is
+    bounded by WEIGHT_BAND_BALANCE < the cross-vendor margin, so it never unseats a
+    cross-vendor pick (D-3 guardrail); default 0.0 keeps the bare-scoring path
+    (no history) unchanged."""
     cross = WEIGHT_CROSS_VENDOR_CHEAPEST if is_cross_vendor_cheapest else 0.0
     named = WEIGHT_NAMED_CORAL if has_named_coral else 0.0
     drop = WEIGHT_DROP * _clamp01(dollars_saved / DOLLAR_FULL)
     rec = WEIGHT_RECENCY * _clamp01(recency)
-    total = cross + named + drop + rec
+    total = cross + named + drop + rec - band_penalty
     return total, {
         "cross_vendor_cheapest": cross,
         "named_coral": named,
         "drop_dollars": round(drop, 2),
         "recency": round(rec, 2),
+        "band_diversity": -round(band_penalty, 2),
     }
 
 
@@ -302,6 +396,46 @@ def rank(candidates: list[Candidate], top_n: int) -> list[Candidate]:
 # ---------------------------------------------------------------------------
 # I/O shell — DB read + orchestration.
 # ---------------------------------------------------------------------------
+
+
+def fetch_recent_pick_bands(conn, mode: str, window: int = RECENT_PICK_WINDOW) -> list[str]:
+    """The trailing-window band labels for the band-balance signal (Item C): the
+    last `window` ig_spotlight_picks for this mode, newest first. Empty (no history
+    yet) -> [] -> band_shares {} -> no down-weight. Read-only."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT band FROM ig_spotlight_picks WHERE mode = %s "
+            "ORDER BY selected_at DESC, id DESC LIMIT %s",
+            (mode, window),
+        )
+        return [r["band"] for r in cur.fetchall()]
+
+
+def record_picks(conn, selected: list[Candidate], mode: str) -> int:
+    """Append the selected picks to ig_spotlight_picks (Item C history). The band is
+    the candidate's already-computed .band (price_band fallback for safety). Returns
+    the rows written. The CALLER invokes this ONLY on a non-dry-run post — the surfaced
+    pick is the 'posted' proxy (D-1 caveat: human-in-the-loop, no confirmed-post
+    signal). NOT called from the read-only ig_select CLI.
+
+    Atomic + single round-trip: one executemany inside an explicit transaction, so a
+    mid-batch failure rolls back the whole insert (no partial band-history tail that
+    would skew the next window's balance). A candidate with neither a band nor a price
+    is skipped (can't band it) rather than crashing the batch (close-pass #2/#7)."""
+    rows = [
+        (c.listing_id, c.band if c.band is not None else price_band(c.current_price), mode)
+        for c in selected
+        if c.band is not None or c.current_price is not None
+    ]
+    if not rows:
+        return 0
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO ig_spotlight_picks (listing_id, band, mode) VALUES (%s, %s, %s)",
+                rows,
+            )
+    return len(rows)
 
 
 def fetch_candidates(conn, window_hours: int) -> list[Candidate]:
@@ -323,20 +457,28 @@ def score_candidates(
     cross_vendor_ids: set[int],
     now: datetime,
     window_hours: int,
+    recent_band_shares: dict[str, float] | None = None,
 ) -> None:
-    """Populate .medal_pct / .dollars_saved / .is_cross_vendor_cheapest / .score /
-    .score_breakdown on each candidate in place (T3). medal_by_id carries both the
-    drop fraction (informational) and the absolute dollars (the scored magnitude)."""
+    """Populate .medal_pct / .dollars_saved / .is_cross_vendor_cheapest / .band /
+    .score / .score_breakdown on each candidate in place (T3). medal_by_id carries
+    both the drop fraction (informational) and the absolute dollars (the scored
+    magnitude). recent_band_shares (Item C; None / {} -> no down-weight) is the
+    band->share map over the recent picks; each candidate's band gets a soft penalty
+    via band_overrep_penalty. Candidates here are gate survivors, so current_price is
+    non-null and price_band always resolves."""
+    shares = recent_band_shares or {}
     for c in candidates:
         mag = medal_by_id.get(c.listing_id)
         c.medal_pct = mag.fraction if mag else 0.0
         c.dollars_saved = mag.dollars if mag else 0.0
         c.is_cross_vendor_cheapest = c.listing_id in cross_vendor_ids
+        c.band = price_band(c.current_price) if c.current_price is not None else None
         c.score, c.score_breakdown = compute_score(
             has_named_coral=c.named_coral_id is not None,
             dollars_saved=c.dollars_saved,
             is_cross_vendor_cheapest=c.is_cross_vendor_cheapest,
             recency=recency_factor(c.event_at, now, window_hours),
+            band_penalty=band_overrep_penalty(c.band, shares),
         )
 
 
@@ -345,7 +487,8 @@ def _format_line(c: Candidate) -> str:
     coral = f" [{c.coral_name}]" if c.coral_name else ""
     price = f"${c.current_price}" if c.current_price is not None else "price-on-request"
     xv = " +cross-vendor-cheapest" if c.is_cross_vendor_cheapest else ""
-    return (f"  score={c.score:6.1f}{xv} [{c.vendor_slug}] id={c.listing_id}{coral} "
+    band = f" {{{c.band}}}" if c.band else ""
+    return (f"  score={c.score:6.1f}{xv}{band} [{c.vendor_slug}] id={c.listing_id}{coral} "
             f"{title!r} — {c.arm} — {price} — {c.product_url}")
 
 
@@ -373,8 +516,11 @@ def select(
     # fetch_cross_vendor_cheapest now returns the render-ready crowned ROWS (the
     # CTK-161 SQL function); the score path only needs the id-set membership test.
     cross_vendor_ids = {r["id"] for r in fetch_cross_vendor_cheapest(conn)}
+    # Item C — the trailing-window band shares for the diversity down-weight (empty
+    # until picks accumulate, so this is a no-op on a fresh history).
+    shares = band_shares(fetch_recent_pick_bands(conn, mode))
 
-    score_candidates(gated, medal_by_id, cross_vendor_ids, now, window_hours)
+    score_candidates(gated, medal_by_id, cross_vendor_ids, now, window_hours, shares)
     selected = rank(gated, top_n)
     return candidates, gated, selected
 

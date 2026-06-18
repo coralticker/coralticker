@@ -118,7 +118,16 @@ def drop_dollars(prior_price, current_price, compare_at_price) -> float:
     the vendor markdown compare_at_price; the SAME baseline drop_fraction picks)
     minus current_price, floored at 0. Returns 0.0 when neither reference is usable.
     The CTK-159 spotlight v1 scores the absolute dollars (a $100 markdown on a $500
-    coral outranks a $10 markdown on a $20 frag), not the percent — see ig_select."""
+    coral outranks a $10 markdown on a $20 frag), not the percent — see ig_select.
+
+    DELIBERATE baseline divergence (CTK-170 fold #5, confirm-intended — NOT a bug):
+    the prior_price-FIRST order means a CT-observed dip is taken as the baseline even
+    when compare_at_price is a LARGER vendor markdown, so a small CT drop can mask a
+    bigger MSRP markdown in the scored dollars. That is the intended medal definition:
+    the CT-observed price IS the medal — the same baseline drop_fraction ranks on and
+    _drop_baseline renders, so the scored magnitude, the ranked fraction, and the
+    struck-price display all agree on ONE baseline. Preferring the larger of the two
+    would re-define the medal (a CTK-047 medal-definition change, out of scope here)."""
     for baseline in (prior_price, compare_at_price):
         if baseline is None or current_price is None:
             continue
