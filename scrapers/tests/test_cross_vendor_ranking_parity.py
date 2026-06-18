@@ -30,7 +30,15 @@ from __future__ import annotations
 
 import sys
 
+import pytest
+
 from scrapers.tools.content_queries import cross_vendor_cheapest_ids
+
+# DB-integration test (live NEON). Deselected in CI via `-m "not requires_db"` —
+# without this marker pytest collects test_sql_pure_ranking_parity, finds no `conn`
+# fixture, and errors (the script-mode `python -m` path supplies the conn itself).
+# Matches the requires_db pattern the other live-DB suites carry.
+pytestmark = pytest.mark.requires_db
 
 _AUCTION = "2099-01-01T00:00:00Z"
 

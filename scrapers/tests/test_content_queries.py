@@ -27,6 +27,7 @@ Coverage:
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from scrapers.tools.content_queries import (
@@ -157,6 +158,7 @@ from scrapers.tools.content_queries import (  # noqa: E402
     select_f7_arrivals,
     select_f9_lineage,
     select_superlative_drop,
+    select_velocity,
     single_card_reject,
     superlative_drop_sane,
     superlative_post_worthy,
@@ -480,6 +482,56 @@ def test_f9_inner_pick_deterministic_on_event_at_tie():
     v10 = [it for it in forward[2] if it["vendor"] == "WWC"]
     assert len(v10) == 1 and _price(v10[0]) == "$260.00"
     assert [_price(it) for it in forward[2]] == [_price(it) for it in reversed_[2]]
+
+
+def _vel_row(*, id, anchor_h, gone_h, coral="WWC Sunkist Bounce", vendor="WWC"):
+    """A get_velocity_listings-shaped row (only the fields select_velocity scores on).
+    anchor_h / gone_h are hours offset from a fixed base, so the window is gone-anchor;
+    anchor_h=None models the defensive missing-anchor case (the SQL never emits it)."""
+    base = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    return {
+        "id": id,
+        "named_coral_canonical_name": coral,
+        "vendor_display_name": vendor,
+        "prior_run_finished_at": None if anchor_h is None else base + timedelta(hours=anchor_h),
+        "first_oos_at": base + timedelta(hours=gone_h),
+    }
+
+
+def test_velocity_picks_fastest():
+    # Smallest window (gone - prior_run_finished_at) wins: row B's 3h beats A's 48h
+    # and C's 10h. The pick is the strongest honest "it didn't last" story.
+    a = _vel_row(id=1, anchor_h=0, gone_h=48)   # 48h window
+    b = _vel_row(id=2, anchor_h=20, gone_h=23)  # 3h window  <- fastest
+    c = _vel_row(id=3, anchor_h=0, gone_h=10)   # 10h window
+    assert select_velocity(_FakeConn([a, b, c])) is b
+    # A single row is its own winner.
+    assert select_velocity(_FakeConn([a])) is a
+
+
+def test_velocity_tiebreak_on_id():
+    # Equal windows -> lowest id wins (deterministic across input order).
+    lo = _vel_row(id=5, anchor_h=0, gone_h=6)
+    hi = _vel_row(id=9, anchor_h=10, gone_h=16)  # same 6h window, higher id
+    assert select_velocity(_FakeConn([hi, lo])) is lo
+    assert select_velocity(_FakeConn([lo, hi])) is lo
+
+
+def test_velocity_empty_is_none():
+    # No gone pieces -> clean no-post (caller skips velocity), not an error.
+    assert select_velocity(_FakeConn([])) is None
+
+
+def test_velocity_skips_missing_anchor():
+    # Defensive: a row with no prior_run_finished_at can't yield a window, so it is
+    # never scored. If it is the only row -> None (the SQL guarantees this never
+    # happens — the cold-start gate is prior_run_finished_at IS NOT NULL — but the
+    # Python must not crown a windowless row).
+    no_anchor = _vel_row(id=1, anchor_h=None, gone_h=10)
+    assert select_velocity(_FakeConn([no_anchor])) is None
+    # Mixed: the anchored row wins even though the windowless one has an earlier id.
+    anchored = _vel_row(id=2, anchor_h=5, gone_h=12)
+    assert select_velocity(_FakeConn([no_anchor, anchored])) is anchored
 
 
 def _run_all():
