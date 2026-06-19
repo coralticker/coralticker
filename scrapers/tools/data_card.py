@@ -119,13 +119,21 @@ def render_f8_card_html(*, name: str, pct: int, fields: list[dict], now: datetim
 
 def render_cover_html(template_name: str, stat_html: str) -> str:
     """A carousel COVER frame (stat-only, no data row). stat_html is the prebuilt
-    .stat inner markup (the caller owns the brand copy + inline spans)."""
+    .stat inner markup (the caller owns the brand copy + inline spans).
+
+    NOTE: superseded by render_kinetic_carousel (CTK-173) — prune candidate. No prod
+    caller post-repoint; retained only as a pure-builder unit (test_f7_cover_and_inner_builders
+    + the static templates' skeleton-drift pairs). Prune is non-contained (the
+    skeleton pairs + the mixed builder test couple it) — tracked in open-items."""
     return _fill(template_name, STAT_HTML=stat_html)
 
 
 def render_inner_html(template_name: str, lead_html: str, fields: list[dict], now: datetime) -> str:
     """A carousel INNER frame (lead + INV-01 data row). lead_html is prebuilt
-    (_lead_html); the row is the field-driven adapter output."""
+    (_lead_html); the row is the field-driven adapter output.
+
+    NOTE: superseded by render_kinetic_carousel (CTK-173) — prune candidate (see
+    render_cover_html). No prod caller post-repoint; tracked in open-items."""
     return _fill(template_name, LEAD_HTML=lead_html, DATA_ROW=format_data_row_html(fields, now))
 
 
@@ -141,7 +149,11 @@ def render_carousel(
     """Cover-rides-the-reel (PB-5): rasterize + Ken Burns each frame (cover FIRST,
     then inners in order), then concat_clips them into one reel. All clips share
     DATA_CARD_MOTION so the concat demuxer stream-copies (no re-encode). Returns
-    out_path; intermediate PNGs/clips land in work_dir for the 11pm debug."""
+    out_path; intermediate PNGs/clips land in work_dir for the 11pm debug.
+
+    NOTE: superseded by render_kinetic_carousel (CTK-173) — prune candidate. F7/F9
+    moved to the kinetic (count-up/reveal) path; this static-carousel primitive has
+    no prod caller post-repoint. Tracked in open-items (prune is non-contained)."""
     out_path = Path(out_path)
     work_dir = Path(work_dir) if work_dir else out_path.parent
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -186,57 +198,76 @@ def f9_cover_stat_html(coral: str, vendor_count: int) -> str:
     carriers. "Carried" is a stock claim, not a buy claim. The dash is a
     near-black PROSE dash (it sits in .stat, not a .row .sep forest separator),
     per the cover register lock (branding-guide.md §"IG data-post copy" F7/F9
-    cover-stat bullet, 2026-06-17)."""
+    cover-stat bullet, 2026-06-17).
+
+    The prose is split into three .seg{1,2,3} spans so the F9 cover reveal
+    (reel-frame-f9-lineage-cover-reveal.html) can stage it as three plain fades
+    (CTK-173 Q2). The wrappers are presentation-only — get_text strips them and
+    yields the byte-identical locked string, so the static cover template renders
+    them inert (all visible) and the "carried at N" lock is untouched."""
     return (
-        f'<span class="name">{_esc(coral)}</span> — carried at '
-        f'<span class="num">{vendor_count} vendors</span> right now.'
+        f'<span class="seg seg1"><span class="name">{_esc(coral)}</span></span>'
+        f'<span class="seg seg2"> — carried at <span class="num">{vendor_count} vendors</span></span>'
+        f'<span class="seg seg3"> right now.</span>'
     )
 
 
 def render_f7_arrivals(
     *, count: int, composition: str, items: list[dict], now: datetime,
     out_path: str | Path, work_dir: str | Path | None = None,
+    fps: int = video.DATA_CARD_MOTION.fps,
 ) -> Path:
-    """F7 arrivals/back-in-stock carousel: a stat-only cover (composition-picked
-    per the cover register — "{count} new arrivals / back in stock / drops this
-    week.") + one inner per item. Each item: {name, vendor, event_phrase, fields}.
-    composition (all-arrivals / all-restocks / mixed) comes from select_f7_arrivals,
-    derived over the full window population.
+    """F7 arrivals/back-in-stock kinetic carousel (CTK-173): a count-up COVER
+    ("{count}" climbs to the true full-window count, label composition-picked —
+    "new arrivals / back in stock / drops this week.") + one plain-reveal INNER per
+    item, concatenated into one reel. Each item: {name, vendor, event_phrase,
+    fields}. composition (all-arrivals / all-restocks / mixed) comes from
+    select_f7_arrivals, derived over the full window population.
 
-    composition is REQUIRED (no default): the cover stat is the honest-claim surface,
-    and a missing composition silently mislabelling a restock/mixed cover as "new
-    arrivals" is the exact lie the F7/F8/F9 honest-count split exists to prevent.
-    The driver always passes the selector's real composition."""
-    cover = render_cover_html("reel-frame-f7-arrivals-cover.html", f7_cover_stat_html(count, composition))
+    composition is REQUIRED (no default): the cover label is the honest-claim
+    surface, and a missing composition silently mislabelling a restock/mixed cover
+    as "new arrivals" is the exact lie the F7/F8/F9 honest-count split exists to
+    prevent. The driver always passes the selector's real composition; an unknown
+    composition raises a KeyError on the label lookup (loud, by design).
+
+    Motion follows the data (Q2 lock): the cover's {count} is the count-hero, so it
+    gets the locked count-up; the inners get the plain staged reveal (no strike —
+    Q1)."""
+    cover = build_count_up(count=count, label=_F7_COVER_COPY[composition], fps=fps)
     inners = [
-        render_inner_html(
-            "reel-frame-f7-arrivals.html",
-            _lead_html(it["name"], it["vendor"], it["event_phrase"]),
-            it["fields"], now,
+        build_inner_reveal(
+            lead_html=_lead_html(it["name"], it["vendor"], it["event_phrase"]),
+            fields=it["fields"], now=now, fps=fps,
         )
         for it in items
     ]
-    return render_carousel(cover_html=cover, inner_htmls=inners, now=now, out_path=out_path, work_dir=work_dir)
+    return render_kinetic_carousel(slides=[cover, *inners], fps=fps, out_path=out_path, work_dir=work_dir)
 
 
 def render_f9_lineage(
     *, coral: str, vendor_count: int, items: list[dict], now: datetime,
     out_path: str | Path, work_dir: str | Path | None = None,
+    fps: int = video.DATA_CARD_MOTION.fps,
 ) -> Path:
-    """F9 lineage spotlight carousel: a stat-only cover ("{coral} — carried at {n}
-    vendors right now.", the dash a near-black PROSE dash, not a forest field separator) +
-    one inner per carrying vendor. Each item: {name, vendor, fields} (event is
-    'listed'). Cover copy per the register lock (see f9_cover_stat_html)."""
-    cover = render_cover_html("reel-frame-f9-lineage-cover.html", f9_cover_stat_html(coral, vendor_count))
+    """F9 lineage spotlight kinetic carousel (CTK-173): a plain-staged-reveal COVER
+    ("{coral} — carried at {n} vendors right now.", the dash a near-black PROSE dash,
+    not a forest field separator) + one plain-reveal INNER per carrying vendor,
+    concatenated into one reel. Each item: {name, vendor, fields} (event is
+    'listed'). Cover copy + the "carried at N" lock per the register (see
+    f9_cover_stat_html).
+
+    Motion follows the data (Q2 lock): the F9 hero is the carry-spread, not a count,
+    so the cover gets a plain staged reveal — count-up is reserved for the
+    count-hero F7 cover."""
+    cover = build_f9_cover_reveal(coral=coral, vendor_count=vendor_count, fps=fps)
     inners = [
-        render_inner_html(
-            "reel-frame-f9-lineage.html",
-            _lead_html(it["name"], it["vendor"], "listed"),
-            it["fields"], now,
+        build_inner_reveal(
+            lead_html=_lead_html(it["name"], it["vendor"], "listed"),
+            fields=it["fields"], now=now, fps=fps,
         )
         for it in items
     ]
-    return render_carousel(cover_html=cover, inner_htmls=inners, now=now, out_path=out_path, work_dir=work_dir)
+    return render_kinetic_carousel(slides=[cover, *inners], fps=fps, out_path=out_path, work_dir=work_dir)
 
 
 # Count-up kinetic card timing (CTK-164 PB-2 sample) — branding-guide §"IG
@@ -297,6 +328,27 @@ def count_up_values(
     return out
 
 
+def build_count_up(
+    *,
+    count: int,
+    label: str = "new arrivals this week.",
+    fps: int = video.DATA_CARD_MOTION.fps,
+) -> tuple[str, int]:
+    """Assemble the count-up card HTML + its total frame count. The per-frame value
+    sequence is count_up_values (pure + unit-asserted; the locked ease-out quad),
+    injected as a frame-indexed array the template plays back by seek. Returned
+    separately from the render (mirrors build_f8_reveal) so the kinetic carousel
+    orchestrator can rasterize the cover the same way it rasterizes the inners and
+    concat them into one reel."""
+    values = count_up_values(count, fps=fps)
+    card_html = _fill(
+        "reel-frame-count-up.html",
+        LABEL=_esc(label),
+        VALUES=json.dumps(values),
+    )
+    return card_html, len(values)
+
+
 def render_count_up(
     *,
     count: int,
@@ -324,13 +376,8 @@ def render_count_up(
     work_dir = Path(work_dir) if work_dir else out_path.parent
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    values = count_up_values(count, fps=fps)
-    card_html = _fill(
-        "reel-frame-count-up.html",
-        LABEL=_esc(label),
-        VALUES=json.dumps(values),
-    )
-    frames = rasterize.rasterize_sequence(card_html, len(values), work_dir / f"{out_path.stem}-frames")
+    card_html, total = build_count_up(count=count, label=label, fps=fps)
+    frames = rasterize.rasterize_sequence(card_html, total, work_dir / f"{out_path.stem}-frames")
     video.render_sequence(frames, out_path, fps=fps)
     return out_path
 
@@ -463,4 +510,132 @@ def render_f8_superlative(
     card_html = render_f8_card_html(name=name, pct=pct, fields=fields, now=now)
     rasterize.rasterize_html(card_html, png_path)
     video.render_kenburns(png_path, out_path, motion_spec=video.DATA_CARD_MOTION)
+    return out_path
+
+
+# ---------------------------------------------------------------------------
+# CTK-173 — F7/F9 kinetic carousel: a count-up / plain-reveal COVER + plain-reveal
+# INNERS, concatenated into one reel. The inner reveal is the CTK-172 F8 reveal
+# timeline MINUS the strike beat (Q1 lock 2026-06-19: F7/F9 heroes are the arrival
+# event / carry-spread, not a price move — no strike-draw). Every beat duration
+# below is lifted VERBATIM from the locked REVEAL_TIMELINE_SEC palette (no new timing
+# minted): the 0.6 headline beat, the 0.4 reveal beats, the 0.4 gap, the 0.2 gap2,
+# the 0.3 settle, the 1.5 hold. ease-out cubic, opacity/clip only (canon L196/L198).
+# ---------------------------------------------------------------------------
+
+# F7/F9 inner plain-reveal: lead -> Price -> forest em-dash draw L->R -> Listed.
+INNER_REVEAL_TIMELINE_SEC = [
+    ("lead", 0.6),     # the arrival/listed lead line plain-reveals (the hero)
+    ("gap", 0.4),
+    ("price", 0.4),    # "Price." label + value reveal
+    ("gap2", 0.2),
+    ("sep", 0.3),      # the forest em-dash draws L->R
+    ("listed", 0.4),   # "Listed." label + value reveal
+    ("settle", 0.3),
+]
+INNER_REVEAL_HOLD_SEC = 1.5
+
+# F9 cover plain-staged-reveal: name -> "carried at N vendors" -> "right now."
+COVER_REVEAL_TIMELINE_SEC = [
+    ("seg1", 0.6),
+    ("gap", 0.4),
+    ("seg2", 0.4),
+    ("gap2", 0.2),
+    ("seg3", 0.4),
+    ("settle", 0.3),
+]
+COVER_REVEAL_HOLD_SEC = 1.5
+
+
+def _lay_reveal(timeline_sec: list[tuple[str, float]], hold_sec: float, fps: int) -> tuple[dict, int]:
+    """Lay a [(beat, seconds), ...] reveal timeline into {beat: [start, end]} frame
+    windows + the total frame count (build + a motionless hold). Beats named 'gap*'
+    or 'settle' are motionless pauses — they advance the clock without a window (no
+    JS reveal target). Generic mirror of _reveal_schedule (the F8 path); the F8
+    schedule stays its own function so the locked F8 timeline is never touched."""
+    # keep cursor math in sync with _reveal_schedule (intentional dup — the split
+    # protects the locked F8 timeline; a future off-by-one fix must touch BOTH).
+    schedule: dict = {}
+    cursor = 0
+    for name, seconds in timeline_sec:
+        frames = _frame_count(seconds, fps)
+        if not (name.startswith("gap") or name == "settle"):
+            schedule[name] = [cursor, cursor + frames]
+        cursor += frames
+    total = cursor + _frame_count(hold_sec, fps)
+    return schedule, total
+
+
+def build_inner_reveal(
+    *,
+    lead_html: str,
+    fields: list[dict],
+    now: datetime,
+    template_name: str = "reel-frame-inner-reveal.html",
+    fps: int = video.DATA_CARD_MOTION.fps,
+) -> tuple[str, int]:
+    """Assemble an F7/F9 inner plain-reveal card HTML + its total frame count. The
+    .row is the UNCHANGED format_data_row_html output (the same adapter the static
+    inner injects), so the held end-frame's row text == data_row.format_data_row
+    byte-for-byte by construction — the animation only reveals it, never re-formats
+    it (INV-01). Returned separately from the render so the parity test can drive
+    seekTo(total-1) in a browser and assert the held-frame row text directly."""
+    schedule, total = _lay_reveal(INNER_REVEAL_TIMELINE_SEC, INNER_REVEAL_HOLD_SEC, fps)
+    card_html = _fill(
+        template_name,
+        LEAD_HTML=lead_html,
+        DATA_ROW=format_data_row_html(fields, now),
+        SCHEDULE=json.dumps(schedule),
+    )
+    return card_html, total
+
+
+def build_f9_cover_reveal(
+    *,
+    coral: str,
+    vendor_count: int,
+    fps: int = video.DATA_CARD_MOTION.fps,
+) -> tuple[str, int]:
+    """Assemble the F9 cover plain-staged-reveal HTML + its total frame count. The
+    .stat is the UNCHANGED f9_cover_stat_html output (the locked 'carried at N'
+    prose in presentation-only .seg spans), so the held end-frame strips to the
+    byte-identical locked cover string — the stage is opacity-only, never a copy
+    change."""
+    schedule, total = _lay_reveal(COVER_REVEAL_TIMELINE_SEC, COVER_REVEAL_HOLD_SEC, fps)
+    card_html = _fill(
+        "reel-frame-f9-lineage-cover-reveal.html",
+        STAT_HTML=f9_cover_stat_html(coral, vendor_count),
+        SCHEDULE=json.dumps(schedule),
+    )
+    return card_html, total
+
+
+def render_kinetic_carousel(
+    *,
+    slides: list[tuple[str, int]],
+    fps: int = video.DATA_CARD_MOTION.fps,
+    out_path: str | Path,
+    work_dir: str | Path | None = None,
+) -> Path:
+    """Render an ordered list of (card_html, total_frames) slides — cover FIRST, then
+    inners in order — into one reel. Each slide is captured as a seek-driven PNG
+    sequence (rasterize_sequence) and encoded via render_sequence; every clip routes
+    through render_sequence's shared _encode_args, so concat_clips stream-copies them
+    into one reel with no re-encode (INV-06 PB-6: the count-up / plain-reveal cover
+    and the plain-reveal inners satisfy the demuxer precondition by construction —
+    same profile/level/gop/dims/fps). Imports the shared video.py primitives, never
+    forks. Returns out_path; per-slide PNG sequences + clips land in work_dir for the
+    11pm debug."""
+    out_path = Path(out_path)
+    work_dir = Path(work_dir) if work_dir else out_path.parent
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    clips: list[Path] = []
+    for idx, (card_html, total) in enumerate(slides):
+        label = "cover" if idx == 0 else f"inner{idx - 1}"
+        frames = rasterize.rasterize_sequence(card_html, total, work_dir / f"{out_path.stem}-{label}-frames")
+        clip = work_dir / f"{out_path.stem}-{label}.mp4"
+        video.render_sequence(frames, clip, fps=fps)
+        clips.append(clip)
+    video.concat_clips(clips, out_path)
     return out_path

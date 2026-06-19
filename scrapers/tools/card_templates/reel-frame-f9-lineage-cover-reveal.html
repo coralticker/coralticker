@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CTK-173 — F9 lineage cover plain-staged-reveal reel frame — 9:16 production reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<!-- The animated sibling of reel-frame-f9-lineage-cover.html. The
+     wordmark/card/body/stat CSS are the SAME static F9 cover; the held end-frame IS
+     that cover. seekTo(i) stages the locked prose in three plain fades (canon Q2
+     2026-06-19: F9 cover gets a PLAIN STAGED REVEAL, count-up is reserved for the
+     count-hero F7 cover — "motion follows the data"). It only toggles opacity; the
+     copy is byte-identical to f9_cover_stat_html, so the "carried at N" lock (CTK-161
+     retro #4 — a stock claim, not a buy claim) is untouched. The .seg wrappers are
+     presentation-only: get_text strips them away and equals the locked cover string. -->
+<style>
+  :root{--cream:#F5F1EA;--ink:#1A1A1A;--forest:#1B5E20;}
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--cream);}
+
+  /* 9:16 frame: the 1080x1080 square sits centered, 420px cream above + below */
+  .frame{width:1080px;height:1920px;background:var(--cream);position:relative;overflow:hidden;}
+  .card{position:absolute;left:0;top:420px;width:1080px;height:1080px;background:var(--cream);
+        padding:104px;display:flex;flex-direction:column;}
+
+  .wordmark{font-family:'IBM Plex Sans',sans-serif;font-size:40px;font-weight:400;letter-spacing:-.01em;line-height:1;}
+  .wordmark .c{font-weight:700;}
+  .wordmark .dot{color:var(--forest);font-weight:700;}
+
+  .body{flex:1;display:flex;flex-direction:column;justify-content:center;}
+
+  .stat{font-family:'IBM Plex Sans',sans-serif;font-weight:400;font-size:80px;line-height:1.14;letter-spacing:-.02em;max-width:880px;margin:0;}
+  .stat .name,.stat .num{font-weight:700;}
+
+  /* --- Animation layer (the only departure from the static F9 cover CSS) --- */
+  /* The three prose segments start hidden and plain-fade in reading order (ease-out,
+     canon L198). Every segment holds its final layout from frame 0 (opacity-only), so
+     the prose never reflows; the dash stays a near-black PROSE dash, not a forest row
+     separator. The wordmark is NOT a reveal target — it stays visible from frame 0. */
+  .stat .seg{opacity:0;}
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="card">
+      <div class="wordmark"><span class="c">coral</span>ticker<span class="dot">.</span></div>
+      <div class="body">
+        <p class="stat">{{STAT_HTML}}</p>
+      </div>
+    </div>
+  </div>
+  <script>
+    // SCHEDULE is the Python-authored frame windows (one per prose segment), each
+    // [start, end] in frames. seekTo(i) plain-fades seg1 ("{coral}") -> seg2
+    // ("— carried at N vendors") -> seg3 ("right now."). Opacity only — the textContent
+    // is frame-invariant and equals the locked cover string at every frame.
+    var S = {{SCHEDULE}};
+    var stat = document.querySelector('.stat');
+    var s1 = stat.querySelector('.seg1');
+    var s2 = stat.querySelector('.seg2');
+    var s3 = stat.querySelector('.seg3');
+
+    function ease(p){ return p <= 0 ? 0 : (p >= 1 ? 1 : 1 - Math.pow(1 - p, 3)); }
+
+    window.seekTo = function (i) {
+      function prog(w){ if (!w) return 0; if (i <= w[0]) return 0; if (i >= w[1]) return 1; return ease((i - w[0]) / (w[1] - w[0])); }
+      if (s1) s1.style.opacity = prog(S.seg1);
+      if (s2) s2.style.opacity = prog(S.seg2);
+      if (s3) s3.style.opacity = prog(S.seg3);
+    };
+    window.seekTo(0);   // frame 0: only the wordmark + forest dot are visible
+  </script>
+</body>
+</html>
