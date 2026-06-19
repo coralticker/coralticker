@@ -681,6 +681,21 @@ def _card_item(row: dict, *, event_phrase: str | None = None) -> dict:
     return item
 
 
+def count_new_arrivals(conn, window_hours: int = 168) -> int:
+    """Live count of just-listed arrivals over the window (default a week) — the
+    count-up card's headline N (CTK-164 PB-2; branding-guide §"IG data-card motion"
+    + the F7-cover "{count} new arrivals this week." copy). The FULL uncapped
+    lead-event population (row_limit NULL, so a busy week is never truncated),
+    just-listed only — the same population basis as select_f7_arrivals' true_count,
+    narrowed to arrivals to match the "new arrivals this week." copy exactly."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) AS n FROM get_listing_lead_event(%s, %s, %s, %s)",
+            (None, window_hours, [_F7_ARRIVAL_EVENT], None),
+        )
+        return cur.fetchone()["n"]
+
+
 def select_f7_arrivals(conn, window_hours: int = 168, sample_cap: int = 9):
     """F7 arrivals/back-in-stock carousel selector. Returns
     (true_count, composition, items):

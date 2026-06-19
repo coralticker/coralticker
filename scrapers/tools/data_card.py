@@ -25,6 +25,7 @@ on a /designer revision.
 from __future__ import annotations
 
 import html
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -236,6 +237,207 @@ def render_f9_lineage(
         for it in items
     ]
     return render_carousel(cover_html=cover, inner_htmls=inners, now=now, out_path=out_path, work_dir=work_dir)
+
+
+# Count-up kinetic card timing (CTK-164 PB-2 sample) — branding-guide §"IG
+# data-card motion" (2026-06-18). Structure locked (wordmark static, only digits
+# move, near-black, build+hold cycle, IG loops). Curve LOCKED 2026-06-18 as a pure
+# ease-out QUAD (Jon: "yes perfect. lock it and don't unlock it") — ONE curve, no
+# branch, no compare variant. Do NOT reopen, re-render, revert to ease-out cubic
+# (rejected as unreadable), or add compare variants without an explicit loud reopen
+# flag from Jon first (lane process note 2026-06-18).
+#
+# The lock: a pure ease-out QUAD over the FULL build — the curve frozen in the
+# 5:41pm count-up-sample-loop4.mp4 Jon picked for its deceleration (0 -> 237 -> 426 ->
+# 568 -> 663 -> 710 -> 716 at 0.4s steps; +237/+189/+142/+95/+47/+6 — continuously
+# decelerating the whole climb, gentle landing). Quad eases from frame 1, so the
+# slowing is felt throughout (the rejected linear-tail experiment held a flat climb
+# until a late knee and read as uniform — that path is gone, not branched). build
+# 2.2s, hold 1.5s. The curve lives in count_up_values (pure + unit-asserted), not
+# the template.
+COUNT_UP_BUILD_SEC = 2.2
+COUNT_UP_HOLD_SEC = 1.5
+
+
+def _frame_count(seconds: float, fps: int) -> int:
+    """Frames for a duration at fps, floored at 1 (mirrors MotionSpec.total_frames)."""
+    return max(1, round(seconds * fps))
+
+
+def count_up_values(
+    count: int,
+    *,
+    fps: int = video.DATA_CARD_MOTION.fps,
+    build_sec: float = COUNT_UP_BUILD_SEC,
+    hold_sec: float = COUNT_UP_HOLD_SEC,
+) -> list[int]:
+    """The pure per-frame integer sequence the count-up card plays back: an ease-out
+    QUAD over the FULL build (frac = 1 - (1 - p)^2, p = frame/build) — continuously
+    decelerating from the first frame so the slowing is felt the whole climb and lands
+    gently on count (the 5:41pm loop4 curve Jon picked). The last build frame is FORCED
+    to exactly count (round, not floor), then a motionless hold at count.
+
+    Guarantees (unit-asserted): values[0] == 0, values[-1] == count, monotonic
+    non-decreasing, per-frame increments non-increasing (continuous deceleration),
+    len == build + hold frames. Seek-driven and pure — the template indexes this array
+    by frame, so the curve is tuned + tested here, never in JS."""
+    n = int(count)
+    build = _frame_count(build_sec, fps)
+    hold = _frame_count(hold_sec, fps)
+
+    out: list[int] = []
+    for i in range(build):
+        if i >= build - 1:
+            frac = 1.0                                   # force terminal climb frame = exactly N
+        else:
+            p = i / build
+            frac = 1 - (1 - p) ** 2                       # ease-out quad over the full build
+        out.append(round(frac * n))
+    out.extend([n] * hold)                               # motionless hold at N
+    return out
+
+
+def render_count_up(
+    *,
+    count: int,
+    label: str = "new arrivals this week.",
+    fps: int = video.DATA_CARD_MOTION.fps,
+    out_path: str | Path,
+    work_dir: str | Path | None = None,
+) -> Path:
+    """The kinetic count-up card (single mp4): the headline number climbs 0 -> count
+    on a pure ease-out quad (continuously decelerating, gentle landing — count_up_values),
+    then holds ~1.5s, looping. The `coralticker.` wordmark + forest dot are static
+    from frame 0 (the brand anchor never animates); the label is static; only the
+    digits move, bold near-black — branding-guide §"IG data-card motion".
+
+    This is a CONTENT animation, not a camera move: the per-frame value sequence is
+    authored in count_up_values (pure, unit-asserted) and injected as a frame-indexed
+    array, captured as a PNG sequence by rasterize_sequence and encoded by
+    render_sequence (the image2 path). No MotionSpec, no DATA_CARD_MOTION camera zoom
+    (canon L198). Returns out_path; per-frame PNGs land in work_dir/<stem>-frames for
+    the 11pm debug.
+
+    INV-01 does NOT bind: the count-up card renders no em-dash listing row (it is the
+    aggregate warming card, free copy outside INV-01)."""
+    out_path = Path(out_path)
+    work_dir = Path(work_dir) if work_dir else out_path.parent
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    values = count_up_values(count, fps=fps)
+    card_html = _fill(
+        "reel-frame-count-up.html",
+        LABEL=_esc(label),
+        VALUES=json.dumps(values),
+    )
+    frames = rasterize.rasterize_sequence(card_html, len(values), work_dir / f"{out_path.stem}-frames")
+    video.render_sequence(frames, out_path, fps=fps)
+    return out_path
+
+
+# Reveal + strike-draw F8 drill-in timing (CTK-164 reveal sample-gate) — PROVISIONAL
+# targets per branding-guide §"IG data-card motion" L196 (reveal) + L197 (strike-draw)
+# + L199 (drill-in card ~5s). Each entry is (beat, seconds); `gap*`/`settle` are
+# motionless pauses between reveals (no key in the schedule). Laid out sequentially
+# by _reveal_schedule. The reveal/strike gate is marked UNFIRED in canon — these
+# carry Jon's eyeball; flag for /brand-manager to record the locked values.
+REVEAL_TIMELINE_SEC = [
+    ("headline", 0.6),    # headline reveals (plain fade — the % is a settled fact)
+    ("gap", 0.4),
+    ("price_in", 0.4),    # "Price." label + old price fade in (reading-order first)
+    ("old_hold", 0.85),   # un-struck LIVE-price beat (v3: 0.45 -> 0.85). The old price
+                          #   sits un-struck + still long enough that slower readers land
+                          #   on the live price BEFORE the strike fires, so the strike has
+                          #   an un-struck beat to contrast against (else it reads as
+                          #   "already struck"). The loop covers the slowest readers.
+    ("strike", 0.55),     # SLOWED 0.4 -> 0.55: the line visibly travels L->R
+    ("new_price", 0.4),   # new price (bold forest) reveals after the strike
+    ("gap2", 0.2),
+    ("sep", 0.3),         # forest em-dash draws width 0->100% from the left
+    ("listed", 0.4),      # "Listed." label + value reveal
+    ("settle", 0.3),
+]
+REVEAL_HOLD_SEC = 1.5     # motionless reading beat before the loop (total ~5.5s)
+
+# Beat name -> the JS schedule key seekTo reads (only the animated beats; the
+# gap/settle pauses advance the clock without an entry).
+_REVEAL_BEAT_KEYS = {
+    "headline": "hl", "price_in": "price", "strike": "strike",
+    "new_price": "newp", "sep": "sep", "listed": "listed",
+}
+
+
+def _reveal_schedule(fps: int) -> tuple[dict, int]:
+    """Lay REVEAL_TIMELINE_SEC out into frame windows for the seekTo schedule, plus
+    the total frame count (build + hold). Each animated beat becomes a [start, end]
+    frame window keyed per _REVEAL_BEAT_KEYS; gaps/holds/settle advance the clock only."""
+    schedule: dict = {}
+    cursor = 0
+    for name, seconds in REVEAL_TIMELINE_SEC:
+        frames = _frame_count(seconds, fps)
+        if name in _REVEAL_BEAT_KEYS:
+            schedule[_REVEAL_BEAT_KEYS[name]] = [cursor, cursor + frames]
+        cursor += frames
+    total = cursor + _frame_count(REVEAL_HOLD_SEC, fps)
+    return schedule, total
+
+
+def build_f8_reveal(
+    *,
+    name: str,
+    pct: int,
+    fields: list[dict],
+    now: datetime,
+    fps: int = video.DATA_CARD_MOTION.fps,
+) -> tuple[str, int]:
+    """Assemble the F8 reveal/strike-draw card HTML + its total frame count. The
+    .row is the UNCHANGED format_data_row_html output (the same call render_f8_card_html
+    makes), so the held end-frame's row text == data_row.format_data_row byte-for-byte
+    by construction — the animation only reveals it, never re-formats it. Returned
+    separately from the render so the parity test can drive seekTo(total-1) in a
+    browser and assert the held-frame row text directly."""
+    schedule, total = _reveal_schedule(fps)
+    card_html = _fill(
+        "reel-frame-f8-reveal.html",
+        STAT_NAME=_esc(name),
+        STAT_PCT=str(int(pct)),
+        DATA_ROW=format_data_row_html(fields, now),
+        SCHEDULE=json.dumps(schedule),
+    )
+    return card_html, total
+
+
+def render_f8_reveal(
+    *,
+    name: str,
+    pct: int,
+    fields: list[dict],
+    now: datetime,
+    out_path: str | Path,
+    fps: int = video.DATA_CARD_MOTION.fps,
+    work_dir: str | Path | None = None,
+) -> Path:
+    """F8 superlative drill-in with the reveal + strike-draw motion (CTK-164 reveal
+    sample): headline PLAIN-reveals (the % is a settled fact — the count-up variant
+    was dropped, Jon 2026-06-18), then the em-dash row builds in reading order — the
+    Price field reveals via the strike-draw (old near-black -> un-struck hold ->
+    struck -> new bold-forest), the forest em-dash draws L->R, the Listed field
+    reveals — then a ~1.5s hold, looping. Forest only on the em-dash + the new price
+    (no budget expansion); ease-out only. Built on the locked count-up engine
+    (rasterize_sequence + render_sequence); content animation is the PNG sequence,
+    never an ffmpeg filter (INV-06 PB-2).
+
+    INV-01 binds here (unlike the count-up): the held end-frame's row IS
+    format_data_row_html output, parity-pinned to data_row.format_data_row. Returns
+    out_path; per-frame PNGs land in work_dir/<stem>-frames for the 11pm debug."""
+    out_path = Path(out_path)
+    work_dir = Path(work_dir) if work_dir else out_path.parent
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    card_html, total = build_f8_reveal(name=name, pct=pct, fields=fields, now=now, fps=fps)
+    frames = rasterize.rasterize_sequence(card_html, total, work_dir / f"{out_path.stem}-frames")
+    video.render_sequence(frames, out_path, fps=fps)
+    return out_path
 
 
 def render_f8_superlative(

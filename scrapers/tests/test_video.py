@@ -55,6 +55,25 @@ def test_ffmpeg_args_shape():
     assert "+faststart" in args
 
 
+def test_encode_args_pins_profile_level_gop():
+    # The cross-producer concat precondition: profile/level/GOP are pinned (not
+    # libx264-default-derived) so the zoompan path and the image2 path emit
+    # byte-identical SPS/PPS. -g tracks fps (one keyframe/sec).
+    args = video._encode_args("out.mp4", 30)
+    assert args[args.index("-profile:v") + 1] == "high"
+    assert args[args.index("-level") + 1] == "4.0"
+    assert args[args.index("-g") + 1] == "30"
+    assert args[-1] == "out.mp4"
+
+
+def test_kenburns_and_sequence_share_encode_tail():
+    # Both producers route through _encode_args — the same OUTPUT tail (everything
+    # from -c:v onward) guarantees concat-compatible clips.
+    tail = video._encode_args("x.mp4", 30)
+    kb = video.build_ffmpeg_args("f.png", "x.mp4", MotionSpec(fps=30))
+    assert kb[-len(tail):] == tail
+
+
 # --- pure-ish: 9:16 compose (Pillow, no ffmpeg) -----------------------------
 
 
@@ -129,3 +148,63 @@ def test_concat_clips_empty_raises():
     import pytest
     with pytest.raises(ValueError):
         video.concat_clips([], "out.mp4")
+
+
+# --- PB-2: render_sequence (image2 demuxer) + cross-producer concat -----------
+
+
+def _frame_seq(tmp_path, n: int, fps: int) -> list:
+    """n distinct PNG frames at REEL dims (a faux content animation — the colour
+    shifts each frame) named arbitrarily, to prove render_sequence does not depend
+    on the caller's frame naming."""
+    paths = []
+    for i in range(n):
+        p = tmp_path / f"anim-{i}.png"
+        Image.new("RGB", (video.REEL_W, video.REEL_H), (20 + i * 3, 94, 32)).save(p, "PNG")
+        paths.append(p)
+    return paths
+
+
+def test_render_sequence_produces_valid_mp4(tmp_path):
+    fps = 30
+    frames = _frame_seq(tmp_path, n=fps, fps=fps)   # 30 frames @ 30fps -> ~1s
+    out_path = tmp_path / "seq.mp4"
+
+    result = video.render_sequence(frames, out_path, fps=fps)
+
+    assert result.exists() and result.stat().st_size > 0
+    duration = video.probe_duration(out_path)
+    assert 0.8 <= duration <= 1.2, f"expected ~1s, got {duration}s"
+
+
+def test_render_sequence_empty_raises():
+    import pytest
+    with pytest.raises(ValueError):
+        video.render_sequence([], "out.mp4")
+
+
+def test_cross_producer_concat_joins_clean(tmp_path):
+    # THE PB-2/PB-5 crux that did not exist before: a render_sequence clip (image2
+    # input) concatenated with a render_kenburns clip (zoompan input). -c copy only
+    # works because _encode_args pins SPS/PPS identically across both paths; this
+    # test fails LOUD if a future edit diverges the two tails.
+    fps = video.DATA_CARD_MOTION.fps
+
+    seq_frames = _frame_seq(tmp_path, n=fps, fps=fps)   # ~1s sequence clip
+    seq_clip = tmp_path / "seq.mp4"
+    video.render_sequence(seq_frames, seq_clip, fps=fps)
+
+    kb_frame = tmp_path / "kb.png"
+    Image.new("RGB", (video.REEL_W, video.REEL_H), (245, 241, 234)).save(kb_frame, "PNG")
+    kb_clip = tmp_path / "kb.mp4"
+    short_kb = MotionSpec(duration_sec=1.0, fps=fps,
+                          zoom_start=video.DATA_CARD_MOTION.zoom_start,
+                          zoom_end=video.DATA_CARD_MOTION.zoom_end)
+    video.render_kenburns(kb_frame, kb_clip, motion_spec=short_kb)
+
+    out_path = tmp_path / "joined.mp4"
+    result = video.concat_clips([seq_clip, kb_clip], out_path)
+
+    assert result.exists() and result.stat().st_size > 0
+    duration = video.probe_duration(out_path)
+    assert 1.7 <= duration <= 2.3, f"expected ~2s cross-producer join, got {duration}s"
