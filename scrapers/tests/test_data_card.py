@@ -272,29 +272,96 @@ def test_f9_cover_reveal_keeps_locked_prose_by_construction():
     assert all(stat.find("span", class_=f"seg{n}") is not None for n in (1, 2, 3))
 
 
+def test_f7_f9_slides_cap_inners_at_3_and_append_closer():
+    # CTK-173 follow-on: the carousel is cover -> <= 3 inner drill-ins -> closer.
+    # A 5-item sample truncates to 3 inners; total slides = 1 cover + 3 + 1 closer = 5.
+    from scrapers.tools.data_card import build_f7_slides, build_f9_slides, INNER_SLIDE_CAP
+    assert INNER_SLIDE_CAP == 3
+    fields = build_card_fields(price_value="$250.00", listed_at="2026-06-16T12:00:00Z")
+    f7_items = [{"name": f"Coral {i}", "vendor": "WWC", "event_phrase": "just listed",
+                 "fields": fields} for i in range(5)]
+    f7 = build_f7_slides(count=23, composition="all-arrivals", items=f7_items, now=NOW,
+                         closer_line="Full feed at coralticker.com.")
+    assert len(f7) == 5, "F7 should be cover + 3 capped inners + closer"
+    f9_items = [{"name": f"Coral {i}", "vendor": "TSA", "fields": fields} for i in range(5)]
+    f9 = build_f9_slides(coral="WWC Sunkist Bounce", vendor_count=6, items=f9_items, now=NOW,
+                         closer_line="Full feed at coralticker.com.")
+    assert len(f9) == 5, "F9 should be cover + 3 capped inners + closer"
+    # Each slide is (html, total_frames); every total > 0.
+    assert all(isinstance(h, str) and t > 0 for h, t in f7 + f9)
+    # Fewer than the cap passes through unchanged (2 items -> cover + 2 + closer = 4).
+    assert len(build_f7_slides(count=2, composition="all-arrivals", items=f7_items[:2],
+                               now=NOW, closer_line="x")) == 4
+
+
+def test_closer_card_is_static_with_legible_line():
+    # The closer card: the on-image line strips to the exact copy (the .url span is
+    # presentation-only), the coralticker.com domain is bolded, and the card carries
+    # no count-up / reveal schedule (static — a no-op seekTo).
+    from scrapers.tools.data_card import build_closer
+    html_doc, total = build_closer(line="Full feed at coralticker.com.")
+    assert total > 0
+    assert "{{" not in html_doc and "}}" not in html_doc
+    soup = BeautifulSoup(html_doc, "html.parser")
+    closer = soup.find("p", class_="closer")
+    assert closer is not None and closer.get_text() == "Full feed at coralticker.com."
+    assert soup.find("span", class_="url").get_text() == "coralticker.com"   # domain emphasized
+    # No data row, no VALUES/SCHEDULE token (static — not a count-up or reveal card).
+    assert soup.find("p", class_="row") is None
+    assert "VALUES" not in html_doc and "SCHEDULE" not in html_doc
+    # "link in bio" is caption-only canon — never baked on the card.
+    assert "link in bio" not in html_doc.lower()
+
+
 def test_count_up_values_guarantees():
     # The count-up value sequence is pure + seek-driven: frame 0 == 0, terminal ==
     # exactly N (round, not floor), monotonic non-decreasing, length == build + hold.
-    from scrapers.tools.data_card import count_up_values, COUNT_UP_BUILD_SEC, COUNT_UP_HOLD_SEC
+    from scrapers.tools.data_card import (
+        count_up_values, _ease_out_power, COUNT_UP_BUILD_SEC, COUNT_UP_HOLD_SEC,
+    )
     fps = 30
     build = max(1, round(COUNT_UP_BUILD_SEC * fps))
     expected_len = build + max(1, round(COUNT_UP_HOLD_SEC * fps))
-    for n in (0, 1, 716, 1000):
+    for n in (0, 1, 12, 23, 80, 716, 1000):
         vals = count_up_values(n, fps=fps)
         assert vals[0] == 0, n
         assert vals[-1] == n, n                                # exact terminal, never floored short
         assert len(vals) == expected_len, n
         assert all(b >= a for a, b in zip(vals, vals[1:])), n   # monotonic non-decreasing
         assert max(vals) == n                                  # never overshoots N
-    # Ease-out quad over the full build: the climb DECELERATES continuously — fast
-    # start, gentle landing (what reads as "slowing the whole way" vs a flat ramp).
-    # Per-frame steps trend down; allow +1 frame-to-frame integer-rounding noise, and
-    # assert the early third is clearly faster than the late third.
+    # Ease-out over the full build: the climb DECELERATES continuously — fast start,
+    # gentle landing. Per-frame steps trend down; allow +1 frame-to-frame integer-
+    # rounding noise, and assert the early third is clearly faster than the late third.
     vals = count_up_values(716, fps=fps)
     steps = [vals[i + 1] - vals[i] for i in range(build - 1)]
     assert all(steps[i] >= steps[i + 1] - 1 for i in range(len(steps) - 1)), "climb has a real speed-up"
     third = max(1, len(steps) // 3)
     assert sum(steps[:third]) > 2 * sum(steps[-third:]), "climb does not clearly decelerate early->late"
+
+    # CTK-173 re-lock: the ease-out power is a VALLEY in n — pure quad (m=2) only right
+    # around n=716, stronger on both wings (left rides dwell past the +1 floor; right
+    # rides a more dramatic sweep). Floor + ceilings pinned:
+    assert _ease_out_power(716) == 2.0                                    # valley floor (perfect)
+    assert _ease_out_power(12) == 4.0 and _ease_out_power(20) == 4.0      # left ceiling -> quart
+    assert _ease_out_power(1500) == 3.0 and _ease_out_power(3000) == 3.0  # right ceiling -> m=3
+    # 716 is the strict minimum — both wings sit above it.
+    assert _ease_out_power(250) > 2.0 and _ease_out_power(500) > 2.0      # left wing (hundreds 'ext')
+    assert _ease_out_power(1000) > 2.0                                    # right wing (thousands)
+    # Left wing decreasing toward the floor; right wing increasing away from it.
+    assert _ease_out_power(40) > _ease_out_power(80) > _ease_out_power(500) > _ease_out_power(716)
+    assert _ease_out_power(716) < _ease_out_power(1000) < _ease_out_power(1500)
+    # The strengthening is observable: a small count reaches its terminal value (and so
+    # holds the final number) strictly EARLIER than a pure-quad would — the perceptible
+    # ritardando into the landing. Compare adaptive(23) to a quad reference.
+    def _quad_reach(n):
+        for i in range(build):
+            frac = 1.0 if i >= build - 1 else 1 - (1 - i / build) ** 2
+            if round(frac * n) == n:
+                return i
+        return build - 1
+    adaptive_23 = count_up_values(23, fps=fps)[:build]
+    reach_adaptive = next(i for i, v in enumerate(adaptive_23) if v == 23)
+    assert reach_adaptive < _quad_reach(23), "small-n curve does not ease harder than quad"
 
 
 def _run_all() -> int:

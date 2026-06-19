@@ -214,15 +214,15 @@ def f9_cover_stat_html(coral: str, vendor_count: int) -> str:
 
 def render_f7_arrivals(
     *, count: int, composition: str, items: list[dict], now: datetime,
+    closer_line: str,
     out_path: str | Path, work_dir: str | Path | None = None,
     fps: int = video.DATA_CARD_MOTION.fps,
 ) -> Path:
-    """F7 arrivals/back-in-stock kinetic carousel (CTK-173): a count-up COVER
-    ("{count}" climbs to the true full-window count, label composition-picked —
-    "new arrivals / back in stock / drops this week.") + one plain-reveal INNER per
-    item, concatenated into one reel. Each item: {name, vendor, event_phrase,
-    fields}. composition (all-arrivals / all-restocks / mixed) comes from
-    select_f7_arrivals, derived over the full window population.
+    """F7 arrivals/back-in-stock kinetic carousel (CTK-173): a count-up COVER ->
+    up to INNER_SLIDE_CAP plain-reveal INNER drill-ins -> a static CLOSER card,
+    concatenated into one reel (slide list per build_f7_slides). Each item: {name,
+    vendor, event_phrase, fields}. composition (all-arrivals / all-restocks / mixed)
+    comes from select_f7_arrivals, derived over the full window population.
 
     composition is REQUIRED (no default): the cover label is the honest-claim
     surface, and a missing composition silently mislabelling a restock/mixed cover
@@ -232,62 +232,92 @@ def render_f7_arrivals(
 
     Motion follows the data (Q2 lock): the cover's {count} is the count-hero, so it
     gets the locked count-up; the inners get the plain staged reveal (no strike —
-    Q1)."""
-    cover = build_count_up(count=count, label=_F7_COVER_COPY[composition], fps=fps)
-    inners = [
-        build_inner_reveal(
-            lead_html=_lead_html(it["name"], it["vendor"], it["event_phrase"]),
-            fields=it["fields"], now=now, fps=fps,
-        )
-        for it in items
-    ]
-    return render_kinetic_carousel(slides=[cover, *inners], fps=fps, out_path=out_path, work_dir=work_dir)
+    Q1); the closer is static. closer_line is the confirmed on-image closer copy."""
+    slides = build_f7_slides(
+        count=count, composition=composition, items=items, now=now,
+        closer_line=closer_line, fps=fps,
+    )
+    return render_kinetic_carousel(slides=slides, fps=fps, out_path=out_path, work_dir=work_dir)
 
 
 def render_f9_lineage(
     *, coral: str, vendor_count: int, items: list[dict], now: datetime,
+    closer_line: str,
     out_path: str | Path, work_dir: str | Path | None = None,
     fps: int = video.DATA_CARD_MOTION.fps,
 ) -> Path:
     """F9 lineage spotlight kinetic carousel (CTK-173): a plain-staged-reveal COVER
     ("{coral} — carried at {n} vendors right now.", the dash a near-black PROSE dash,
-    not a forest field separator) + one plain-reveal INNER per carrying vendor,
-    concatenated into one reel. Each item: {name, vendor, fields} (event is
-    'listed'). Cover copy + the "carried at N" lock per the register (see
-    f9_cover_stat_html).
+    not a forest field separator) -> up to INNER_SLIDE_CAP plain-reveal INNER
+    drill-ins -> a static CLOSER card, concatenated into one reel (slide list per
+    build_f9_slides). Each item: {name, vendor, fields} (event is 'listed'). Cover
+    copy + the "carried at N" lock per the register (see f9_cover_stat_html).
 
     Motion follows the data (Q2 lock): the F9 hero is the carry-spread, not a count,
-    so the cover gets a plain staged reveal — count-up is reserved for the
-    count-hero F7 cover."""
-    cover = build_f9_cover_reveal(coral=coral, vendor_count=vendor_count, fps=fps)
-    inners = [
-        build_inner_reveal(
-            lead_html=_lead_html(it["name"], it["vendor"], "listed"),
-            fields=it["fields"], now=now, fps=fps,
-        )
-        for it in items
-    ]
-    return render_kinetic_carousel(slides=[cover, *inners], fps=fps, out_path=out_path, work_dir=work_dir)
+    so the cover gets a plain staged reveal — count-up is reserved for the count-hero
+    F7 cover. closer_line is the confirmed on-image closer copy."""
+    slides = build_f9_slides(
+        coral=coral, vendor_count=vendor_count, items=items, now=now,
+        closer_line=closer_line, fps=fps,
+    )
+    return render_kinetic_carousel(slides=slides, fps=fps, out_path=out_path, work_dir=work_dir)
 
 
 # Count-up kinetic card timing (CTK-164 PB-2 sample) — branding-guide §"IG
-# data-card motion" (2026-06-18). Structure locked (wordmark static, only digits
-# move, near-black, build+hold cycle, IG loops). Curve LOCKED 2026-06-18 as a pure
-# ease-out QUAD (Jon: "yes perfect. lock it and don't unlock it") — ONE curve, no
-# branch, no compare variant. Do NOT reopen, re-render, revert to ease-out cubic
-# (rejected as unreadable), or add compare variants without an explicit loud reopen
-# flag from Jon first (lane process note 2026-06-18).
+# data-card motion". Structure locked (wordmark static, only digits move, near-black,
+# build+hold cycle, IG loops).
 #
-# The lock: a pure ease-out QUAD over the FULL build — the curve frozen in the
-# 5:41pm count-up-sample-loop4.mp4 Jon picked for its deceleration (0 -> 237 -> 426 ->
-# 568 -> 663 -> 710 -> 716 at 0.4s steps; +237/+189/+142/+95/+47/+6 — continuously
-# decelerating the whole climb, gentle landing). Quad eases from frame 1, so the
-# slowing is felt throughout (the rejected linear-tail experiment held a flat climb
-# until a late knee and read as uniform — that path is gone, not branched). build
-# 2.2s, hold 1.5s. The curve lives in count_up_values (pure + unit-asserted), not
-# the template.
+# Curve RE-LOCKED 2026-06-19 (CTK-173) as an n-ADAPTIVE ease-out — supersedes the
+# 2026-06-18 pure-quad lock with Jon's explicit re-open ("yes open because we have a
+# legit reason to open"). Still ONE curve family, no compare variant; do NOT reopen,
+# re-render, or add variants without an explicit loud reopen flag from Jon first.
+#
+# Why adaptive (the legit reason): the quad's deceleration is carried two different
+# ways depending on the count.
+#   - LARGE counts (the original 716 lock sample): decel rides STEP SIZE — +90/frame
+#     early -> +1/frame late. The shrinking jump reads strongly as "flying then
+#     settling". The quad nails this, so large counts keep m=2 (the 716 feel is
+#     preserved byte-for-byte).
+#   - SMALL counts (live F7 weekly arrivals, ~12-40): the step is PINNED at +1 (the
+#     integer floor — it can't jump smaller), so decel can only ride DWELL (frames per
+#     value). The quad's dwell ramp there is too gentle to perceive (4->5->7 frames),
+#     so the count read as linear. A higher ease-out power concentrates the slowdown
+#     into the final values (a perceptible ritardando into the landing).
+# Bumping the power globally is NOT an option: m=3/m=4 at 716 flashes to the final
+# value in ~0.5s then sits (that is the "unreadable" cubic reject — now explained).
+# So m is a VALLEY in n (m(n) in _ease_out_power): m=2 (pure quad) reads ideal only
+# right around n=716, and counts on BOTH sides need a stronger exponent — the left
+# wing eases harder (toward m=4 at n<=20) because the +1 floor leaves only dwell to
+# carry decel; the right wing eases back up (toward m=3 by n>=1500) because the huge
+# sweep absorbs a stronger curve without an early-land. It is a continuous function,
+# so every in-between count interpolates off the two wings — no per-count special-
+# casing. Re-locked from a sample set Jon eyeballed: 12/23/40/80 on the left ramp,
+# 716 at the valley floor (perfect), 500 'ext' (m~2.6) + 3000 'strong' (m=3) on the
+# right. build 2.2s, hold 1.5s. The curve lives in count_up_values (pure + unit-
+# asserted), not the template.
 COUNT_UP_BUILD_SEC = 2.2
 COUNT_UP_HOLD_SEC = 1.5
+
+
+def _ease_out_power(n: int) -> float:
+    """The ease-out exponent for a count of n — a VALLEY around the quad sweet spot
+    (see the lock comment above). m=2 (the locked quad) reads ideal only right around
+    n=716, where the natural step-size deceleration (+22/frame -> +1) is dramatic
+    enough to feel. Counts on EITHER side need a stronger exponent:
+      - BELOW ~716: the step is pinned at the +1 integer floor, so decel can only ride
+        DWELL; ease harder (toward m=4 at n<=20) to concentrate the slowdown into the
+        final values.
+      - ABOVE ~716: the sweep is huge and absorbs a stronger curve without landing
+        early / sitting, so ease back up (toward m=3 by n>=1500) for a more dramatic
+        front-loaded rush.
+    Pure + unit-asserted (boundaries + valley shape pinned in the test)."""
+    if n <= 20:
+        return 4.0
+    if n <= 716:                                    # left wing: +1-floor -> ease harder for dwell
+        return 4.0 + (2.0 - 4.0) * (n - 20) / (716 - 20)
+    if n <= 1500:                                   # right wing: ramp up to the strong sweep
+        return 2.0 + (3.0 - 2.0) * (n - 716) / (1500 - 716)
+    return 3.0
 
 
 def _frame_count(seconds: float, fps: int) -> int:
@@ -302,10 +332,13 @@ def count_up_values(
     build_sec: float = COUNT_UP_BUILD_SEC,
     hold_sec: float = COUNT_UP_HOLD_SEC,
 ) -> list[int]:
-    """The pure per-frame integer sequence the count-up card plays back: an ease-out
-    QUAD over the FULL build (frac = 1 - (1 - p)^2, p = frame/build) — continuously
-    decelerating from the first frame so the slowing is felt the whole climb and lands
-    gently on count (the 5:41pm loop4 curve Jon picked). The last build frame is FORCED
+    """The pure per-frame integer sequence the count-up card plays back: an n-ADAPTIVE
+    ease-out over the FULL build (frac = 1 - (1 - p)^m, p = frame/build, m =
+    _ease_out_power(count)) — continuously decelerating from the first frame so the
+    slowing is felt the whole climb and lands gently on count. Large counts use the
+    quad (m=2; decel rides step size); small counts ease harder (toward m=4) so the
+    slowdown survives the +1 integer floor and reads as a ritardando into the landing
+    (the CTK-173 re-lock — see the lock comment above). The last build frame is FORCED
     to exactly count (round, not floor), then a motionless hold at count.
 
     Guarantees (unit-asserted): values[0] == 0, values[-1] == count, monotonic
@@ -313,6 +346,7 @@ def count_up_values(
     len == build + hold frames. Seek-driven and pure — the template indexes this array
     by frame, so the curve is tuned + tested here, never in JS."""
     n = int(count)
+    m = _ease_out_power(n)
     build = _frame_count(build_sec, fps)
     hold = _frame_count(hold_sec, fps)
 
@@ -322,7 +356,7 @@ def count_up_values(
             frac = 1.0                                   # force terminal climb frame = exactly N
         else:
             p = i / build
-            frac = 1 - (1 - p) ** 2                       # ease-out quad over the full build
+            frac = 1 - (1 - p) ** m                       # n-adaptive ease-out over the full build
         out.append(round(frac * n))
     out.extend([n] * hold)                               # motionless hold at N
     return out
@@ -335,7 +369,7 @@ def build_count_up(
     fps: int = video.DATA_CARD_MOTION.fps,
 ) -> tuple[str, int]:
     """Assemble the count-up card HTML + its total frame count. The per-frame value
-    sequence is count_up_values (pure + unit-asserted; the locked ease-out quad),
+    sequence is count_up_values (pure + unit-asserted; the locked n-adaptive ease-out),
     injected as a frame-indexed array the template plays back by seek. Returned
     separately from the render (mirrors build_f8_reveal) so the kinetic carousel
     orchestrator can rasterize the cover the same way it rasterizes the inners and
@@ -358,7 +392,7 @@ def render_count_up(
     work_dir: str | Path | None = None,
 ) -> Path:
     """The kinetic count-up card (single mp4): the headline number climbs 0 -> count
-    on a pure ease-out quad (continuously decelerating, gentle landing — count_up_values),
+    on an n-adaptive ease-out (continuously decelerating, gentle landing — count_up_values),
     then holds ~1.5s, looping. The `coralticker.` wordmark + forest dot are static
     from frame 0 (the brand anchor never animates); the label is static; only the
     digits move, bold near-black — branding-guide §"IG data-card motion".
@@ -639,3 +673,76 @@ def render_kinetic_carousel(
         clips.append(clip)
     video.concat_clips(clips, out_path)
     return out_path
+
+
+# ---------------------------------------------------------------------------
+# CTK-173 follow-on (2026-06-19) — cap the drill-in inners at 3 + a static closer
+# card as the final slide. Structure per carousel: cover -> <= INNER_SLIDE_CAP inner
+# drill-ins -> closer. The COVER stat is UNCHANGED — it still renders the full-window
+# true count (F7 "{count} new arrivals…", F9 "{coral} — carried at {count} vendors…"),
+# NEVER the displayed slide count. The cap only truncates the curated display sample.
+# ---------------------------------------------------------------------------
+
+INNER_SLIDE_CAP = 3
+
+# Static closer-card motionless hold (the final slide reads as a still beat — no
+# count-up, no reveal). ~2.5s is a comfortable read of the on-image line on loop.
+CLOSER_HOLD_SEC = 2.5
+
+# The coralticker.com domain token in a closer line is bolded (.url) for legibility;
+# a URL is not one of forest's five jobs, so no forest treatment.
+_CLOSER_DOMAIN = "coralticker.com"
+
+
+def build_closer(*, line: str, fps: int = video.DATA_CARD_MOTION.fps) -> tuple[str, int]:
+    """Assemble the static closer card HTML + its motionless hold frame count. `line`
+    is the caller-owned on-image copy (the confirmed closer string); the
+    coralticker.com domain token, when present, is bolded for legibility. The card is
+    STATIC — no count-up, no reveal, no data row; seekTo is a no-op in the template,
+    so the slide holds for CLOSER_HOLD_SEC. Returned as (html, total) like the other
+    slide builders so render_kinetic_carousel treats it uniformly. The 'link in bio'
+    string is caption-only canon and must never be passed here."""
+    line_html = _esc(line)
+    if _CLOSER_DOMAIN in line:
+        line_html = line_html.replace(_CLOSER_DOMAIN, f'<span class="url">{_CLOSER_DOMAIN}</span>')
+    card_html = _fill("reel-frame-closer.html", LINE_HTML=line_html)
+    return card_html, _frame_count(CLOSER_HOLD_SEC, fps)
+
+
+def build_f7_slides(
+    *, count: int, composition: str, items: list[dict], now: datetime,
+    closer_line: str, fps: int = video.DATA_CARD_MOTION.fps,
+) -> list[tuple[str, int]]:
+    """The F7 carousel slide list (pure — no render): count-up COVER (full-window
+    count + composition label) -> the display sample truncated to the first
+    INNER_SLIDE_CAP plain-reveal inners -> the static CLOSER. The cap lives here (not
+    in the selector / driver), so the selector's full curated sample passes through
+    and only the SLIDE assembly truncates — the cover count stays the true count."""
+    cover = build_count_up(count=count, label=_F7_COVER_COPY[composition], fps=fps)
+    inners = [
+        build_inner_reveal(
+            lead_html=_lead_html(it["name"], it["vendor"], it["event_phrase"]),
+            fields=it["fields"], now=now, fps=fps,
+        )
+        for it in items[:INNER_SLIDE_CAP]
+    ]
+    return [cover, *inners, build_closer(line=closer_line, fps=fps)]
+
+
+def build_f9_slides(
+    *, coral: str, vendor_count: int, items: list[dict], now: datetime,
+    closer_line: str, fps: int = video.DATA_CARD_MOTION.fps,
+) -> list[tuple[str, int]]:
+    """The F9 carousel slide list (pure — no render): plain-staged-reveal COVER ->
+    the display sample truncated to the first INNER_SLIDE_CAP plain-reveal inners ->
+    the static CLOSER. vendor_count is the full carrier count (the cover claim),
+    unchanged by the inner cap."""
+    cover = build_f9_cover_reveal(coral=coral, vendor_count=vendor_count, fps=fps)
+    inners = [
+        build_inner_reveal(
+            lead_html=_lead_html(it["name"], it["vendor"], "listed"),
+            fields=it["fields"], now=now, fps=fps,
+        )
+        for it in items[:INNER_SLIDE_CAP]
+    ]
+    return [cover, *inners, build_closer(line=closer_line, fps=fps)]

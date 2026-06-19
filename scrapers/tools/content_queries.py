@@ -705,8 +705,9 @@ def select_f7_arrivals(conn, window_hours: int = 168, sample_cap: int = 9):
         is the honest cover count, NOT len(items).
       - composition — all-arrivals / all-restocks / mixed, over that full
         population (drives the cover copy variant).
-      - items       — <= sample_cap is_surface_b_card_eligible inners, recency-
-        ordered (the query returns event_at DESC), each via _f7_item.
+      - items       — <= sample_cap is_surface_b_card_eligible inners, ONE per coral
+        (most-recent), vendor-spread-ordered for breadth (a variety of corals AND
+        vendors — not one shop's feed), each via _card_item.
 
     The window is a lead-event-precedence query (one row per listing, its lead
     event), event_filter-scoped to just-listed + back-in-stock — auctions are
@@ -720,7 +721,32 @@ def select_f7_arrivals(conn, window_hours: int = 168, sample_cap: int = 9):
     true_count = len(rows)
     composition = _f7_composition(rows)
     eligible = [r for r in rows if is_surface_b_card_eligible(r)]
-    items = [_card_item(r, event_phrase=_F7_EVENT_PHRASE[r["event"]]) for r in eligible[:sample_cap]]
+    # Deterministic recency order: get_listing_lead_event orders event_at DESC with no
+    # final tiebreak, so equal-event_at rows could flip run-to-run (the CTK-161 retro #2
+    # shape). (event_at, id) DESC is a total order — pins the per-coral pick + the order.
+    eligible.sort(key=lambda r: (r["event_at"], r["id"]), reverse=True)
+    # One card per CORAL (the breadth sweetspot — a variety of corals AND vendors). Two
+    # listings of the same coral, even at DIFFERENT vendors, render as near-identical
+    # cards, so dedupe to the most-recent per coral (the sort above). The cover count is
+    # UNCHANGED — true_count stays the full lead-event population (the honest-count
+    # split); only the displayed sample dedupes.
+    by_coral: dict = {}
+    for r in eligible:
+        by_coral.setdefault(r["named_coral_id"], r)   # first per coral == most-recent
+    # Vendor-spread: surface a fresh vendor for each top card before repeating one, so
+    # the reel reads as breadth (corals AND shops), not one shop's feed. One-per-vendor
+    # first (recency), same-vendor extras deferred to the tail.
+    ordered: list[dict] = []
+    deferred: list[dict] = []
+    used_vendors: set = set()
+    for r in by_coral.values():                        # recency order (dict preserves insertion)
+        if r["vendor_id"] in used_vendors:
+            deferred.append(r)
+        else:
+            ordered.append(r)
+            used_vendors.add(r["vendor_id"])
+    ordered += deferred
+    items = [_card_item(r, event_phrase=_F7_EVENT_PHRASE[r["event"]]) for r in ordered[:sample_cap]]
     return true_count, composition, items
 
 
