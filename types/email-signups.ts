@@ -24,3 +24,15 @@ export const EMAIL_SIGNUP_SOURCES: readonly EmailSignupSource[] = [
 export function isEmailSignupSource(value: unknown): value is EmailSignupSource {
   return typeof value === 'string' && (EMAIL_SIGNUP_SOURCES as readonly string[]).includes(value);
 }
+
+// referrer_channel is an orthogonal axis to source: source is the form surface,
+// referrer_channel is the channel that drove the visit (?ref=). Validated against
+// this allowlist rather than a Postgres ENUM so the channel set can churn without
+// a migration — the column is plain nullable text.
+export const REFERRER_CHANNELS = ['ig', 'r2r', 'discord', 'reddit'] as const;
+
+export type ReferrerChannel = (typeof REFERRER_CHANNELS)[number];
+
+export function isReferrerChannel(value: unknown): value is ReferrerChannel {
+  return typeof value === 'string' && (REFERRER_CHANNELS as readonly string[]).includes(value);
+}

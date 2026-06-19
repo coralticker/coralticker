@@ -1,8 +1,9 @@
 'use server';
 
 import { after } from 'next/server';
+import { cookies } from 'next/headers';
 import { getNeonSql } from '@/lib/db/neon';
-import { isEmailSignupSource } from '@/types/email-signups';
+import { isEmailSignupSource, isReferrerChannel } from '@/types/email-signups';
 import { generate } from '@/lib/email/token';
 import { sendEmail } from '@/lib/email/send';
 import { confirmEmail } from '@/lib/email/templates/confirm-email';
@@ -44,6 +45,13 @@ export async function signupAction(
     return { ok: false, error: DB_ERROR };
   }
 
+  // First-touch channel, stamped by middleware from ?ref=. Independent of source:
+  // a homepage signup that arrived via the IG bio link is source=homepage +
+  // referrer_channel=ig. Anything off-allowlist (or absent) falls through to NULL
+  // — organic/direct, derived as 'direct' at read time, never stored as a literal.
+  const rawRef = (await cookies()).get('ct_ref')?.value;
+  const referrerChannel = isReferrerChannel(rawRef) ? rawRef : null;
+
   const sql = getNeonSql();
 
   // App-mints the per-row token, overriding the gen_random_uuid()::text default
@@ -56,8 +64,8 @@ export async function signupAction(
   let insertedToken: string | null = null;
   try {
     const rows = (await sql`
-      INSERT INTO email_signups (email, source, token)
-      VALUES (${email}, ${rawSource}, ${token})
+      INSERT INTO email_signups (email, source, referrer_channel, token)
+      VALUES (${email}, ${rawSource}, ${referrerChannel}, ${token})
       RETURNING token
     `) as unknown as { token: string }[];
     insertedToken = rows[0]?.token ?? token;
@@ -119,6 +127,22 @@ export async function signupAction(
     // rather than falsely returning "already subscribed" with no recovery — the
     // row never enters fetchRecipients() (confirmed_at IS NOT NULL) until /confirm
     // fires, so the false claim would otherwise be a permanent dead-end.
+    // Opportunistic first-touch backfill, mirroring the re-subscribe branch so a
+    // pending row isn't the odd one out (legacy NULL rows backfill, this should
+    // too). Best-effort: this branch's contract is capture + confirm re-send, so a
+    // backfill failure must never surface as DB_ERROR — swallow it. Skipped
+    // entirely when there's no channel to write.
+    if (referrerChannel !== null) {
+      try {
+        await sql`
+          UPDATE email_signups
+          SET referrer_channel = COALESCE(referrer_channel, ${referrerChannel})
+          WHERE id = ${existing.id}
+        `;
+      } catch {
+        // opportunistic — never break capture for an attribution backfill
+      }
+    }
     const tokenToSend = existing.token;
     after(() => sendConfirm(email, tokenToSend));
     return { ok: true, alreadySubscribed: false };
@@ -139,13 +163,17 @@ export async function signupAction(
   // would invalidate any confirm/unsubscribe link already sitting in this
   // person's inbox, and the re-confirm link in the new email must match it.
   // Send happens after the DB try resolves (DB-only try).
+  // referrer_channel uses COALESCE so a re-subscribe only BACKFILLS a NULL (e.g. a
+  // pre-attribution row) — it never overwrites a channel already recorded at
+  // first touch.
   let resubToken: string | undefined;
   try {
     const rows = (await sql`
       UPDATE email_signups
       SET unsubscribed_at = NULL,
           confirmed_at = NULL,
-          subscribed_at = ${new Date().toISOString()}
+          subscribed_at = ${new Date().toISOString()},
+          referrer_channel = COALESCE(referrer_channel, ${referrerChannel})
       WHERE id = ${existing.id}
       RETURNING token
     `) as unknown as { token: string }[];
