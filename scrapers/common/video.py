@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import io
 import re
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -135,19 +136,45 @@ def build_zoompan_filter(
     )
 
 
+def _encode_args(out_path: str | Path, fps: int) -> list[str]:
+    """The shared OUTPUT-side ffmpeg argv tail for EVERY clip producer — the
+    zoompan-input path (render_kenburns / build_ffmpeg_args) and the image2-input
+    path (render_sequence) both route through here.
+
+    Why it is shared and why the H.264 knobs are pinned: concat_clips joins clips
+    with -c copy (stream copy, no re-encode), whose precondition is byte-identical
+    codec params across every input — including the SPS/PPS NAL headers. SPS/PPS is
+    a function of profile + level + resolution + pix_fmt; if the zoompan path and
+    the image2 path encode with different (or libx264-default-derived) profile/level,
+    a count-up cover slide (render_sequence) concatenated with a Ken Burns inner
+    (render_kenburns) produces a join the demuxer accepts but that decodes corrupt
+    downstream of the seam. Pinning -profile:v / -level / -g makes both paths emit
+    the same headers, so the cross-producer concat is sound. -g (GOP) is pinned to
+    fps (one keyframe/sec) so the GOP structure is deterministic on both paths too.
+    Resolution is the caller's contract (both produce 1080x1920); pix_fmt is yuv420p
+    for IG compatibility. Do NOT diverge these between the two callers."""
+    return [
+        "-c:v", "libx264",
+        "-profile:v", "high",
+        "-level", "4.0",
+        "-pix_fmt", "yuv420p",
+        "-g", str(fps),
+        "-r", str(fps),
+        "-movflags", "+faststart",
+        str(out_path),
+    ]
+
+
 def build_ffmpeg_args(frame_path: str | Path, out_path: str | Path, spec: MotionSpec) -> list[str]:
     """The full ffmpeg argv for render_kenburns. Pure (no execution) so the
-    arg assembly is unit-testable without encoding."""
+    arg assembly is unit-testable without encoding. Shares _encode_args with
+    render_sequence so the two producers' clips concat-join clean (PB-5)."""
     return [
         _FFMPEG,
         "-y",
         "-i", str(frame_path),
         "-vf", build_zoompan_filter(spec),
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
-        "-r", str(spec.fps),
-        "-movflags", "+faststart",
-        str(out_path),
+        *_encode_args(out_path, spec.fps),
     ]
 
 
@@ -250,6 +277,57 @@ def concat_clips(clips: list[str | Path], out_path: str | Path) -> Path:
     finally:
         if list_path is not None:
             Path(list_path).unlink(missing_ok=True)
+    return Path(out_path)
+
+
+def render_sequence(
+    frames: list[str | Path],
+    out_path: str | Path,
+    *,
+    fps: int = DEFAULT_MOTION.fps,
+) -> Path:
+    """Encode an ordered PNG sequence into a looping MP4 via ffmpeg's image2
+    demuxer (-framerate {fps} -i frame_%05d.png), the SECOND encode entry point
+    (PB-2). render_kenburns animates the CAMERA over one still; render_sequence
+    plays back a sequence where the CONTENT itself differs frame to frame — a
+    count-up tick, an em-dash reveal, a strike-draw. The frame-by-frame content
+    animation lives upstream (the card's JS seek function, captured by
+    rasterize_sequence); this primitive is content-blind — frames + fps in, MP4
+    out, no easing/count-up logic here and NO ffmpeg motion filter (INV-06 PB-2:
+    MotionSpec / filters stay camera-only; content motion is the Pillow-drift
+    reject's resolution — capture the real CSS animation, never re-implement it).
+
+    Shares _encode_args with render_kenburns so a render_sequence clip and a
+    render_kenburns clip carry byte-identical SPS/PPS and concat_clips stream-copies
+    them into one reel (a count-up cover + Ken Burns inners — PB-5).
+
+    frames is an ordered list of PNG paths with ANY names: the image2 %05d pattern
+    is satisfied by staging canonically-named symlinks in a temp dir, so the input
+    naming is an implementation detail here, never a caller contract (keeps
+    rasterize_sequence free to name its output for human debug). Raises on an empty
+    sequence or a non-zero ffmpeg exit (loud-failure)."""
+    frames = [Path(f) for f in frames]
+    if not frames:
+        raise ValueError("render_sequence: no frames to encode")
+
+    stage = Path(tempfile.mkdtemp(prefix="ct-seq-"))
+    try:
+        for i, frame in enumerate(frames):
+            (stage / f"frame_{i:05d}.png").symlink_to(frame.resolve())
+        args = [
+            _FFMPEG, "-y",
+            "-framerate", str(fps),
+            "-i", str(stage / "frame_%05d.png"),
+            *_encode_args(out_path, fps),
+        ]
+        proc = subprocess.run(args, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"ffmpeg sequence encode failed (exit {proc.returncode}) for {out_path}:\n"
+                f"{proc.stderr[-2000:]}"
+            )
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
     return Path(out_path)
 
 

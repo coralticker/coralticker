@@ -1,4 +1,5 @@
 .claude/
+.DS_Store
 bash.exe.stackdump
 __pycache__/
 .pytest_cache/

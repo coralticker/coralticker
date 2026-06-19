@@ -112,3 +112,95 @@ def test_f9_lineage_carousel_render(tmp_path):
     assert result.exists() and result.stat().st_size > 0
     duration = video.probe_duration(out)
     assert 13.0 <= duration <= 15.0, f"expected ~14s (cover + 1 inner), got {duration}s"
+
+
+# --- PB-2: content-animation capture (rasterize_sequence) + count-up sample ---
+
+# A seek-driven page: the body colour is a pure function of the frame index, so a
+# correct frame-step yields a DIFFERENT image per i; a broken stepper (seek_fn never
+# called) yields N identical frames — which the distinctness assert catches.
+_SEEK_HTML = """<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;padding:0;width:1080px;height:1920px;}</style></head><body>
+<script>window.seekTo=function(i){document.body.style.background=
+'rgb('+(i*40)+',40,40)';};window.seekTo(0);</script></body></html>"""
+
+
+@requires_chromium
+def test_rasterize_sequence_steps_per_frame(tmp_path):
+    frames = rasterize.rasterize_sequence(_SEEK_HTML, 4, tmp_path / "seq")
+    assert len(frames) == 4
+    assert all(f.exists() for f in frames)
+    # Each frame is seek-distinct — proves seekTo(i) drives the capture (not a
+    # single repeated screenshot). Mean R channel rises with i.
+    import hashlib
+    hashes = {hashlib.md5(f.read_bytes()).hexdigest() for f in frames}
+    assert len(hashes) == 4, "frames are not distinct — seek stepper not driving capture"
+
+
+@requires_chromium
+def test_count_up_sample_render(tmp_path):
+    # End-to-end count-up: assemble card -> rasterize_sequence (build+hold) ->
+    # render_sequence. v2 timing: 2.2s build + 1.5s hold = ~3.7s at 30fps.
+    out = tmp_path / "count-up.mp4"
+    result = data_card.render_count_up(count=758, out_path=out)
+    assert result.exists() and result.stat().st_size > 0
+
+    duration = video.probe_duration(out)
+    assert 3.5 <= duration <= 3.9, f"expected ~3.7s (2.2s build + 1.5s hold), got {duration}s"
+
+    # The PNG sequence: 66 build + 45 hold = 111 frames at 30fps.
+    seq = sorted((tmp_path / "count-up-frames").glob("frame_*.png"))
+    assert len(seq) == 111, f"expected 111 frames, got {len(seq)}"
+
+    import hashlib
+    def h(p): return hashlib.md5(p.read_bytes()).hexdigest()
+    # The number MOVED (frame 0 != last build frame) — fails if seekTo never ticked.
+    assert h(seq[0]) != h(seq[65]), "count did not move — easing/seek broken"
+    # The hold is motionless: the terminal value is reached by the last build frame
+    # and every frame from there to the end is identical (the terminal == N seam).
+    assert len({h(seq[i]) for i in range(65, 111)}) == 1, "hold is not motionless / terminal seam jumps"
+
+
+# --- reveal + strike-draw F8 drill-in (the INV-01-bound motion) ---------------
+
+_REVEAL_FIELDS = [
+    {"label": "Price", "value": {"kind": "price-drop-new", "oldValue": "$650.00", "newValue": "$455.00"}},
+    {"label": "Listed", "value": {"kind": "relative-time", "timestamp": "2026-06-15T18:00:00Z"}},
+]
+
+
+@requires_chromium
+def test_f8_reveal_held_frame_inv01_parity(tmp_path):
+    # THE INV-01 gate run against the HELD/TERMINAL frame, not just the static card:
+    # load the card, seekTo(total-1), then read the LIVE .row textContent and assert
+    # it equals format_data_row byte-for-byte. Proves the reveal/strike-draw animation
+    # (opacity/clip/strike-width only) never mutates the row text at the held end.
+    from scrapers.tools.data_card import build_f8_reveal
+    from scrapers.tools.data_row import format_data_row
+    from playwright.sync_api import sync_playwright
+
+    html_doc, total = build_f8_reveal(name="WWC Sunkist Bounce Mushroom", pct=30,
+                                      fields=_REVEAL_FIELDS, now=NOW)
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1080, "height": 1920}, device_scale_factor=1)
+            page.set_content(html_doc, wait_until="networkidle")
+            page.evaluate(f"seekTo({total - 1})")
+            row_text = page.eval_on_selector(".row", "el => el.textContent")
+        finally:
+            browser.close()
+    assert row_text == format_data_row(_REVEAL_FIELDS, NOW)
+
+
+@requires_chromium
+def test_f8_reveal_renders(tmp_path):
+    # Plain-reveal F8 (count-up % variant dropped 2026-06-18). The extended un-struck
+    # hold (0.85s) + slowed strike push the total to ~5.9s (4.4s build + 1.5s hold).
+    from scrapers.tools.data_card import render_f8_reveal
+    out = tmp_path / "f8-reveal.mp4"
+    result = render_f8_reveal(name="WWC Sunkist Bounce Mushroom", pct=30,
+                              fields=_REVEAL_FIELDS, now=NOW, out_path=out)
+    assert result.exists() and result.stat().st_size > 0
+    duration = video.probe_duration(out)
+    assert 5.6 <= duration <= 6.2, f"expected ~5.9s, got {duration}s"

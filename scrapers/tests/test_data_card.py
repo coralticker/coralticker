@@ -213,6 +213,51 @@ def test_f8_card_html_injects_and_keeps_row_parity():
     assert row.get_text() == format_data_row(fields, NOW)
 
 
+def test_f8_reveal_card_keeps_row_parity_by_construction():
+    # The reveal/strike-draw card injects the SAME format_data_row_html output as the
+    # static F8, so its .row strips to format_data_row byte-for-byte — the animation
+    # is a presentation layer over the parity-pinned row, never a re-format. (The
+    # held-frame DOM textContent is asserted live in test_rasterize.)
+    from scrapers.tools.data_card import build_f8_reveal
+    fields = [
+        {"label": "Price", "value": {"kind": "price-drop-new", "oldValue": "$650.00", "newValue": "$455.00"}},
+        {"label": "Listed", "value": {"kind": "relative-time", "timestamp": "2026-06-15T18:00:00Z"}},
+    ]
+    html_doc, total = build_f8_reveal(name="WWC Sunkist Bounce Mushroom", pct=30, fields=fields, now=NOW)
+    assert "{{" not in html_doc and "}}" not in html_doc
+    assert total > 0
+    soup = BeautifulSoup(html_doc, "html.parser")
+    row = soup.find("p", class_="row")
+    assert row is not None and row.get_text() == format_data_row(fields, NOW)
+    # No -> arrow, no trailing period baked into the row text.
+    assert "→" not in row.get_text() and not row.get_text().endswith(".")
+
+
+def test_count_up_values_guarantees():
+    # The count-up value sequence is pure + seek-driven: frame 0 == 0, terminal ==
+    # exactly N (round, not floor), monotonic non-decreasing, length == build + hold.
+    from scrapers.tools.data_card import count_up_values, COUNT_UP_BUILD_SEC, COUNT_UP_HOLD_SEC
+    fps = 30
+    build = max(1, round(COUNT_UP_BUILD_SEC * fps))
+    expected_len = build + max(1, round(COUNT_UP_HOLD_SEC * fps))
+    for n in (0, 1, 716, 1000):
+        vals = count_up_values(n, fps=fps)
+        assert vals[0] == 0, n
+        assert vals[-1] == n, n                                # exact terminal, never floored short
+        assert len(vals) == expected_len, n
+        assert all(b >= a for a, b in zip(vals, vals[1:])), n   # monotonic non-decreasing
+        assert max(vals) == n                                  # never overshoots N
+    # Ease-out quad over the full build: the climb DECELERATES continuously — fast
+    # start, gentle landing (what reads as "slowing the whole way" vs a flat ramp).
+    # Per-frame steps trend down; allow +1 frame-to-frame integer-rounding noise, and
+    # assert the early third is clearly faster than the late third.
+    vals = count_up_values(716, fps=fps)
+    steps = [vals[i + 1] - vals[i] for i in range(build - 1)]
+    assert all(steps[i] >= steps[i + 1] - 1 for i in range(len(steps) - 1)), "climb has a real speed-up"
+    third = max(1, len(steps) // 3)
+    assert sum(steps[:third]) > 2 * sum(steps[-third:]), "climb does not clearly decelerate early->late"
+
+
 def _run_all() -> int:
     import sys
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]

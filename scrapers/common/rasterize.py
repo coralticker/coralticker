@@ -75,3 +75,53 @@ def rasterize_html(
         finally:
             browser.close()
     return out_path
+
+
+def rasterize_sequence(
+    html: str,
+    frame_count: int,
+    work_dir: str | Path,
+    *,
+    seek_fn: str = "seekTo",
+    width: int = FRAME_W,
+    height: int = FRAME_H,
+) -> list[Path]:
+    """Render an HTML document carrying a JS seek function as a PNG SEQUENCE. For
+    each frame i in range(frame_count): call window.{seek_fn}(i) in the page to set
+    the i-th content state, then screenshot. Returns the ordered list of PNG paths
+    (frame_00000.png .. in work_dir).
+
+    This is the capture seam for CONTENT animation (count-up, em-dash reveal,
+    strike-draw — branding-guide §"IG data-card motion"): the card owns its
+    animation as a pure function of an integer frame index, and this drives it
+    frame-by-frame. Frames come from the seek function, NEVER wall-clock / CSS time
+    (a time-driven capture races the screenshot cadence and is unreproducible) — so
+    frame i is byte-identical on every run. video.py's render_sequence encodes the
+    result; CTK-163's data-viz path reuses this same primitive (consumer-agnostic —
+    html-with-a-seek-fn in, PNG sequence out, blind to count-ups / cards / vendors).
+
+    document.fonts.ready + the settle wait happen ONCE before stepping (the webfonts
+    are loaded for the whole sequence, not re-fetched per frame), so no frame races
+    the font swap. Chromium absent, a page error, or a missing/throwing seek_fn
+    fails LOUD (a blank or stuck-frame sequence is a worse, silent fidelity bug)."""
+    work_dir = Path(work_dir)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    paths: list[Path] = []
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(
+                viewport={"width": width, "height": height},
+                device_scale_factor=1,
+            )
+            page.set_content(html, wait_until="networkidle")
+            page.evaluate("document.fonts.ready")
+            page.wait_for_timeout(_FONT_SETTLE_MS)
+            for i in range(frame_count):
+                page.evaluate(f"{seek_fn}({i})")
+                out = work_dir / f"frame_{i:05d}.png"
+                page.screenshot(path=str(out), type="png")
+                paths.append(out)
+        finally:
+            browser.close()
+    return paths

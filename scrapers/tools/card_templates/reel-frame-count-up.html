@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CTK-164 — count-up kinetic card — 9:16 production reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* The compositor rasterizes this page at 1080x1920 frame-by-frame: seekTo(i) is
+     called once per frame, then the viewport is screenshotted (rasterize_sequence).
+     The <body> IS the frame. Owned graphic, NO vendor photo (surface-B canon).
+     Square 1080x1080 composition centered in cream, 420px above + below (the
+     §Owned-graphic square->reel framing). */
+  :root{--cream:#F5F1EA;--ink:#1A1A1A;--forest:#1B5E20;}
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--cream);}
+
+  .frame{width:1080px;height:1920px;background:var(--cream);position:relative;overflow:hidden;}
+  .card{position:absolute;left:0;top:420px;width:1080px;height:1080px;background:var(--cream);
+        padding:104px;display:flex;flex-direction:column;}
+
+  /* The brand anchor — present and STILL from frame 0; it never animates (canon:
+     animating the wordmark reads as a logo-sting, the hype register the brand rejects). */
+  .wordmark{font-family:'IBM Plex Sans',sans-serif;font-size:40px;font-weight:400;letter-spacing:-.01em;line-height:1;}
+  .wordmark .c{font-weight:700;}
+  .wordmark .dot{color:var(--forest);font-weight:700;}
+
+  .body{flex:1;display:flex;flex-direction:column;justify-content:center;}
+
+  /* Headline stat — the static label does not move; only .num ticks. The number is
+     bold NEAR-BLACK, never forest (a count is not one of forest's five jobs — its
+     energy is the tick, not a colour treatment). tabular-nums holds the digit width
+     constant as the count grows so the number does not reflow/shift while ticking. */
+  .stat{font-family:'IBM Plex Sans',sans-serif;font-weight:400;font-size:88px;line-height:1.12;letter-spacing:-.02em;color:var(--ink);max-width:880px;margin:0;}
+  .stat .num{font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;}
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="card">
+      <div class="wordmark"><span class="c">coral</span>ticker<span class="dot">.</span></div>
+      <div class="body">
+        <p class="stat"><span class="num">0</span> {{LABEL}}</p>
+      </div>
+    </div>
+  </div>
+  <script>
+    // The per-frame integer sequence is authored in Python (data_card.count_up_values
+    // — pure + unit-asserted: frame 0 == 0, terminal == N exactly, monotonic
+    // non-decreasing) and injected here, so the value-vs-progress curve (the locked
+    // pure ease-out quad — continuously decelerating) is tuned in ONE testable place.
+    // This template just plays it back frame by frame — the encoder stays
+    // content-blind (INV-06 PB-2 — no easing in render_sequence, no ffmpeg filter).
+    var VALUES = {{VALUES}};
+    var numEl = document.querySelector('.stat .num');
+    window.seekTo = function (i) {
+      var k = i < 0 ? 0 : (i >= VALUES.length ? VALUES.length - 1 : i);
+      numEl.textContent = VALUES[k];
+    };
+    window.seekTo(0);                           // frame 0 shows 0; the wordmark is already static
+  </script>
+</body>
+</html>
