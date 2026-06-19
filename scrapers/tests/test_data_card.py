@@ -233,6 +233,45 @@ def test_f8_reveal_card_keeps_row_parity_by_construction():
     assert "→" not in row.get_text() and not row.get_text().endswith(".")
 
 
+def test_inner_reveal_card_keeps_row_parity_by_construction():
+    # CTK-173: the F7/F9 inner plain-reveal card injects the SAME format_data_row_html
+    # output as the static inner, so its .row strips to format_data_row byte-for-byte —
+    # the reveal is a presentation layer over the parity-pinned row, never a re-format.
+    # (The held-frame DOM textContent is asserted live in test_rasterize.)
+    from scrapers.tools.data_card import build_inner_reveal, _lead_html
+    fields = build_card_fields(price_value="$250.00", origin="WWC", year=None,
+                               listed_at="2026-06-16T12:00:00Z")
+    html_doc, total = build_inner_reveal(
+        lead_html=_lead_html("WWC Sunkist Bounce Mushroom", "TSA", "back in stock"),
+        fields=fields, now=NOW,
+    )
+    assert "{{" not in html_doc and "}}" not in html_doc
+    assert total > 0
+    soup = BeautifulSoup(html_doc, "html.parser")
+    lead = soup.find("p", class_="lead")
+    assert lead is not None and lead.get_text() == "WWC Sunkist Bounce Mushroom back in stock at TSA."
+    row = soup.find("p", class_="row")
+    assert row is not None and row.get_text() == format_data_row(fields, NOW)
+
+
+def test_f9_cover_reveal_keeps_locked_prose_by_construction():
+    # CTK-173: the F9 cover plain-staged-reveal injects the SAME f9_cover_stat_html
+    # output (the locked 'carried at N' prose in presentation-only .seg spans), so the
+    # held frame strips to the byte-identical locked cover string — opacity-only stage.
+    from scrapers.tools.data_card import build_f9_cover_reveal, f9_cover_stat_html
+    html_doc, total = build_f9_cover_reveal(coral="WWC Sunkist Bounce", vendor_count=4)
+    assert "{{" not in html_doc and "}}" not in html_doc
+    assert total > 0
+    soup = BeautifulSoup(html_doc, "html.parser")
+    stat = soup.find("p", class_="stat")
+    assert stat is not None
+    # get_text is byte-identical to the static cover string (the .seg wrappers strip away).
+    assert stat.get_text() == "WWC Sunkist Bounce — carried at 4 vendors right now."
+    assert BeautifulSoup(f9_cover_stat_html("WWC Sunkist Bounce", 4), "html.parser").get_text() == stat.get_text()
+    # Three stage segments are present for the reveal to drive.
+    assert all(stat.find("span", class_=f"seg{n}") is not None for n in (1, 2, 3))
+
+
 def test_count_up_values_guarantees():
     # The count-up value sequence is pure + seek-driven: frame 0 == 0, terminal ==
     # exactly N (round, not floor), monotonic non-decreasing, length == build + hold.

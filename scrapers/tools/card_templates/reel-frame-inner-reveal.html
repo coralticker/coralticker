@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CTK-173 — F7/F9 inner plain-reveal drill-in reel frame — 9:16 production reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<!-- The animated sibling of reel-frame-f7-arrivals.html / reel-frame-f9-lineage.html
+     (those two share one byte-identical inner skeleton, so they share ONE reveal
+     template). The composition + the wordmark/card/body/lead/row CSS are the SAME
+     static inner; the held end-frame IS that card. seekTo(i) drives a CONTENT
+     animation (lead reveal -> Price reveal -> forest em-dash draw L->R -> Listed
+     reveal) as a build-up to the held frame — it only toggles opacity / clip, never
+     the row TEXT. The .row markup is the UNCHANGED data_card.format_data_row_html
+     output, so its textContent is frame-invariant and equals data_row.format_data_row()
+     byte-for-byte at every frame incl. the held end (the INV-01 parity gate).
+
+     This is the F7/F9 reveal: the F8 reveal timeline MINUS the strike beat. F7/F9
+     heroes are the arrival event / carry-spread, not a price move, so there is no
+     strike-draw (Q1 lock 2026-06-19). A markdown price (a future selector emitting
+     a .struck/.new pair) reveals here as a PLAIN fade, not a strike-DRAW — the
+     strike path is left OPEN (the markup + JS render it) but undecorated; the
+     animated strike is F8's motion, and an F7 markdown-strike is a follow-on on the
+     close-3 selector-honesty lane. Geometry/font mirror the static F7/F9 inner
+     <style>; re-sync if either static inner's geometry is revised. -->
+<style>
+  :root{--cream:#F5F1EA;--ink:#1A1A1A;--forest:#1B5E20;}
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--cream);}
+
+  /* 9:16 frame: the 1080x1080 square sits centered, 420px cream above + below */
+  .frame{width:1080px;height:1920px;background:var(--cream);position:relative;overflow:hidden;}
+  .card{position:absolute;left:0;top:420px;width:1080px;height:1080px;background:var(--cream);
+        padding:104px;display:flex;flex-direction:column;}
+
+  .wordmark{font-family:'IBM Plex Sans',sans-serif;font-size:40px;font-weight:400;letter-spacing:-.01em;line-height:1;}
+  .wordmark .c{font-weight:700;}
+  .wordmark .dot{color:var(--forest);font-weight:700;}
+
+  .body{flex:1;display:flex;flex-direction:column;justify-content:center;}
+
+  .lead{font-family:'IBM Plex Sans',sans-serif;font-weight:400;font-size:58px;line-height:1.16;letter-spacing:-.02em;max-width:880px;margin:0;}
+  .lead .name{font-weight:700;}
+  .row{font-size:38px;line-height:1.55;max-width:880px;margin:40px 0 0;}
+  .row .lab{font-family:'IBM Plex Sans',sans-serif;font-weight:700;color:var(--ink);}
+  .row .val{font-family:'IBM Plex Mono',monospace;font-weight:400;color:var(--ink);}
+  .row .sep{font-family:'IBM Plex Sans',sans-serif;font-weight:400;color:var(--forest);}
+  /* price-drop-new + vendor-markdown value-kinds (struck old near-black, forest-bold new) */
+  .row .struck{font-family:'IBM Plex Mono',monospace;font-weight:400;color:var(--ink);text-decoration:line-through;text-decoration-thickness:2px;}
+  .row .new{font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--forest);}
+  /* italic value-kind — scientific-binomial carve-out only (the sole sanctioned italic); inherits .val mono/near-black */
+  .row em{font-style:italic;}
+
+  /* --- Animation layer (the only departure from the static inner CSS) --- */
+  /* Reveal targets start hidden; seekTo fades them in (opacity-only — every span is
+     present and occupies its final layout from frame 0, so the row never reflows;
+     elements reveal IN PLACE in reading order). The wordmark is NOT a reveal target —
+     it stays visible from frame 0 (the brand anchor never animates, canon). */
+  .lead{opacity:0;}
+  .row .lab,.row .val,.row .struck,.row .new{opacity:0;}
+
+  /* The forest em-dash DRAWS left-to-right (width 0->100%, canon L196): inline-block
+     so clip-path applies; the right inset shrinks 100%->0 to wipe it in from the
+     left. clip is paint-only, so the span still holds its layout width from frame 0. */
+  .row .sep{display:inline-block;vertical-align:baseline;clip-path:inset(0 var(--sep-clip,100%) 0 0);}
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="card">
+      <div class="wordmark"><span class="c">coral</span>ticker<span class="dot">.</span></div>
+      <div class="body">
+        <p class="lead">{{LEAD_HTML}}</p>
+        <p class="row">{{DATA_ROW}}</p>
+      </div>
+    </div>
+  </div>
+  <script>
+    // The plain-reveal timeline. SCHEDULE is the Python-authored frame windows (so the
+    // locked reveal beat durations live in data_card.py) — each [start, end] in frames.
+    // seekTo(i) maps frame i to each element's reveal progress (ease-out cubic, no
+    // spring/bounce/fly-in/blur — canon L198), toggling opacity / clip only. At
+    // i >= build end every progress is 1 -> the held end-frame.
+    var S = {{SCHEDULE}};
+    var card = document.querySelector('.card');
+    var lead = card.querySelector('.lead');
+    var row = card.querySelector('.row');
+    // assumes 2-field Price+Listed row (D-5 — build_card_fields is fixed two-field in
+    // v1, Lineage dropped); generalize the labs[0]/labs[1] indexing below when a
+    // 3-field inner format ships.
+    var labs = row.querySelectorAll('.lab');
+    var vals = row.querySelectorAll('.val');
+    var sep = row.querySelector('.sep');
+    var struck = row.querySelector('.struck');   // null on a plain (non-markdown) inner
+    var newp = row.querySelector('.new');         // null on a plain inner
+
+    // Field 1 (Price): its label + value span(s). Plain -> the first .val; a future
+    // markdown -> the .struck + .new pair. Field 2 (Listed): the last .val.
+    var priceLab = labs[0];
+    var priceVals = struck ? [struck, newp] : (vals.length ? [vals[0]] : []);
+    var listedLab = labs[1];
+    var listedVal = vals.length ? vals[vals.length - 1] : null;
+
+    function ease(p){ return p <= 0 ? 0 : (p >= 1 ? 1 : 1 - Math.pow(1 - p, 3)); }
+
+    window.seekTo = function (i) {
+      function prog(w){ if (!w) return 0; if (i <= w[0]) return 0; if (i >= w[1]) return 1; return ease((i - w[0]) / (w[1] - w[0])); }
+
+      // Beat 1 — the lead line plain-reveals (the arrival/listed event is the hero).
+      lead.style.opacity = prog(S.lead);
+
+      // Beat 2 — the Price field reveals in reading-order position (label + value).
+      var pp = prog(S.price);
+      if (priceLab) priceLab.style.opacity = pp;
+      priceVals.forEach(function (el) { if (el) el.style.opacity = pp; });
+
+      // Beat 3 — the forest em-dash draws L->R, THEN the Listed field reveals.
+      if (sep) sep.style.setProperty('--sep-clip', (100 - prog(S.sep) * 100) + '%');
+      var lp = prog(S.listed);
+      if (listedLab) listedLab.style.opacity = lp;
+      if (listedVal) listedVal.style.opacity = lp;
+    };
+    window.seekTo(0);   // frame 0: only the wordmark + forest dot are visible
+  </script>
+</body>
+</html>

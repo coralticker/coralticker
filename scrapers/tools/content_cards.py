@@ -15,23 +15,30 @@ post this run:
   - F7: skipped here when no inner renders (an item-less carousel is not a post).
 
 ================================================================================
-RUNBOOK — migration 0043 apply ordering (HARD GATE for F9; Jon-side step)
+RUNBOOK — get_cross_vendor_carriers() (F9 dependency; LIVE on prod Neon)
 ================================================================================
-F9 (build_f9 / select_f9_lineage) calls get_cross_vendor_carriers(), defined in
+F9 (build_f9 / select_f9_lineage) calls get_cross_vendor_carriers(), created in
   supabase/migrations/0043_get_cross_vendor_carriers.sql
-which is WRITTEN but NOT YET APPLIED to prod Neon. Until 0043 is applied the F9
-path raises psycopg UndefinedFunction (SQLSTATE 42883) on the SELECT — BY DESIGN:
-the loud signal that the deploy ran ahead of the schema. The driver does NOT catch
-it (a missing function is a deploy-ordering error, not a clean no-post).
+and superseded on prod by
+  supabase/migrations/0044_get_cross_vendor_carriers_tiebreak.sql  (DROP + CREATE
+  with the deterministic `vl.id DESC` tiebreak — CTK-161 retro #2 fold)
+which is APPLIED + verified on prod Neon. The F9 path runs against the live
+function; no apply step gates a content-card run.
 
-DEPLOY MUST NOT PRECEDE THE APPLY. Apply 0043 first (Jon-side, canonical path):
-  python scripts/apply_migration_0043.py            # apply + verify
-  # or: psql "$NEON_DATABASE_URL" -f supabase/migrations/0043_get_cross_vendor_carriers.sql   (after . .env)
+Historical context: before the function landed, the F9 path raised psycopg
+UndefinedFunction (SQLSTATE 42883) on the SELECT — by design, the loud signal that
+a deploy had run ahead of the schema (the driver never caught it: a missing
+function is a deploy-ordering error, not a clean no-post). With the function live
+this no longer fires.
 
-CRON-WINDOW RACE (migration-state hazard): apply 0043 BEFORE the first scheduled
-content-card run that includes F9, or that run fails F9 loudly. F7 and F8 touch
-neither 0043 nor get_cross_vendor_carriers and run regardless. To bank F7/F8 before
-the apply, restrict with --only f7,f8 (or run_all(..., only={"f7","f8"})).
+If a FUTURE migration ever drops the function, re-apply BEFORE the next scheduled
+content-card run that includes F9. Canonical re-apply path is the CURRENT (0044)
+body — NOT apply_migration_0043.py, whose body predates the tiebreak and would
+revert it:
+  psql "$NEON_DATABASE_URL" -f supabase/migrations/0044_get_cross_vendor_carriers_tiebreak.sql   (after . .env)
+
+F7 and F8 touch neither the function nor F9. To bank a subset (e.g. F7/F8 only),
+restrict with --only f7,f8 (or run_all(..., only={"f7","f8"})).
 
 Run:
   python -m scrapers.tools.content_cards [--out-dir build/cards] [--only f7,f8,f9]
@@ -99,9 +106,11 @@ def build_f8(conn, *, now: datetime, out_dir: str | Path) -> Path | None:
 
 def build_f9(conn, *, now: datetime, out_dir: str | Path) -> Path | None:
     """F9 lineage spotlight: select -> render, or None (clean skip) when no
-    >= 2-vendor coral has a renderable inner. REQUIRES migration 0043 applied (see
-    the module runbook) — an unapplied 0043 raises UndefinedFunction here, NOT None.
-    coral / vendor_count / items pass straight through from the selector."""
+    >= 2-vendor coral has a renderable inner. Calls get_cross_vendor_carriers(),
+    live on prod (migration 0044; see the module runbook). Were the function ever
+    dropped this would raise UndefinedFunction here (NOT None) — a deploy-ordering
+    error, not a clean no-post. coral / vendor_count / items pass straight through
+    from the selector."""
     result = cq.select_f9_lineage(conn)
     if result is None:
         return None
@@ -125,8 +134,9 @@ def run_all(conn, *, now: datetime | None = None, out_dir: str | Path = DEFAULT_
     {format: Path | None}. None means a clean skip (nothing to post for that
     format). One `now` is captured for the whole run so every relative-time field is
     consistent across the cards. `only` restricts to a subset (e.g. {"f7", "f8"} to
-    bank the no-0043 formats before applying 0043); F9 with 0043 unapplied raises
-    loudly (deploy-ordering, per the runbook), only after F7/F8 have banked."""
+    bank a subset without F9). get_cross_vendor_carriers() is live on prod (0044), so
+    F9 runs against the live function; were it ever dropped, F9 would raise loudly
+    (deploy-ordering, per the runbook) rather than skip."""
     now = now or datetime.now(timezone.utc)
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     formats = [f for f in _ORDER if only is None or f in only]
@@ -172,7 +182,7 @@ def main() -> int:
                         help="Output dir for the rendered MP4s (default build/cards).")
     parser.add_argument("--only", default=None,
                         help="Comma list of formats to run (f7,f8,f9). Use 'f7,f8' to "
-                             "bank the no-0043 formats before applying migration 0043.")
+                             "bank a subset without F9.")
     args = parser.parse_args()
     try:
         return run(args.out_dir, only=_parse_only(args.only))

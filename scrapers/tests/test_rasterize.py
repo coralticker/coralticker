@@ -88,7 +88,8 @@ def _fields(price_value):
 
 @requires_chromium
 def test_f7_arrivals_carousel_render(tmp_path):
-    # Cover-rides-the-reel: cover + 1 inner -> one concatenated reel (~2*7s).
+    # CTK-173 kinetic carousel: count-up cover (~3.7s) + 1 plain-reveal inner (~4.1s)
+    # concatenated into one reel (~7.8s) via render_sequence + concat_clips.
     out = tmp_path / "f7.mp4"
     result = data_card.render_f7_arrivals(
         count=23, composition="all-restocks",
@@ -98,11 +99,13 @@ def test_f7_arrivals_carousel_render(tmp_path):
     )
     assert result.exists() and result.stat().st_size > 0
     duration = video.probe_duration(out)
-    assert 13.0 <= duration <= 15.0, f"expected ~14s (cover + 1 inner), got {duration}s"
+    assert 7.5 <= duration <= 8.1, f"expected ~7.8s (count-up cover + 1 reveal inner), got {duration}s"
 
 
 @requires_chromium
 def test_f9_lineage_carousel_render(tmp_path):
+    # CTK-173 kinetic carousel: plain-staged-reveal cover (~3.8s) + 1 plain-reveal
+    # inner (~4.1s) -> one reel (~7.9s).
     out = tmp_path / "f9.mp4"
     result = data_card.render_f9_lineage(
         coral="WWC Sunkist Bounce", vendor_count=2,
@@ -111,7 +114,7 @@ def test_f9_lineage_carousel_render(tmp_path):
     )
     assert result.exists() and result.stat().st_size > 0
     duration = video.probe_duration(out)
-    assert 13.0 <= duration <= 15.0, f"expected ~14s (cover + 1 inner), got {duration}s"
+    assert 7.6 <= duration <= 8.2, f"expected ~7.9s (reveal cover + 1 reveal inner), got {duration}s"
 
 
 # --- PB-2: content-animation capture (rasterize_sequence) + count-up sample ---
@@ -204,3 +207,149 @@ def test_f8_reveal_renders(tmp_path):
     assert result.exists() and result.stat().st_size > 0
     duration = video.probe_duration(out)
     assert 5.6 <= duration <= 6.2, f"expected ~5.9s, got {duration}s"
+
+
+# --- CTK-173: F7/F9 kinetic carousel — held-frame INV-01 parity + concat join -----
+
+
+def _held_and_frame0(html_doc, total, *, text_selector, reveal_all=None):
+    """One browser session driving the seek function. Returns
+    (held_text, f0_opacities, held_opacities):
+      - held_text       — text_selector.textContent at the HELD/terminal frame
+                          (total-1); the INV-01 / cover-stat parity surface (the
+                          reveal toggles opacity/clip only, never the text).
+      - f0_opacities    — computed opacity of every reveal_all match at frame 0
+      - held_opacities  — computed opacity of every reveal_all match at the held frame
+    The opacity pair is the held-frame VISIBILITY guard: a text-only assert passes
+    even if a broken reveal schedule left the held frame fully HIDDEN (a blank final
+    frame — a Tier 1A regression), so we also assert the targets are hidden at frame 0
+    and fully shown at the held end. reveal_all=None skips the opacity probe (the
+    count-up cover has no opacity reveal targets — its visibility is the digit
+    textContent + the movement-coverage in test_count_up_sample_render)."""
+    from playwright.sync_api import sync_playwright
+    f0 = held = None
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": 1080, "height": 1920}, device_scale_factor=1)
+            page.set_content(html_doc, wait_until="networkidle")
+            if reveal_all:
+                page.evaluate("seekTo(0)")
+                f0 = [float(o) for o in page.eval_on_selector_all(
+                    reveal_all, "els => els.map(e => getComputedStyle(e).opacity)")]
+            page.evaluate(f"seekTo({total - 1})")
+            held_text = page.eval_on_selector(text_selector, "el => el.textContent")
+            if reveal_all:
+                held = [float(o) for o in page.eval_on_selector_all(
+                    reveal_all, "els => els.map(e => getComputedStyle(e).opacity)")]
+            return held_text, f0, held
+        finally:
+            browser.close()
+
+
+@requires_chromium
+def test_f7_inner_reveal_held_frame_inv01_parity():
+    # INV-01 against the HELD frame of an F7 inner: the live .row textContent equals
+    # format_data_row byte-for-byte (the new animated-drill-in tracking surface for F7).
+    from scrapers.tools.data_card import build_inner_reveal, _lead_html
+    from scrapers.tools.data_row import format_data_row
+    fields = _fields("$250.00")
+    html_doc, total = build_inner_reveal(
+        lead_html=_lead_html("WWC Sunkist Bounce Mushroom", "WWC", "back in stock"),
+        fields=fields, now=NOW,
+    )
+    held_text, f0, held = _held_and_frame0(
+        html_doc, total, text_selector=".row", reveal_all=".lead, .row .lab, .row .val")
+    assert held_text == format_data_row(fields, NOW)
+    # Held-frame VISIBILITY (no blank final frame): every reveal target hidden at
+    # frame 0, fully shown at the held end.
+    assert f0 and all(o == 0.0 for o in f0), f"reveal targets not hidden at frame 0: {f0}"
+    assert held and all(o == 1.0 for o in held), f"reveal targets not fully shown at held frame: {held}"
+
+
+@requires_chromium
+def test_f9_inner_reveal_held_frame_inv01_parity():
+    # INV-01 against the HELD frame of an F9 inner (the new animated-drill-in surface
+    # for F9). F9 inners are 'listed' events — plain reveal, never a strike.
+    from scrapers.tools.data_card import build_inner_reveal, _lead_html
+    from scrapers.tools.data_row import format_data_row
+    fields = _fields("$230.00")
+    html_doc, total = build_inner_reveal(
+        lead_html=_lead_html("WWC Sunkist Bounce Mushroom", "TSA", "listed"),
+        fields=fields, now=NOW,
+    )
+    held_text, f0, held = _held_and_frame0(
+        html_doc, total, text_selector=".row", reveal_all=".lead, .row .lab, .row .val")
+    assert held_text == format_data_row(fields, NOW)
+    # Held-frame VISIBILITY: every reveal target hidden at frame 0, fully shown at held.
+    assert f0 and all(o == 0.0 for o in f0), f"reveal targets not hidden at frame 0: {f0}"
+    assert held and all(o == 1.0 for o in held), f"reveal targets not fully shown at held frame: {held}"
+
+
+@requires_chromium
+def test_f7_count_up_cover_held_frame_matches_static_stat():
+    # Migrated cover-stat assertion: the F7 count-up cover's HELD frame .stat text ==
+    # the old static cover stat ("{count} {composition copy}") byte-for-byte. The count
+    # has climbed to its terminal value at the held frame.
+    from scrapers.tools.data_card import build_count_up, f7_cover_stat_html, _F7_COVER_COPY
+    from bs4 import BeautifulSoup
+    html_doc, total = build_count_up(count=23, label=_F7_COVER_COPY["all-restocks"])
+    static = BeautifulSoup(f7_cover_stat_html(23, "all-restocks"), "html.parser").get_text()
+    assert static == "23 back in stock this week."
+    # The count-up cover has no opacity reveal targets (the digit ticks via textContent,
+    # always visible); visibility = the held digit + the movement-coverage in
+    # test_count_up_sample_render. Text-only held-frame assert here.
+    held_text, _, _ = _held_and_frame0(html_doc, total, text_selector=".stat")
+    assert held_text == static
+
+
+@requires_chromium
+def test_f9_cover_reveal_held_frame_matches_static_stat():
+    # Migrated cover-stat assertion: the F9 reveal cover's HELD frame .stat text ==
+    # the locked 'carried at N' prose byte-for-byte (the "carried at" lock, untouched).
+    from scrapers.tools.data_card import build_f9_cover_reveal, f9_cover_stat_html
+    from bs4 import BeautifulSoup
+    html_doc, total = build_f9_cover_reveal(coral="WWC Sunkist Bounce", vendor_count=4)
+    static = BeautifulSoup(f9_cover_stat_html("WWC Sunkist Bounce", 4), "html.parser").get_text()
+    assert static == "WWC Sunkist Bounce — carried at 4 vendors right now."
+    held_text, f0, held = _held_and_frame0(
+        html_doc, total, text_selector=".stat", reveal_all=".stat .seg")
+    assert held_text == static
+    # Held-frame VISIBILITY: all three prose segments hidden at frame 0, shown at held.
+    assert f0 and all(o == 0.0 for o in f0), f"segments not hidden at frame 0: {f0}"
+    assert held and all(o == 1.0 for o in held), f"segments not fully shown at held frame: {held}"
+
+
+def _decode_clean(path) -> str:
+    """Full-decode scan: ffmpeg -v error decodes every frame to null and prints ONLY
+    decode errors to stderr. A corrupt concat seam (mismatched SPS/PPS — the -c copy
+    failure mode) decodes wrong downstream of the join and surfaces here. Empty stderr
+    == a clean, non-corrupt reel. ffmpeg is the bundled imageio-ffmpeg binary."""
+    import subprocess
+    import imageio_ffmpeg
+    proc = subprocess.run(
+        [imageio_ffmpeg.get_ffmpeg_exe(), "-v", "error", "-i", str(path), "-f", "null", "-"],
+        capture_output=True, text=True,
+    )
+    return proc.stderr.strip()
+
+
+@requires_chromium
+def test_cross_producer_concat_integration_clean_join(tmp_path):
+    # CTK-173 close 2 / INV-06 THE GATE: the first REAL multi-clip concat_clips on
+    # rendered cards — a count-up cover clip + a plain-reveal inner clip, both via
+    # render_sequence (shared _encode_args), joined by concat_clips with -c copy. The
+    # full-decode scan must report ZERO errors: a clean, non-corrupt cross-producer
+    # join (vs test_video's synthetic-frame version — this exercises the real F7 path).
+    out = tmp_path / "f7-concat.mp4"
+    data_card.render_f7_arrivals(
+        count=12, composition="all-arrivals",
+        items=[{"name": "WWC Sunkist Bounce Mushroom", "vendor": "WWC",
+                "event_phrase": "just listed", "fields": _fields("$250.00")}],
+        now=NOW, out_path=out,
+    )
+    assert out.exists() and out.stat().st_size > 0
+    errors = _decode_clean(out)
+    assert errors == "", f"concat join is not decode-clean (corrupt seam?):\n{errors}"
+    # Duration is the sum of the two clips (the join did not drop/duplicate frames).
+    assert 7.5 <= video.probe_duration(out) <= 8.1
