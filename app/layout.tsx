@@ -27,8 +27,8 @@ export default function RootLayout({
       <head>
         <Script
           defer
-          data-domain="coralticker.com"
-          src="https://plausible.io/js/script.js"
+          src="https://static.cloudflareinsights.com/beacon.min.js"
+          data-cf-beacon='{"token": "fb224301a86244498df6866d1fc96177"}'
           strategy="afterInteractive"
         />
       </head>
