@@ -730,6 +730,10 @@ def select_f7_arrivals(conn, window_hours: int = 168, sample_cap: int = 9):
     # cards, so dedupe to the most-recent per coral (the sort above). The cover count is
     # UNCHANGED — true_count stays the full lead-event population (the honest-count
     # split); only the displayed sample dedupes.
+    # LOAD-BEARING ORDER (don't drop the sort or reorder these passes): by_coral keeps
+    # the FIRST row per coral, which == most-recent only because `eligible` is sorted
+    # recency-DESC above; and by_coral.values() below relies on dict insertion order
+    # (Python 3.7+) being that same recency order for the vendor-spread.
     by_coral: dict = {}
     for r in eligible:
         by_coral.setdefault(r["named_coral_id"], r)   # first per coral == most-recent

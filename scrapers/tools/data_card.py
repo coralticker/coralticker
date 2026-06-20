@@ -534,6 +534,12 @@ def render_f8_superlative(
     PNG -> render_kenburns with DATA_CARD_MOTION -> looping vertical MP4 at
     out_path. Returns out_path.
 
+    NOTE: superseded by render_f8_reveal (CTK-161 driver fix 2026-06-19, build_f8) —
+    prune candidate. No prod caller post-repoint; retained only as a pure unit
+    (test_rasterize.test_f8_end_to_end_render) + render_f8_card_html +
+    reel-frame-f8-superlative.html. Tracked in open-items alongside the static-carousel
+    orphans (render_carousel / render_cover_html / render_inner_html).
+
     The PNG lands beside out_path (or in work_dir) so the intermediate frame is
     inspectable for the 11pm debug."""
     out_path = Path(out_path)
@@ -665,8 +671,11 @@ def render_kinetic_carousel(
     work_dir.mkdir(parents=True, exist_ok=True)
 
     clips: list[Path] = []
+    last = len(slides) - 1
     for idx, (card_html, total) in enumerate(slides):
-        label = "cover" if idx == 0 else f"inner{idx - 1}"
+        # Debug-artifact label per slide role (the docstring promises findable frames):
+        # cover first, static closer last, plain-reveal inners between.
+        label = "cover" if idx == 0 else ("closer" if idx == last else f"inner{idx - 1}")
         frames = rasterize.rasterize_sequence(card_html, total, work_dir / f"{out_path.stem}-{label}-frames")
         clip = work_dir / f"{out_path.stem}-{label}.mp4"
         video.render_sequence(frames, clip, fps=fps)
@@ -704,9 +713,27 @@ def build_closer(*, line: str, fps: int = video.DATA_CARD_MOTION.fps) -> tuple[s
     string is caption-only canon and must never be passed here."""
     line_html = _esc(line)
     if _CLOSER_DOMAIN in line:
-        line_html = line_html.replace(_CLOSER_DOMAIN, f'<span class="url">{_CLOSER_DOMAIN}</span>')
+        # Emphasize the FIRST domain occurrence only (count=1) — a future caller line
+        # carrying the domain twice shouldn't double-wrap.
+        line_html = line_html.replace(_CLOSER_DOMAIN, f'<span class="url">{_CLOSER_DOMAIN}</span>', 1)
     card_html = _fill("reel-frame-closer.html", LINE_HTML=line_html)
     return card_html, _frame_count(CLOSER_HOLD_SEC, fps)
+
+
+def _carousel_slides(cover, items, *, lead_phrase, now, closer_line, fps):
+    """Assemble a kinetic-carousel slide list: cover -> <= INNER_SLIDE_CAP inner
+    drill-ins -> static closer. lead_phrase(item) resolves each inner's event phrase
+    ('just listed' / 'back in stock' for F7; 'listed' for F9) — the ONLY F7/F9 delta.
+    The cap + closer-append live ONLY here, so F7 and F9 can never silently diverge
+    (a cap or closer change touches one place, not two)."""
+    inners = [
+        build_inner_reveal(
+            lead_html=_lead_html(it["name"], it["vendor"], lead_phrase(it)),
+            fields=it["fields"], now=now, fps=fps,
+        )
+        for it in items[:INNER_SLIDE_CAP]
+    ]
+    return [cover, *inners, build_closer(line=closer_line, fps=fps)]
 
 
 def build_f7_slides(
@@ -714,19 +741,13 @@ def build_f7_slides(
     closer_line: str, fps: int = video.DATA_CARD_MOTION.fps,
 ) -> list[tuple[str, int]]:
     """The F7 carousel slide list (pure — no render): count-up COVER (full-window
-    count + composition label) -> the display sample truncated to the first
-    INNER_SLIDE_CAP plain-reveal inners -> the static CLOSER. The cap lives here (not
-    in the selector / driver), so the selector's full curated sample passes through
-    and only the SLIDE assembly truncates — the cover count stays the true count."""
+    count + composition label) -> <= INNER_SLIDE_CAP plain-reveal inners -> the static
+    CLOSER. The cap lives in _carousel_slides (not the selector / driver), so the
+    selector's full curated sample passes through and only the SLIDE assembly
+    truncates — the cover count stays the true count."""
     cover = build_count_up(count=count, label=_F7_COVER_COPY[composition], fps=fps)
-    inners = [
-        build_inner_reveal(
-            lead_html=_lead_html(it["name"], it["vendor"], it["event_phrase"]),
-            fields=it["fields"], now=now, fps=fps,
-        )
-        for it in items[:INNER_SLIDE_CAP]
-    ]
-    return [cover, *inners, build_closer(line=closer_line, fps=fps)]
+    return _carousel_slides(cover, items, lead_phrase=lambda it: it["event_phrase"],
+                            now=now, closer_line=closer_line, fps=fps)
 
 
 def build_f9_slides(
@@ -734,15 +755,9 @@ def build_f9_slides(
     closer_line: str, fps: int = video.DATA_CARD_MOTION.fps,
 ) -> list[tuple[str, int]]:
     """The F9 carousel slide list (pure — no render): plain-staged-reveal COVER ->
-    the display sample truncated to the first INNER_SLIDE_CAP plain-reveal inners ->
-    the static CLOSER. vendor_count is the full carrier count (the cover claim),
-    unchanged by the inner cap."""
+    <= INNER_SLIDE_CAP plain-reveal inners -> the static CLOSER. vendor_count is the
+    full carrier count (the cover claim), unchanged by the inner cap. F9 inners are
+    'listed' events (hardcoded phrase)."""
     cover = build_f9_cover_reveal(coral=coral, vendor_count=vendor_count, fps=fps)
-    inners = [
-        build_inner_reveal(
-            lead_html=_lead_html(it["name"], it["vendor"], "listed"),
-            fields=it["fields"], now=now, fps=fps,
-        )
-        for it in items[:INNER_SLIDE_CAP]
-    ]
-    return [cover, *inners, build_closer(line=closer_line, fps=fps)]
+    return _carousel_slides(cover, items, lead_phrase=lambda it: "listed",
+                            now=now, closer_line=closer_line, fps=fps)
