@@ -60,6 +60,13 @@ from scrapers.tools import data_card
 
 DEFAULT_OUT_DIR = "build/cards"
 
+# CTK-173 follow-on — the F7/F9 closer-card on-image line (final carousel slide).
+# CONFIRMED 2026-06-19 (Jon + /brand-manager): "Full feed at coralticker.com." — the
+# coralticker.com domain renders bold near-black, "Full feed at" + the period regular
+# weight, no forest (treatment in build_closer + reel-frame-closer.html). "link in bio"
+# is caption-only canon and must NOT appear on the card.
+_CLOSER_LINE = "Full feed at coralticker.com."
+
 # Output filename per format. One file per format per run (overwritten); the
 # grid-stocking batch banks them in out_dir for the operator to post.
 _OUT_NAME = {
@@ -83,6 +90,7 @@ def build_f7(conn, *, now: datetime, out_dir: str | Path) -> Path | None:
         composition=composition,
         items=items,
         now=now,
+        closer_line=_CLOSER_LINE,
         out_path=Path(out_dir) / _OUT_NAME["f7"],
     )
 
@@ -91,11 +99,19 @@ def build_f8(conn, *, now: datetime, out_dir: str | Path) -> Path | None:
     """F8 superlative single: select -> render, or None (clean skip) when no drop
     clears the glitch + worthiness gates. fields pass straight through
     superlative_fields (INV-01); pct + name derive from the SAME row, so the
-    headline % can never disagree with the rendered Price. pair (%-parity gate)."""
+    headline % can never disagree with the rendered Price. pair (%-parity gate).
+
+    Renders the ANIMATED reveal/strike-draw card (render_f8_reveal — CTK-172 locked:
+    plain headline reveal + un-struck-hold strike-draw on the Price). NOTE: from
+    CTK-161's first commit through 2026-06-19 this called render_f8_superlative (the
+    static Ken Burns single-card), so production F8 never animated — CTK-172 built the
+    reveal path + template + tests but the driver was never repointed. Fixed here; the
+    held end-frame is INV-01 byte-identical to the static card, so only the motion
+    changed."""
     row = cq.select_superlative_drop(conn)
     if row is None:
         return None
-    return data_card.render_f8_superlative(
+    return data_card.render_f8_reveal(
         name=row["named_coral_canonical_name"],
         pct=cq.superlative_pct(row),
         fields=cq.superlative_fields(row),
@@ -120,6 +136,7 @@ def build_f9(conn, *, now: datetime, out_dir: str | Path) -> Path | None:
         vendor_count=vendor_count,
         items=items,
         now=now,
+        closer_line=_CLOSER_LINE,
         out_path=Path(out_dir) / _OUT_NAME["f9"],
     )
 

@@ -108,7 +108,7 @@ class _Recorder:
 
 _RENDER_ATTRS = {
     "f7": "render_f7_arrivals",
-    "f8": "render_f8_superlative",
+    "f8": "render_f8_reveal",        # CTK-161 driver fix: F8 renders the animated reveal, not static
     "f9": "render_f9_lineage",
 }
 
@@ -150,11 +150,13 @@ def _drop_row(**kw):
 
 
 def _le_row(event, *, coral_id=1, coral="WWC Sunkist Bounce", vendor="WWC",
-            price=Decimal("250"), at="2026-06-16T12:00:00Z"):
+            vendor_id=10, price=Decimal("250"), at="2026-06-16T12:00:00Z", id=1):
     return {
+        "id": id,
         "event": event,
         "named_coral_id": coral_id,
         "named_coral_canonical_name": coral,
+        "vendor_id": vendor_id,
         "vendor_display_name": vendor,
         "current_price": price,
         "event_at": at,

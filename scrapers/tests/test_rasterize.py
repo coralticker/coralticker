@@ -86,35 +86,38 @@ def _fields(price_value):
                              listed_at="2026-06-16T12:00:00Z")
 
 
+CLOSER = "Full feed at coralticker.com."   # test fixture string (the real line is Jon-confirmed)
+
+
 @requires_chromium
 def test_f7_arrivals_carousel_render(tmp_path):
     # CTK-173 kinetic carousel: count-up cover (~3.7s) + 1 plain-reveal inner (~4.1s)
-    # concatenated into one reel (~7.8s) via render_sequence + concat_clips.
+    # + static closer (~2.5s) -> one reel (~10.3s) via render_sequence + concat_clips.
     out = tmp_path / "f7.mp4"
     result = data_card.render_f7_arrivals(
         count=23, composition="all-restocks",
         items=[{"name": "WWC Sunkist Bounce Mushroom", "vendor": "WWC",
                 "event_phrase": "back in stock", "fields": _fields("$250.00")}],
-        now=NOW, out_path=out,
+        now=NOW, closer_line=CLOSER, out_path=out,
     )
     assert result.exists() and result.stat().st_size > 0
     duration = video.probe_duration(out)
-    assert 7.5 <= duration <= 8.1, f"expected ~7.8s (count-up cover + 1 reveal inner), got {duration}s"
+    assert 10.0 <= duration <= 10.7, f"expected ~10.3s (count-up cover + 1 inner + closer), got {duration}s"
 
 
 @requires_chromium
 def test_f9_lineage_carousel_render(tmp_path):
     # CTK-173 kinetic carousel: plain-staged-reveal cover (~3.8s) + 1 plain-reveal
-    # inner (~4.1s) -> one reel (~7.9s).
+    # inner (~4.1s) + static closer (~2.5s) -> one reel (~10.4s).
     out = tmp_path / "f9.mp4"
     result = data_card.render_f9_lineage(
         coral="WWC Sunkist Bounce", vendor_count=2,
         items=[{"name": "WWC Sunkist Bounce Mushroom", "vendor": "TSA", "fields": _fields("$230.00")}],
-        now=NOW, out_path=out,
+        now=NOW, closer_line=CLOSER, out_path=out,
     )
     assert result.exists() and result.stat().st_size > 0
     duration = video.probe_duration(out)
-    assert 7.6 <= duration <= 8.2, f"expected ~7.9s (reveal cover + 1 reveal inner), got {duration}s"
+    assert 10.1 <= duration <= 10.8, f"expected ~10.4s (reveal cover + 1 inner + closer), got {duration}s"
 
 
 # --- PB-2: content-animation capture (rasterize_sequence) + count-up sample ---
@@ -346,10 +349,11 @@ def test_cross_producer_concat_integration_clean_join(tmp_path):
         count=12, composition="all-arrivals",
         items=[{"name": "WWC Sunkist Bounce Mushroom", "vendor": "WWC",
                 "event_phrase": "just listed", "fields": _fields("$250.00")}],
-        now=NOW, out_path=out,
+        now=NOW, closer_line=CLOSER, out_path=out,
     )
     assert out.exists() and out.stat().st_size > 0
     errors = _decode_clean(out)
     assert errors == "", f"concat join is not decode-clean (corrupt seam?):\n{errors}"
-    # Duration is the sum of the two clips (the join did not drop/duplicate frames).
-    assert 7.5 <= video.probe_duration(out) <= 8.1
+    # Duration is the sum of the three clips (count-up cover + inner + closer); the
+    # join did not drop/duplicate frames.
+    assert 10.0 <= video.probe_duration(out) <= 10.7

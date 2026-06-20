@@ -312,12 +312,14 @@ class _FakeConn:
 
 
 def _le_row(event, *, coral_id=1, coral="WWC Sunkist Bounce", vendor="WWC",
-            price=Decimal("250"), at="2026-06-16T12:00:00Z"):
+            vendor_id=10, price=Decimal("250"), at="2026-06-16T12:00:00Z", id=1):
     """A get_listing_lead_event-shaped row (only the fields the F7 selector uses)."""
     return {
+        "id": id,
         "event": event,
         "named_coral_id": coral_id,
         "named_coral_canonical_name": coral,
+        "vendor_id": vendor_id,
         "vendor_display_name": vendor,
         "current_price": price,
         "event_at": at,
@@ -394,6 +396,37 @@ def test_f7_sample_capped():
     rows = [_le_row("just-listed", coral_id=i) for i in range(20)]
     true_count, composition, items = select_f7_arrivals(_FakeConn(rows), sample_cap=9)
     assert true_count == 20 and len(items) == 9    # honest count, deflated sample
+
+
+def test_f7_dedupes_on_coral_and_spreads_vendors():
+    # One card per CORAL (the breadth sweetspot — variety of corals AND vendors). Same
+    # coral at different vendors collapses to the most-recent; and the top cards spread
+    # across vendors (a same-vendor extra is deferred), so the reel doesn't read as one
+    # shop's feed. Cover count stays the FULL population.
+    rows = [
+        _le_row("just-listed", coral_id=1, coral="JF Raja Rampage Chalice", vendor="Aqua SD",
+                vendor_id=10, id=101, price=Decimal("85"), at="2026-06-16T15:00:00Z"),   # newest Raja
+        _le_row("just-listed", coral_id=1, coral="JF Raja Rampage Chalice", vendor="Jason Fox",
+                vendor_id=11, id=100, price=Decimal("90"), at="2026-06-16T14:00:00Z"),   # same coral, diff vendor -> dropped
+        _le_row("just-listed", coral_id=2, coral="Magician Zoanthid", vendor="Tidal Gardens",
+                vendor_id=12, id=102, price=Decimal("60"), at="2026-06-16T13:00:00Z"),
+        _le_row("just-listed", coral_id=3, coral="Dragon Soul Torch", vendor="Tidal Gardens",
+                vendor_id=12, id=103, price=Decimal("120"), at="2026-06-16T12:00:00Z"),  # diff coral, SAME vendor -> deferred
+        _le_row("just-listed", coral_id=4, coral="Sunkist Bounce", vendor="WWC",
+                vendor_id=13, id=104, price=Decimal("70"), at="2026-06-16T11:00:00Z"),
+    ]
+    true_count, composition, items = select_f7_arrivals(_FakeConn(rows))
+    names = [it["name"] for it in items]
+    vendors = [it["vendor"] for it in items]
+    assert true_count == 5                                   # cover = full population, NOT deduped
+    assert len(items) == 4 and len(set(names)) == 4         # one card per coral
+    assert names.count("JF Raja Rampage Chalice") == 1      # collapsed across vendors too
+    raja = next(it for it in items if it["name"] == "JF Raja Rampage Chalice")
+    assert raja["vendor"] == "Aqua SD" and raja["fields"][0]["value"] == "$85.00"   # most-recent Raja
+    # Vendor-spread: the top 3 cards are 3 distinct vendors; the same-vendor extra
+    # (Dragon Soul @ Tidal, sharing Magician's vendor) is deferred to the tail.
+    assert len(set(vendors[:3])) == 3
+    assert vendors[-1] == "Tidal Gardens"
 
 
 def test_f9_single_vendor_returns_none():
