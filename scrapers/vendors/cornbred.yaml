@@ -1,0 +1,211 @@
+# Cornbred Corals scraper config (CTK-142 Session 2).
+#
+# Authoritative platform/method fields live on the vendors row (migration
+# 0048_add_cornbred_vendor.sql, vendor_id=12). YAML carries scrape-tuning
+# per arch §2.3 — values that may change without a code edit (delay, page
+# size, max pages, hash anchor, originator prefix, category filter,
+# auction detection, cohort-OOS). DB row wins on conflict.
+#
+# Pure config clone of the Shopify fleet (PE/WWC/TSA/JF/Battlecorals/Unique
+# Corals/Vivid/Reef Chasers): parse_shopify carries the whole fetch/parse
+# path. No shared-code edit — Session 1 confirmed _is_auction() reads its
+# tag-set from auction_detection.tags (parse_shopify.py L533), zero hard-
+# coded vendor signal, so wk_end_auction wires as one-line config below.
+
+slug: cornbred
+platform: shopify
+base_url: https://cornbredcorals.com
+
+# Standard Shopify endpoint; five-signal pre-flight 2026-06-20 (CTK-142
+# plan §Pre-flight evidence) — HTTP 200, application/json, canonical top-
+# level products array with the 13-key product shape. 648-product catalog
+# (Session 1 full-catalog walk 2026-06-20: page 1 = 250, page 2 = 250,
+# page 3 = 148 under-full → natural terminator; catalog ≈ 648, ~3 pages at
+# limit=250). Small-medium catalog, comparable to JF (452) at the lower
+# end, above Reef Chasers (249). vendor field uniformly "Cornbred Corals".
+#
+# Five-signal Shopify confirmation pre-flight (vendor-scan false-positive
+# precedent invariant per feedback_five_signal_vendor_preflight):
+#   (1) homepage head carries Shopify.shop / Shopify.theme / window.Shopify
+#       + cdn.shopify.com + myshopify.com references
+#   (2) powered-by: Shopify header; server: cloudflare fronts a clean 200
+#       (no JS challenge / no cf-mitigated)
+#   (3) no platform-deviation headers (standard Shopify behind Cloudflare)
+#   (4) robots.txt explicit "# Shopify storefront. Public product, collection,
+#       page, blog, policy, cart, and localized HTML is crawlable." preamble;
+#       User-agent: * / Allow: /. New-era agentic-commerce posture present
+#       (UCP/MCP endpoint, agents.md) with a checkout-automation prohibition
+#       scoped to transacting only — read-only catalog crawl of /products.json
+#       is explicitly Allowed; our scraper reads catalog and never touches
+#       cart/checkout (arch §2.5, no new ToS risk vs. the rest of the fleet).
+#   (5) /products.json HTTP 200 + canonical products array with the 13-key
+#       first-product shape (body_html / created_at / handle / id / images /
+#       options / product_type / published_at / tags / title / updated_at /
+#       variants / vendor) matching the Shopify-fleet empirical anchor.
+products_path: /products.json
+
+# Page size at Shopify's max (250) — fewer round-trips for the 648-product
+# catalog (3 pages today). The parser short-circuits on the first under-full
+# page (page 3 returns 148 < 250 = last page).
+page_size: 250
+
+# Inherits the PE+WWC+TSA+JF+Battlecorals+UC+Vivid+RC empirical
+# request_delay_sec=2 lock. 648 products / 250 per page = 3 pages × 2s = ~6s
+# total scrape time, trivial vs. the 60-min workflow timeout. Hourly cadence
+# at :47 (open-items.md off-minute discipline; clean singleton distinct from
+# RC :41 / PE :37 / UC :29 / Vivid :19). Bump to 3-4s per arch §2.4 retry-
+# policy outcome only if 429s appear in the observation window.
+request_delay_sec: 2
+
+# Belt-and-suspenders ceiling. Cornbred's 648-product catalog at 250/page =
+# 3 pages today; 5 leaves room for drop-spike inventory without re-tuning.
+# Matches the small-catalog 5-cap posture (Battlecorals / UC / RC).
+max_pages: 5
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object.
+# Same hash_anchor as the rest of the Shopify fleet per parse_shopify.py
+# shape stability. F5 fold (sort-before-hash) prevents Shopify JSON key
+# emission-order changes from spuriously flipping the sentinel. Empirical
+# anchor (Session 1 walk 2026-06-20): 13 keys = body_html, created_at,
+# handle, id, images, options, product_type, published_at, tags, title,
+# updated_at, variants, vendor.
+hash_anchor: first_product_keys
+
+# originator_prefix=null per Reef Chasers (CTK-086) precedent. Cornbred IS a
+# named-coral originator house (Utter Chaos Paly, El Diablo Chalice, Mortal
+# Kombat Paly are canonical Cornbred lineages) and carries a "Cornbred's X"
+# self-prefix on most coral titles — but the seed-list
+# (.claude/research/named-coral-seed-list.md) has ZERO Cornbred-attributed
+# canonical entries. With no "Cornbred X" canonical_name entries to
+# synthesize against, matcher §3.4 stage 3 synthesis would be a no-op; null
+# prefix is the correct config TODAY.
+#
+# Forward note (Phase 4 seed-list expansion): Cornbred's house lineages are
+# strong named-coral originator candidates. If a future expansion adds
+# Cornbred-attributed canonicals, flip originator_prefix to the seed-list-
+# normalized form (prefix matches seed-list canonical shape, not slug — the
+# Battlecorals/UC convention). Not a CTK-142 scraper-side blocker; flagged
+# for /lead-architect / seed-list-expansion awareness.
+originator_prefix: null
+
+# cohort_oos_at_persist: true — trust-floor parity (CTK-105 D-4 lineage);
+# also the backstop for the auction OOS-flip. Session 1 delisted-row sample-
+# check 2026-06-20: net-new vendor, zero prior vendor_listings (migration
+# 0048 not yet applied), so the first scrape has no prior cohort → zero
+# would-flip rows. Enabled from day one — Battlecorals empty-rowset
+# disposition (backlog=0, no live sample-check required), not the RC 1/1-
+# delisted case. Expected post-flip listings_oos ~0 on the first scrape.
+#
+# OOS mechanism (CTK-142 plan obligation #2): an ended weekend auction flips
+# in_stock via the available:false → in_stock variant mapping in
+# _normalize_product (the PRIMARY path); cohort_oos_at_persist is the BACKSTOP
+# for fully-delisted rows (vendor removes the listing → cohort absent-pass).
+cohort_oos_at_persist: true
+
+# CTK-041/CTK-160 auction detection: null-out current_price + set
+# is_auction=true on wk_end_auction rows. Session 1 confirmed wk_end_auction
+# is the SOLE auction signal (fleet-wide tag scan for auc/bid substrings
+# returned only this tag), count = 2 at the 2026-06-20 walk (Cornbred's Red
+# Queen Blasto $39.99, Cornbred's Master PPE Blasto $74.99 — both PT='Blasto',
+# both live: updated_at 2026-06-20, both in-stock in the collection feed,
+# both carrying real placeholder bids that must NEVER write through).
+#
+# Both auction rows sit in an allowlisted PT (Blasto), so they pass the normal
+# gate — the CTK-160 skip_allowlists override is not load-bearing for these
+# two; auction_detection drives the price-null regardless (_normalize_product
+# L586-589). The override only matters if a future wk_end_auction row lands in
+# a non-allowlisted bucket. No slug_suffix: Cornbred's auction handles carry no
+# consistent suffix convention (the two live handles end -wysiwyg, the shared
+# WYSIWYG marker, not an auction marker); tag detection is the sole signal.
+auction_detection:
+  tags:
+    - wk_end_auction
+
+# Category filter: product_type genus-allowlist (Battlecorals product_type
+# mechanism — category_filter.product_type_allowlist; exact-string match in
+# parse_shopify._should_keep). Taxonomy lives entirely in product_type;
+# Cornbred tags are sparse (top tag 'paly' = 6 at the Session 1 walk) and
+# carry no coral signal — this is a product_type-allowlist vendor, no tag
+# mechanism.
+#
+# CRITICAL divergence from Battlecorals (Session 1 walk 2026-06-20): Cornbred's
+# EMPTY '' bucket is NOT coral — it is 99 rows of livestock fish + cleanup-crew
+# inverts + 1 framed poster (opposite of BC, where '' was allowlisted as the
+# coral grab-bag bucket). Empty is DROPPED here. Coverage-gap test PASS: all 99
+# empty-bucket rows enumerated, every one fish / CUC invert / merch poster;
+# zero live coral in any dropped bucket ('' / Gift Card / Sticker). 648 - 99 -
+# 1 - 2 = 546 coral rows kept, 0 coral lost.
+#
+# 40 coral/anemone product_type buckets kept, verbatim with Session 1 counts.
+# Both typo/variant pairs kept (Goniopora/Gonipora; Acro/Anacro = Anacropora
+# SPS). Anemone + Nem kept (livestock anemones, in scope per the seed-list
+# coral-adjacent posture). The 'Other' bucket (11 rows) resolved row-by-row at
+# Session 1 = 11/11 coral (Duncans, GSP, Hammer, Xenia, Bowerbanki, Torch,
+# Candy Cane, Leptastrea) — Cornbred's coral catch-all for un-bucketed genera.
+#
+# Rotating-out watch (feedback_rotating_bucket_allowlist, rotating-OUT case):
+# a new species_type string Cornbred admin lands tomorrow silently drops from
+# the catalog. Mitigation: scraper_runs.listings_seen drift watch at
+# /lead-backend per-vendor close-monitor; a real category-count miss surfaces
+# as a catalog-count drop in the next firing; allowlist amendment is the
+# recovery path.
+category_filter:
+  product_type_allowlist:
+    - Other                  # 11 items; coral catch-all (Duncans/GSP/Hammer/Xenia/Bowerbanki/Torch/Candy Cane/Leptastrea) — 11/11 coral, resolved row-by-row Session 1 (2026-06-20)
+    - Paly                   # 89 items; Cornbred house palys incl. canonical Utter Chaos (2026-06-20)
+    - Chalice                # 62 items (2026-06-20)
+    - Acro                   # 47 items; Acropora (2026-06-20)
+    - Mushroom               # 46 items (2026-06-20)
+    - Favia                  # 35 items (2026-06-20)
+    - Zoa                    # 33 items (2026-06-20)
+    - Monti                  # 30 items; Montipora (2026-06-20)
+    - Milli                  # 22 items; Millepora (2026-06-20)
+    - Lepto                  # 16 items; Leptoseris (2026-06-20)
+    - Anemone                # 15 items; livestock anemones, in scope (2026-06-20)
+    - Cyphastrea             # 13 items (2026-06-20)
+    - Echinata               # 13 items; Echinophyllia (2026-06-20)
+    - Torch                  # 12 items; Euphyllia (2026-06-20)
+    - Birdsnest              # 9 items; Seriatopora (2026-06-20)
+    - Blasto                 # 9 items; Blastomussa — carries both live wk_end_auction rows (2026-06-20)
+    - Hammer                 # 9 items; Euphyllia (2026-06-20)
+    - Pectinia               # 9 items (2026-06-20)
+    - Acan                   # 8 items; Acanthastrea (2026-06-20)
+    - Galaxia                # 7 items; Galaxea (2026-06-20)
+    - Leather                # 7 items; soft coral (2026-06-20)
+    - Goniopora              # 6 items (2026-06-20)
+    - Diaseris               # 5 items (2026-06-20)
+    - Psammacora             # 5 items (2026-06-20)
+    - Stylo                  # 4 items; Stylophora (2026-06-20)
+    - Digi                   # 3 items; Montipora digitata (2026-06-20)
+    - Lobo                   # 3 items; Lobophyllia (2026-06-20)
+    - Maze Brain             # 3 items; Platygyra (2026-06-20)
+    - Frogspawn              # 2 items; Euphyllia (2026-06-20)
+    - Hydno                  # 2 items; Hydnophora (2026-06-20)
+    - Nem                    # 2 items; livestock anemone (Rock Nem etc.), in scope (2026-06-20)
+    - Anacro                 # 1 item; Anacropora SPS — period-less/variant pair with Acro (2026-06-20)
+    - Bowerbanki             # 1 item; Homophyllia bowerbanki (2026-06-20)
+    - Gonipora               # 1 item; typo-variant pair with Goniopora — kept verbatim (2026-06-20)
+    - Grandis                # 1 item; Acanthastrea/Micromussa grandis (2026-06-20)
+    - Leptastrea             # 1 item (2026-06-20)
+    - Octospawn              # 1 item; Euphyllia (2026-06-20)
+    - Pavona                 # 1 item (2026-06-20)
+    - Plate                  # 1 item; Fungia plate coral (2026-06-20)
+    - Scroll                 # 1 item; Turbinaria scroll coral (2026-06-20)
+  # tag_denylist: empty. Cornbred taxonomy lives in product_type, not tags;
+  # the strict coral-only allowlist already excludes every non-coral bucket
+  # ('' fish/invert, Gift Card, Sticker) — no tag-based reject needed.
+  tag_denylist: []
+  # title_denylist: defensive chaeto/macroalgae forward-binding (CTK-107
+  # D-2-quater fleet-wide pattern per Jon's "filter chaeto from all vendors
+  # just to be safe" 2026-06-01; /lead-backend ratified INCLUDE for CTK-142
+  # 2026-06-20). No active leak on Cornbred today — the Session 1 walk found
+  # zero chaeto/macroalgae anywhere, and the strict product_type allowlist
+  # gates non-coral out regardless. This is the Other catch-all backstop:
+  # the 'Other' bucket is allowlisted, so a future Cornbred-admin chaeto row
+  # landing in 'Other' would otherwise pass — these 4 entries close that path.
+  # All case-insensitive substring per CTK-096 D-1; fleet parity with BC + RC.
+  title_denylist:
+    - Chaeto                 # canonical + Chaetomorpha substring catch
+    - Cheato                 # POTO-style misspelling forward-binding
+    - Macroalgae             # generic macroalgae catch
+    - Macro Algae            # space-separated variant catch

@@ -1,0 +1,663 @@
+{
+  "products": [
+    {
+      "id": 10405984272703,
+      "title": "Cornbred's Utter Chaos Paly - WYSIWYG",
+      "handle": "cornbreds-utter-chaos-palys-copy",
+      "body_html": "<p><meta charset=\"utf-8\">Buyer gets frag in 1st photo.</p>",
+      "published_at": "2026-05-22T03:17:59-04:00",
+      "created_at": "2026-05-22T03:17:59-04:00",
+      "updated_at": "2026-06-20T07:03:33-04:00",
+      "vendor": "Cornbred Corals",
+      "product_type": "Paly",
+      "tags": [
+        "pink",
+        "purple"
+      ],
+      "variants": [
+        {
+          "id": 53046992503103,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": null,
+          "requires_shipping": true,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "49.99",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 10405984272703,
+          "created_at": "2026-05-22T03:17:59-04:00",
+          "updated_at": "2026-06-20T07:03:33-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 53301533507903,
+          "created_at": "2026-05-22T03:18:12-04:00",
+          "position": 1,
+          "updated_at": "2026-05-22T03:18:14-04:00",
+          "product_id": 10405984272703,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0230/1733/files/IMG_0726.jpg?v=1779434294",
+          "width": 3427,
+          "height": 3152
+        },
+        {
+          "id": 53301531214143,
+          "created_at": "2026-05-22T03:16:52-04:00",
+          "position": 2,
+          "updated_at": "2026-05-22T03:16:54-04:00",
+          "product_id": 10405984272703,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0230/1733/files/EBAY_39utterchaospalysupdate.jpg?v=1779434214",
+          "width": 4722,
+          "height": 3648
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 10002299060543,
+      "title": "Cornbred's Blue Stripe Duncan",
+      "handle": "cornbreds-blue-stripe-duncan",
+      "body_html": "Price is per head.",
+      "published_at": "2025-06-04T20:10:43-04:00",
+      "created_at": "2025-06-04T20:10:43-04:00",
+      "updated_at": "2026-06-20T02:43:38-04:00",
+      "vendor": "Cornbred Corals",
+      "product_type": "Other",
+      "tags": [],
+      "variants": [
+        {
+          "id": 51006794563903,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": null,
+          "requires_shipping": true,
+          "taxable": false,
+          "featured_image": null,
+          "available": false,
+          "price": "49.99",
+          "grams": 0,
+          "compare_at_price": "99.99",
+          "position": 1,
+          "product_id": 10002299060543,
+          "created_at": "2025-06-04T20:10:43-04:00",
+          "updated_at": "2026-06-20T02:43:38-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 52369318347071,
+          "created_at": "2026-02-10T22:56:25-05:00",
+          "position": 1,
+          "updated_at": "2026-02-10T22:56:50-05:00",
+          "product_id": 10002299060543,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0230/1733/files/IMG_9503.jpg?v=1770782210",
+          "width": 5176,
+          "height": 3648
+        },
+        {
+          "id": 52369318445375,
+          "created_at": "2026-02-10T22:56:33-05:00",
+          "position": 2,
+          "updated_at": "2026-02-10T22:56:50-05:00",
+          "product_id": 10002299060543,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0230/1733/files/IMG_9504-2.jpg?v=1770782210",
+          "width": 5472,
+          "height": 3648
+        },
+        {
+          "id": 49668549968191,
+          "created_at": "2025-06-04T20:10:51-04:00",
+          "position": 3,
+          "updated_at": "2026-02-10T22:56:50-05:00",
+          "product_id": 10002299060543,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0230/1733/files/IMG_6243-2.jpg?v=1770782210",
+          "width": 3743,
+          "height": 3648
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 10179829825855,
+      "title": "Sailfin Tang",
+      "handle": "sailfin-tang",
+      "body_html": "",
+      "published_at": "2025-12-12T02:09:05-05:00",
+      "created_at": "2025-12-12T02:09:05-05:00",
+      "updated_at": "2026-06-20T07:03:33-04:00",
+      "vendor": "Cornbred Corals",
+      "product_type": "",
+      "tags": [],
+      "variants": [
+        {
+          "id": 51643642642751,
+          "title": "Small",
+          "option1": "Small",
+          "option2": null,
+          "option3": null,
+          "sku": null,
+          "requires_shipping": true,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "79.99",
+          "grams": 907,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 10179829825855,
+          "created_at": "2025-12-12T02:09:06-05:00",
+          "updated_at": "2026-06-20T07:03:33-04:00"
+        },
+        {
+          "id": 51643642675519,
+          "title": "Medium",
+          "option1": "Medium",
+          "option2": null,
+          "option3": null,
+          "sku": null,
+          "requires_shipping": true,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "99.99",
+          "grams": 907,
+          "compare_at_price": null,
+          "position": 2,
+          "product_id": 10179829825855,
+          "created_at": "2025-12-12T02:09:06-05:00",
+          "updated_at": "2026-06-20T07:03:33-04:00"
+        },
+        {
+          "id": 51643642708287,
+          "title": "Large",
+          "option1": "Large",
+          "option2": null,
+          "option3": null,
+          "sku": null,
+          "requires_shipping": true,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "139.99",
+          "grams": 907,
+          "compare_at_price": null,
+          "position": 3,
+          "product_id": 10179829825855,
+          "created_at": "2025-12-12T02:09:06-05:00",
+          "updated_at": "2026-06-20T07:03:33-04:00"
+        },
+        {
+          "id": 51643642741055,
+          "title": "X-Large",
+          "option1": "X-Large",
+          "option2": null,
+          "option3": null,
+          "sku": null,
+          "requires_shipping": true,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "169.99",
+          "grams": 907,
+          "compare_at_price": null,
+          "position": 4,
+          "product_id": 10179829825855,
+          "created_at": "2025-12-12T02:09:06-05:00",
+          "updated_at": "2026-06-20T07:03:33-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 51800650449215,
+          "created_at": "2025-12-12T02:09:13-05:00",
+          "position": 1,
+          "updated_at": "2025-12-12T02:09:14-05:00",
+          "product_id": 10179829825855,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0230/1733/files/SailfinTang.png?v=1765523354",
+          "width": 1500,
+          "height": 1500
+        }
+      ],
+      "options": [
+        {
+          "name": "Size",
+          "position": 1,
+          "values": [
+            "Small",
+            "Medium",
+            "Large",
+            "X-Large"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 9595208302911,
+      "title": "Cornbred Bloodshot Krak Sticker",
+      "handle": "cornbred-bloodshot-krak-sticker",
+      "body_html": "<p>4\"x4\" sticker, glossy finish.</p>\n<!---->",
+      "published_at": "2024-06-26T20:17:29-04:00",
+      "created_at": "2024-06-26T20:17:29-04:00",
+      "updated_at": "2026-06-20T02:43:38-04:00",
+      "vendor": "Cornbred Corals",
+      "product_type": "Sticker",
+      "tags": [],
+      "variants": [
+        {
+          "id": 49344423166271,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": "",
+          "requires_shipping": true,
+          "taxable": false,
+          "featured_image": null,
+          "available": false,
+          "price": "4.99",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 2,
+          "product_id": 9595208302911,
+          "created_at": "2024-06-26T20:17:31-04:00",
+          "updated_at": "2026-06-20T02:43:38-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 45904940466495,
+          "created_at": "2024-06-26T20:17:18-04:00",
+          "position": 1,
+          "updated_at": "2024-06-26T20:17:19-04:00",
+          "product_id": 9595208302911,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0230/1733/files/SAMPLEBLOODSHOTKRAKSTICKER.png?v=1719447439",
+          "width": 1200,
+          "height": 1200
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 4863686574132,
+      "title": "Cornbred Corals GIFT CARD",
+      "handle": "cornbred-corals-gift-card",
+      "body_html": "",
+      "published_at": "2020-11-30T00:00:52-05:00",
+      "created_at": "2020-11-30T00:00:51-05:00",
+      "updated_at": "2026-06-20T07:03:37-04:00",
+      "vendor": "Cornbred Corals",
+      "product_type": "Gift Card",
+      "tags": [],
+      "variants": [
+        {
+          "id": 33068454510644,
+          "title": "$10.00",
+          "option1": "$10.00",
+          "option2": null,
+          "option3": null,
+          "sku": "",
+          "requires_shipping": false,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "10.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 4863686574132,
+          "created_at": "2020-11-30T00:00:51-05:00",
+          "updated_at": "2026-06-20T07:03:37-04:00"
+        },
+        {
+          "id": 33068454543412,
+          "title": "$25.00",
+          "option1": "$25.00",
+          "option2": null,
+          "option3": null,
+          "sku": "",
+          "requires_shipping": false,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "25.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 2,
+          "product_id": 4863686574132,
+          "created_at": "2020-11-30T00:00:51-05:00",
+          "updated_at": "2026-06-20T07:03:37-04:00"
+        },
+        {
+          "id": 33068454576180,
+          "title": "$50.00",
+          "option1": "$50.00",
+          "option2": null,
+          "option3": null,
+          "sku": "",
+          "requires_shipping": false,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "50.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 3,
+          "product_id": 4863686574132,
+          "created_at": "2020-11-30T00:00:51-05:00",
+          "updated_at": "2026-06-20T07:03:37-04:00"
+        },
+        {
+          "id": 33068454641716,
+          "title": "$75.00",
+          "option1": "$75.00",
+          "option2": null,
+          "option3": null,
+          "sku": "",
+          "requires_shipping": false,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "75.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 4,
+          "product_id": 4863686574132,
+          "created_at": "2020-11-30T00:00:51-05:00",
+          "updated_at": "2026-06-20T07:03:37-04:00"
+        },
+        {
+          "id": 33068454608948,
+          "title": "$100.00",
+          "option1": "$100.00",
+          "option2": null,
+          "option3": null,
+          "sku": "",
+          "requires_shipping": false,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "100.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 5,
+          "product_id": 4863686574132,
+          "created_at": "2020-11-30T00:00:51-05:00",
+          "updated_at": "2026-06-20T07:03:37-04:00"
+        },
+        {
+          "id": 33068454674484,
+          "title": "$150.00",
+          "option1": "$150.00",
+          "option2": null,
+          "option3": null,
+          "sku": "",
+          "requires_shipping": false,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "150.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 6,
+          "product_id": 4863686574132,
+          "created_at": "2020-11-30T00:00:51-05:00",
+          "updated_at": "2026-06-20T07:03:37-04:00"
+        },
+        {
+          "id": 33068454707252,
+          "title": "$200.00",
+          "option1": "$200.00",
+          "option2": null,
+          "option3": null,
+          "sku": "",
+          "requires_shipping": false,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "200.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 7,
+          "product_id": 4863686574132,
+          "created_at": "2020-11-30T00:00:51-05:00",
+          "updated_at": "2026-06-20T07:03:37-04:00"
+        },
+        {
+          "id": 33068454740020,
+          "title": "$300.00",
+          "option1": "$300.00",
+          "option2": null,
+          "option3": null,
+          "sku": "",
+          "requires_shipping": false,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "300.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 8,
+          "product_id": 4863686574132,
+          "created_at": "2020-11-30T00:00:51-05:00",
+          "updated_at": "2026-06-20T07:03:37-04:00"
+        },
+        {
+          "id": 33068454772788,
+          "title": "$400.00",
+          "option1": "$400.00",
+          "option2": null,
+          "option3": null,
+          "sku": "",
+          "requires_shipping": false,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "400.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 9,
+          "product_id": 4863686574132,
+          "created_at": "2020-11-30T00:00:51-05:00",
+          "updated_at": "2026-06-20T07:03:37-04:00"
+        },
+        {
+          "id": 33068454805556,
+          "title": "$500.00",
+          "option1": "$500.00",
+          "option2": null,
+          "option3": null,
+          "sku": "",
+          "requires_shipping": false,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "500.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 10,
+          "product_id": 4863686574132,
+          "created_at": "2020-11-30T00:00:51-05:00",
+          "updated_at": "2026-06-20T07:03:37-04:00"
+        },
+        {
+          "id": 33068454838324,
+          "title": "$1,000.00",
+          "option1": "$1,000.00",
+          "option2": null,
+          "option3": null,
+          "sku": "",
+          "requires_shipping": false,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "1000.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 11,
+          "product_id": 4863686574132,
+          "created_at": "2020-11-30T00:00:51-05:00",
+          "updated_at": "2026-06-20T07:03:37-04:00"
+        },
+        {
+          "id": 33068454871092,
+          "title": "$1,500.00",
+          "option1": "$1,500.00",
+          "option2": null,
+          "option3": null,
+          "sku": "",
+          "requires_shipping": false,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "1500.00",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 12,
+          "product_id": 4863686574132,
+          "created_at": "2020-11-30T00:00:51-05:00",
+          "updated_at": "2026-06-20T07:03:37-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 16540678651956,
+          "created_at": "2020-11-30T00:00:54-05:00",
+          "position": 1,
+          "updated_at": "2020-11-30T00:00:54-05:00",
+          "product_id": 4863686574132,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0230/1733/products/newbusinesscard.jpg?v=1606712454",
+          "width": 1050,
+          "height": 600
+        }
+      ],
+      "options": [
+        {
+          "name": "Denominations",
+          "position": 1,
+          "values": [
+            "$10.00",
+            "$25.00",
+            "$50.00",
+            "$75.00",
+            "$100.00",
+            "$150.00",
+            "$200.00",
+            "$300.00",
+            "$400.00",
+            "$500.00",
+            "$1,000.00",
+            "$1,500.00"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 9921356333375,
+      "title": "Cornbred's Red Queen Blasto - WYSIWYG",
+      "handle": "cornbreds-red-queen-blasto-wysiwyg",
+      "body_html": "<p>Buyer gets frag in 1st photo.</p>",
+      "published_at": "2025-03-20T22:43:08-04:00",
+      "created_at": "2025-03-20T22:43:08-04:00",
+      "updated_at": "2026-06-20T02:43:38-04:00",
+      "vendor": "Cornbred Corals",
+      "product_type": "Blasto",
+      "tags": [
+        "wk_end_auction"
+      ],
+      "variants": [
+        {
+          "id": 50572869927231,
+          "title": "Default Title",
+          "option1": "Default Title",
+          "option2": null,
+          "option3": null,
+          "sku": null,
+          "requires_shipping": true,
+          "taxable": false,
+          "featured_image": null,
+          "available": true,
+          "price": "39.99",
+          "grams": 0,
+          "compare_at_price": null,
+          "position": 1,
+          "product_id": 9921356333375,
+          "created_at": "2025-03-20T22:43:08-04:00",
+          "updated_at": "2026-06-20T02:43:38-04:00"
+        }
+      ],
+      "images": [
+        {
+          "id": 48861368549695,
+          "created_at": "2025-03-20T22:43:22-04:00",
+          "position": 1,
+          "updated_at": "2025-03-20T22:43:25-04:00",
+          "product_id": 9921356333375,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0230/1733/files/IMG_5367.jpg?v=1742525005",
+          "width": 2996,
+          "height": 2789
+        },
+        {
+          "id": 46533647532351,
+          "created_at": "2024-08-22T01:09:21-04:00",
+          "position": 2,
+          "updated_at": "2025-03-20T22:43:25-04:00",
+          "product_id": 9921356333375,
+          "variant_ids": [],
+          "src": "https://cdn.shopify.com/s/files/1/0230/1733/files/IMG_2496.jpg?v=1742525005",
+          "width": 3761,
+          "height": 3284
+        }
+      ],
+      "options": [
+        {
+          "name": "Title",
+          "position": 1,
+          "values": [
+            "Default Title"
+          ]
+        }
+      ]
+    }
+  ]
+}
