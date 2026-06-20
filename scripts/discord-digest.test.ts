@@ -161,7 +161,7 @@ test('per-vendor cap at 3 with honest overflow tail', () => {
   // embed descriptions); link text stays the bare domain.
   assert.match(
     description,
-    /\n\+ 2 more at \[coralticker\.com\]\(<https:\/\/coralticker\.com\/new>\)$/,
+    /\n\+ 2 more at \[coralticker\.com\]\(<https:\/\/coralticker\.com\/new\?ref=discord>\)$/,
   );
 });
 
@@ -176,10 +176,12 @@ test('vendor at or under cap renders all lines, no tail', () => {
 // script's EMBED_DESCRIPTION_CAP constant — if the constant ever drifts,
 // this test fails instead of drifting with it.
 test('defensive trim collapses quietest vendors and stays under 4096', () => {
-  // 40 vendors x 3 long-titled rows ≈ well over 4096 — forces collapse.
+  // 30 vendors x 3 long-titled rows ≈ well over 4096 — forces collapse. (Count
+  // gives headroom for the ?ref=discord attribution budget on every tail link;
+  // still far over cap, so the trim path is exercised exactly as before.)
   const rows: DigestRow[] = [];
   let id = 0;
-  for (let v = 0; v < 40; v++) {
+  for (let v = 0; v < 30; v++) {
     for (let i = 0; i < 3; i++) {
       rows.push(
         row({
@@ -199,7 +201,7 @@ test('defensive trim collapses quietest vendors and stays under 4096', () => {
   // masked /new link as the overflow tail.
   assert.match(
     description,
-    /\*\*Vendor 39\*\* — 3 drops\n\+ 3 more at \[coralticker\.com\]\(<https:\/\/coralticker\.com\/new>\)/,
+    /\*\*Vendor 29\*\* — 3 drops\n\+ 3 more at \[coralticker\.com\]\(<https:\/\/coralticker\.com\/new\?ref=discord>\)/,
   );
 });
 
@@ -207,11 +209,11 @@ test('empty rows produce empty description (caller skips the post)', () => {
   assert.equal(buildDescription([], NOW), '');
 });
 
-test('embed url field links the title home (wordmark-home parity)', () => {
+test('embed url field links the title home with ?ref=discord (wordmark-home parity + channel attribution)', () => {
   assert.deepEqual(buildEmbed('CoralTicker — daily drops 2026-06-04', 'body'), {
     title: 'CoralTicker — daily drops 2026-06-04',
     description: 'body',
-    url: 'https://coralticker.com',
+    url: 'https://coralticker.com/?ref=discord',
   });
 });
 

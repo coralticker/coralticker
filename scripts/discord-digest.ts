@@ -68,9 +68,16 @@ const PER_VENDOR_CAP = 3; // Jon + /reef-lead lock 2026-06-04
 // exact surface (same RPC). Bare domains don't auto-link in embed
 // descriptions, so the tail is a masked markdown link — <>-wrapped per the
 // buy-link hardening below, link text stays the bare domain.
+//
+// Both site links carry ?ref=discord for first-touch channel attribution
+// (CTK-158): a click→signup attributes to Discord. The param is read by
+// middleware on any entry route (the homepage title + the /new tail both
+// qualify), is first-touch (never overwrites an earlier channel), and is
+// invisible to the reader. The link text stays the bare domain.
 const SITE_URL = 'https://coralticker.com';
 const TAIL_SITE = 'coralticker.com';
-const TAIL_LINK = `[${TAIL_SITE}](<${SITE_URL}/new>)`;
+const TITLE_URL = `${SITE_URL}/?ref=discord`;
+const TAIL_LINK = `[${TAIL_SITE}](<${SITE_URL}/new?ref=discord>)`;
 
 // RPC precedence ranks, mirrored for within-vendor display order only —
 // the lead-event CHOICE per listing already happened in the RPC.
@@ -262,7 +269,7 @@ export function buildEmbed(
   title: string,
   description: string,
 ): { title: string; description: string; url: string } {
-  return { title, description, url: SITE_URL };
+  return { title, description, url: TITLE_URL };
 }
 
 async function fetchRows(): Promise<DigestRow[]> {
