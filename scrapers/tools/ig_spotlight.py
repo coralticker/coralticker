@@ -120,6 +120,7 @@ VENDOR_IG: dict[str, VendorIG] = {
     "vivid_aquariums": VendorIG("Vivid",          "@vivid_aquariums",             None),
     "poto":            VendorIG("POTO",           "@piecesoftheocean",            None),
     "reef_chasers":    VendorIG("Reef Chasers",   "@reefchasers",                 None),
+    "cornbred":        VendorIG("Cornbred",       "@cornbredcorals",              None),
 }
 
 # Lead-event arm -> canon event verb (rev4 L45-48; cross-channel verb canon).

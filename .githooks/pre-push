@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# CTK-178 -- pre-push guard for the cross-vendor wiring coverage tests.
+#
+# Runs the FAST coverage tests that catch a new vendor shipped without being wired
+# into every table it must appear in -- the cornbred gap that shipped silently in
+# CTK-142 (a cornbred.yaml + DB row, but no VENDOR_IG @handle entry). It fails HERE,
+# on the laptop, before the push -- not red-after-the-fact on main (tests.yml runs
+# on push-to-main but is NOT a merge gate, by the deliberate solo cadence).
+#
+# SCOPE: the two cross-vendor coverage files only (~0.4s), NOT the full scraper
+# suite (~90s -- a 90s hook gets --no-verify'd out of habit, and a bypassed hook is
+# theater). CI still runs the FULL suite on every push-to-main, so parser-regression
+# coverage is unchanged; this hook is just the fast pre-push guard for the "forgot
+# to wire a new vendor" class. Add new cross-vendor coverage files to COVERAGE_TESTS
+# below as they land.
+#   - test_ig_spotlight.py::test_handle_table_covers_active_vendors  (VENDOR_IG @handle)
+#   - test_run_load_yaml.py::test_all_live_vendor_yamls_load_clean    (every vendor yaml loads)
+#
+# Enable once (after the suite is green):
+#   git config core.hooksPath .githooks
+# Bypass a single push intentionally:
+#   git push --no-verify
+
+set -euo pipefail
+
+COVERAGE_TESTS=(
+    "scrapers/tests/test_ig_spotlight.py"
+    "scrapers/tests/test_run_load_yaml.py"
+)
+
+# Prefer the repo venv; fall back to whatever python is on PATH.
+if [ -x ".venv/bin/python" ]; then
+    PY=".venv/bin/python"
+else
+    PY="python3"
+fi
+
+# Degrade gracefully if pytest isn't installed: warn + allow, rather than turn the
+# hook into a mysterious push-blocker. The guard only blocks on a real test FAIL.
+if ! "$PY" -c "import pytest" 2>/dev/null; then
+    echo "pre-push: pytest not available in $PY -- skipping vendor-wiring guard."
+    echo "          install it to enable the guard:  $PY -m pip install pytest"
+    exit 0
+fi
+
+echo "pre-push: running cross-vendor wiring coverage tests..."
+if ! "$PY" -m pytest -q -m "not requires_db" "${COVERAGE_TESTS[@]}"; then
+    echo ""
+    echo "pre-push BLOCKED: a vendor-wiring coverage test failed (new vendor not fully"
+    echo "wired? e.g. a vendor yaml with no VENDOR_IG @handle row). Fix it, or bypass"
+    echo "intentionally with:  git push --no-verify"
+    exit 1
+fi
+echo "pre-push: vendor-wiring coverage green."
