@@ -28,6 +28,14 @@ COVERAGE_TESTS=(
     "scrapers/tests/test_run_load_yaml.py"
 )
 
+# Empty list = guard intentionally disabled -> allow the push. Also dodges a
+# `set -u` "unbound variable" on "${COVERAGE_TESTS[@]}" under older bash (macOS's
+# system /bin/bash 3.2 errors on an empty-array expansion; bash >= 4.4 does not).
+if [ "${#COVERAGE_TESTS[@]}" -eq 0 ]; then
+    echo "pre-push: COVERAGE_TESTS empty -- wiring guard disabled, allowing push."
+    exit 0
+fi
+
 # Prefer the repo venv; fall back to whatever python is on PATH.
 if [ -x ".venv/bin/python" ]; then
     PY=".venv/bin/python"
