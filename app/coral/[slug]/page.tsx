@@ -20,6 +20,8 @@ import { formatRelativeTime } from '@/lib/format/relative-time';
 import { latestTimestamp } from '@/lib/format/latest-timestamp';
 import { buildLineageFields } from '@/lib/format/lineage-fields';
 import { pluralize } from '@/lib/format/pluralize';
+import { buildCoralJsonLd } from '@/lib/seo/coral-jsonld';
+import { SITE_URL } from '@/lib/seo/site-url';
 import { VendorAvailabilityRow } from './_components/vendor-availability-row';
 
 // The searchParams await suppresses prerender for the WHOLE route: despite
@@ -56,8 +58,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     };
   }
   return {
-    title: `${coral.canonical_name} — current vendor availability`, // suffix via root title.template
-    description: `Current vendor availability and pricing for ${coral.canonical_name}. Drop alerts across reef coral vendors.`,
+    // Enriched SERP strings per branding-guide.md §Short-copy "Coral-page SERP
+    // metadata" (Jon-approved 2026-06-20). Keyword intent lives in title + meta
+    // + JSON-LD, never the H1. Comma-not-em-dash inside {specific} so the root
+    // title.template suffix (" — CoralTicker") is the only dash. No "cheapest"
+    // superlative — the page ranks for it off the body ladder + JSON-LD, never
+    // claims it (coverage-claim bar).
+    title: `${coral.canonical_name}, current price across reef vendors`, // suffix via root title.template
+    description: `Where to buy ${coral.canonical_name}: compare current prices across reef coral vendors and get a drop alert when it lists.`,
     // Canonical = bare route — the ?include-oos=1 toggle variant resolves to
     // the bare-route SERP card.
     alternates: {
@@ -123,6 +131,18 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
   const lineageFields = buildLineageFields(coral);
   const hasListings = listings.length > 0;
 
+  // Product + AggregateOffer + BreadcrumbList (CTK-162 scope d). Offers are
+  // built from in-stock priced rows only (INV-05 guard inside the builder), so
+  // the structured lowPrice is stable across the ?include-oos=1 toggle and
+  // matches the canonical bare-route card.
+  const jsonLd = buildCoralJsonLd({
+    siteUrl: SITE_URL,
+    canonicalName: coral.canonical_name,
+    description: coral.description,
+    slug,
+    listings,
+  });
+
   // Three availability states per branding-guide §"Eyebrow shape + slot" +
   // §"Section transitions". Branch order: populated (ANY in-stock row) →
   // all-OOS (in-window rows exist, none in stock) → empty (zero in-window
@@ -176,6 +196,10 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
 
   return (
     <PageShell as="article">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <PageEyebrow chunks={eyebrowChunks} />
       <PageH1 className="mb-4">
         {coral.canonical_name}
