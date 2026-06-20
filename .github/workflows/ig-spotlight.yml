@@ -11,6 +11,11 @@ name: ig-spotlight
 # app/api/cron/ig-spotlight/route.ts, which dispatches this workflow with the
 # cadence `mode`. Single-trigger ownership: do NOT add a schedule block here --
 # two triggers would double-post to the operator channel.
+#
+# CTK-176 (2026-06-20): the Vercel cron was RETIRED in favor of Telegram daily-
+# reel delivery (scrapers/tools/ig_deliver.py) -- the Slack-notify-as-v1 path no
+# longer fires on a schedule. This route + workflow stay dormant on the
+# workflow_dispatch path only (reversible: manual render + future re-automation).
 on:
   workflow_dispatch:
     inputs:

@@ -26,8 +26,18 @@ Coverage:
   test_first_comment_branded_battlecorals  #battlecorals carries the verify marker
   test_first_comment_no_branded_other      a vendor without one renders no branded slot
   test_first_comment_lineage_marker        named match -> lineage tag + verify marker
-  test_first_comment_no_lineage_no_match   no match -> niche prompt only, no lineage tag
+  test_first_comment_no_lineage_no_match   no match -> fill-prompt + standing tags preserved
   test_operator_block_carries_artifact     image URL + listing URL + caption + first comment
+
+  CTK-177 niche-hashtag seeding:
+  test_title_type_nouns_plural_tolerant            canonical keys, order, plural-tolerant
+  test_seed_acan_expands_to_family                 acan -> #acan #acanthastrea #lps (canon)
+  test_first_comment_seeds_type_and_standing       type noun -> type tags + standing, no prompt
+  test_first_comment_dedups_across_sources         shared #lps appears once
+  test_first_comment_caps_at_twelve_dropping_standing_first  cap at 12, standing drops first
+  test_first_comment_closed_vocabulary_no_megatags structural floor: closed vocab, no #coral/#reef
+  test_suppressed_coral_noun_falls_back            "coral" suppressed -> fill-prompt, never #coral
+  test_every_lexicon_token_emits_or_is_suppressed  coverage: every type noun maps/bare-falls
 """
 
 from __future__ import annotations
@@ -41,9 +51,14 @@ from scrapers.tools import ig_spotlight
 from scrapers.tools.ig_spotlight import (
     CLOSER,
     DETAIL_PROMPT,
+    FIRST_COMMENT_TAG_CAP,
     NAME_PLACEHOLDER,
     NICHE_PROMPT,
+    NICHE_TYPE_TAGS,
+    STANDING_COMMUNITY_TAGS,
     VENDOR_IG,
+    _CORAL_TYPE_NOUNS,
+    _NICHE_SUPPRESS,
     clean_descriptive_title,
     descriptive_name,
     event_verb,
@@ -51,6 +66,8 @@ from scrapers.tools.ig_spotlight import (
     render_caption,
     render_first_comment,
     render_operator_block,
+    title_type_nouns,
+    type_tags_for_title,
     vendor_attribution,
 )
 
@@ -293,15 +310,130 @@ def test_first_comment_no_branded_other():
 
 
 def test_first_comment_lineage_marker():
+    # _named() raw_title is "WYSIWYG Frag" (no type noun) -> fallback keeps the
+    # fill-prompt at the head; the lineage candidate still carries its marker.
     fc = render_first_comment(Candidate.from_row(_named()))
     assert "#sunkistbounce[verify live tag-feed]" in fc, fc
     assert fc.startswith(NICHE_PROMPT), fc
 
 
 def test_first_comment_no_lineage_no_match():
+    # CTK-177: "WYSIWYG Frag" has no recognizable type noun -> fallback preserves
+    # the {niche reef-category tags} fill-prompt AND seeds the standing community
+    # set (the old behavior was prompt-only; superseded by canon 2026-06-20).
     fc = render_first_comment(Candidate.from_row(_cand_row()))
     assert "[verify live tag-feed]" not in fc, fc
-    assert fc == NICHE_PROMPT, fc
+    assert fc.startswith(NICHE_PROMPT), fc
+    for tag in STANDING_COMMUNITY_TAGS:
+        assert tag in fc, f"standing tag {tag} missing from fallback: {fc}"
+
+
+# --- CTK-177 niche-hashtag seeding ---------------------------------------
+
+def _fc_tags(fc: str) -> list[str]:
+    """Split a first-comment string into tags. The [verify ...] markers carry
+    internal spaces, so a naive str.split() over-counts — match each #tag (plus an
+    optional bracketed marker) or the {fill-prompt} as one token."""
+    import re
+    return re.findall(r"#[^\s\[]+(?:\[[^\]]*\])?|\{[^}]*\}", fc)
+
+
+def test_title_type_nouns_plural_tolerant():
+    # canonical singular keys, first-appearance order, deduped; "chalices" -> chalice.
+    assert title_type_nouns("WWC Acan Lordhowensis") == ["acan"]
+    assert title_type_nouns("Rainbow Chalices and Acans") == ["chalice", "acan"]
+    assert title_type_nouns("WYSIWYG Frag") == []  # no type noun
+
+
+def test_seed_acan_expands_to_family():
+    # canon L195 worked example: acan -> abbreviation + full name + broad category.
+    tags = type_tags_for_title("WWC Acan Lordhowensis")
+    assert tags == ["#acan", "#acanthastrea", "#lps"], tags
+
+
+def test_first_comment_seeds_type_and_standing():
+    # A title WITH a type noun seeds type tags + the standing set; the fill-prompt
+    # is GONE (the title gave an honest signal), and there is no lineage match here.
+    c = Candidate.from_row(_cand_row(raw_title="WWC Torch Coral", vendor_slug="wwc"))
+    fc = render_first_comment(c)
+    assert NICHE_PROMPT not in fc, f"fill-prompt must drop when a type noun seeds: {fc}"
+    assert "#torchcoral" in fc and "#euphyllia" in fc and "#lps" in fc, fc
+    for tag in STANDING_COMMUNITY_TAGS:
+        assert tag in fc, fc
+
+
+def test_first_comment_dedups_across_sources():
+    # "Acan Micromussa" both roll up to #lps -> it must appear exactly once.
+    c = Candidate.from_row(_cand_row(raw_title="Acan Micromussa Combo"))
+    fc = render_first_comment(c)
+    assert _fc_tags(fc).count("#lps") == 1, fc
+
+
+def test_first_comment_caps_at_twelve_dropping_standing_first():
+    # A type-dense title overflows; the cap holds at 12 and standing drops before
+    # the type tags (precedence: type > standing).
+    c = Candidate.from_row(_named(
+        raw_title="Acan Lobo Scoly Blasto Chalice Micromussa Combo",
+        vendor_slug="battlecorals",  # adds a branded verify tag
+    ))
+    fc = render_first_comment(c)
+    tags = _fc_tags(fc)
+    assert len(tags) <= FIRST_COMMENT_TAG_CAP, f"{len(tags)} tags > cap: {fc}"
+    # the highest-precedence candidates survive the cap
+    assert any("[verify live tag-feed]" in t for t in tags), fc       # lineage kept
+    assert any("[verify vendor branded tag]" in t for t in tags), fc  # branded kept
+    # standing dropped first: at least one standing tag is gone under overflow
+    dropped = [s for s in STANDING_COMMUNITY_TAGS if s not in tags]
+    assert dropped, f"expected standing tags to drop under overflow: {fc}"
+
+
+def test_first_comment_closed_vocabulary_no_megatags():
+    # Structural floor: every emitted tag is in the closed vocabulary (map values
+    # u bare-token forms u standing u lineage/branded u the fill-prompt); no
+    # #coral / #reef mega-tag can ever appear.
+    allowed = set()
+    for fam in NICHE_TYPE_TAGS.values():
+        allowed.update(fam)
+    allowed.update(f"#{t}" for t in _CORAL_TYPE_NOUNS if t not in _NICHE_SUPPRESS)
+    allowed.update(STANDING_COMMUNITY_TAGS)
+    allowed.add(NICHE_PROMPT)
+    for raw, slug in [
+        ("WWC Acan Lordhowensis", "wwc"),
+        ("Coral Frag", "wwc"),                 # only the suppressed "coral" noun
+        ("Torch Hammer Frogspawn", "battlecorals"),
+        ("WYSIWYG Frag", "wwc"),
+    ]:
+        c = Candidate.from_row(_named(raw_title=raw, vendor_slug=slug))
+        fc = render_first_comment(c)
+        tags = _fc_tags(fc)
+        for tag in tags:
+            bare = tag.split("[", 1)[0]  # strip any [verify ...] marker
+            ok = bare in allowed or bare == lineage_hashtag(c.coral_slug) \
+                or bare == vendor_attribution(slug).branded_hashtag
+            assert ok, f"tag {tag!r} not in closed vocabulary for {raw!r}: {fc}"
+        assert "#coral" not in tags, f"banned mega-tag #coral emitted: {fc}"
+        assert "#reef" not in tags, f"banned mega-tag #reef emitted: {fc}"
+
+
+def test_suppressed_coral_noun_falls_back():
+    # "Coral" alone is a matched noun but suppressed -> no usable type tag -> the
+    # fill-prompt fallback (never emits #coral).
+    c = Candidate.from_row(_cand_row(raw_title="Mystery Coral", coral_slug=None,
+                                     named_coral_id=None))
+    fc = render_first_comment(c)
+    assert "#coral" not in fc.split(), fc
+    assert fc.startswith(NICHE_PROMPT), fc
+
+
+def test_every_lexicon_token_emits_or_is_suppressed():
+    # Coverage guarantee: every _CORAL_TYPE_NOUNS token either maps to a family or
+    # bare-falls to #<token>, and is never silently dropped UNLESS suppressed.
+    for tok in _CORAL_TYPE_NOUNS:
+        tags = type_tags_for_title(tok)
+        if tok in _NICHE_SUPPRESS:
+            assert tags == [], f"{tok} is suppressed but emitted {tags}"
+        else:
+            assert tags, f"{tok} produced no tag (silently dropped)"
 
 
 # --- operator block ------------------------------------------------------

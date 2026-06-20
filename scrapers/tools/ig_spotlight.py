@@ -377,20 +377,241 @@ def render_caption(c: Candidate) -> str:
     return "\n".join([line1, line2, CLOSER])
 
 
-def render_first_comment(c: Candidate) -> str:
-    """The first-comment hashtag block (rev4 §"The hashtag layer"): a niche-tag
-    fill-prompt, a lineage-tag candidate carrying [verify live tag-feed] when a
-    named match exists, and the vendor branded tag carrying [verify vendor
-    branded tag] only for a vendor that has one. 8-12 tags total once Jon fills
-    the niche slot."""
-    parts = [NICHE_PROMPT]
-    lineage = lineage_hashtag(c.coral_slug)
+# ---------------------------------------------------------------------------
+# CTK-177 — IG niche-hashtag seeding (text-derived, Jon-gated, no inference).
+#
+# branding-guide.md §"IG niche-hashtag seeding (CTK-177, 2026-06-20)" CLEARED the
+# canon: the first-comment niche layer MAY be auto-seeded from coral-type nouns
+# literally present in the vendor raw_title, on two honest sources — (a) type tags
+# via a FIXED type-noun -> tag-family map, (b) a standing community-tag set true for
+# any coral spotlight. The seeded block is a Jon-edited candidate (same human gate
+# as the lineage [verify live tag-feed] marker); nothing reaches IG unread.
+#
+# Hard floor (canon L194): no color-morph / strain / grade / WYSIWYG tag, no
+# mega-tag (#coral / #reef), no vision. Enforced STRUCTURALLY — every emitted tag
+# is a deterministic lookup off a token literally in the title (map value or its
+# bare form) or a member of the fixed standing set; nothing requiring the photo,
+# and nothing outside the closed vocabulary, can emit. Genus-expansion of an
+# explicit abbreviation IS within "what the title states" (canon L195): an
+# acanthastrea IS an acan and IS an LPS for every specimen, from the table, no
+# look-at-the-photo judgment.
+#
+# NICHE_TYPE_TAGS is SEPARATE from _CORAL_TYPE_NOUNS (the Line-1 name gate lexicon)
+# on purpose — the gate decides cleaned-vs-raw for the NAME; this maps a matched
+# type noun to its tag family. Keyed by the canonical (singular) lexicon token.
+# Any _CORAL_TYPE_NOUNS token with no entry here falls back to its bare #<token>
+# (never silently drop a real type signal) — EXCEPT the _NICHE_SUPPRESS tokens,
+# whose bare form is a banned mega-tag and emit nothing.
+# ---------------------------------------------------------------------------
+
+# Tokens in _CORAL_TYPE_NOUNS whose bare #<token> would be a banned mega-tag (canon
+# floor). "coral" is in the Line-1 lexicon but #coral is exactly the mega-tag the
+# rev4 hashtag layer bans — suppress it (other matched type nouns + standing carry
+# the discoverability). No usable type signal from a "coral"-only title -> fallback.
+_NICHE_SUPPRESS = frozenset({"coral"})
+
+# Standing community-tag set (canon L193) — type-independent, niche-not-mega, real
+# reefer community feeds; honest on any coral post. Fixed canonical order, NO
+# rotation in v1 (rotation is posting-craft, not canon; directive point 3).
+STANDING_COMMUNITY_TAGS: tuple[str, ...] = (
+    "#reeftank", "#reefkeeping", "#coralfrags", "#reef2reef",
+    "#reefaquarium", "#reefersofinstagram",
+)
+
+# Type-noun -> tag-family map. abbreviation -> full-name + genus -> broad category
+# ONLY (canon L195); every value is a fixed lookup with one right answer for every
+# specimen of that type. Curated + closed: extend as new type nouns surface.
+NICHE_TYPE_TAGS: dict[str, tuple[str, ...]] = {
+    # Broad type buckets (already a category; emit the niche form).
+    "sps": ("#sps",),
+    "lps": ("#lps",),
+    "softie": ("#softcorals",),
+    "zoa": ("#zoa", "#zoanthid"),
+    "zoanthid": ("#zoanthid", "#zoa"),
+    "paly": ("#paly", "#palythoa"),
+    "palythoa": ("#palythoa", "#paly"),
+    "mushroom": ("#mushroomcoral",),
+    "shroom": ("#mushroomcoral",),
+    "anemone": ("#anemone",),
+    "bta": ("#bta", "#anemone"),
+    "rbta": ("#rbta", "#anemone"),
+    "nem": ("#anemone",),
+    "clam": ("#clam", "#tridacna"),
+    "chalice": ("#chalice", "#chalicecoral", "#lps"),
+    # Acropora group -> SPS.
+    "acropora": ("#acropora", "#sps"),
+    "acro": ("#acro", "#acropora", "#sps"),
+    "millepora": ("#millepora", "#acropora", "#sps"),
+    "milli": ("#milli", "#millepora", "#sps"),
+    "tenuis": ("#tenuis", "#acropora", "#sps"),
+    # Montipora group -> SPS.
+    "montipora": ("#montipora", "#sps"),
+    "monti": ("#monti", "#montipora", "#sps"),
+    "cap": ("#montipora", "#sps"),
+    "digitata": ("#digitata", "#montipora", "#sps"),
+    # Other SPS genera.
+    "cyphastrea": ("#cyphastrea", "#sps"),
+    "psammocora": ("#psammocora", "#sps"),
+    "stylophora": ("#stylophora", "#stylo", "#sps"),
+    "stylo": ("#stylo", "#stylophora", "#sps"),
+    "stylocoeniella": ("#stylocoeniella", "#sps"),
+    "seriatopora": ("#seriatopora", "#birdsnest", "#sps"),
+    "birdsnest": ("#birdsnest", "#seriatopora", "#sps"),
+    "porites": ("#porites", "#sps"),
+    "anacropora": ("#anacropora", "#sps"),
+    "pavona": ("#pavona", "#sps"),
+    # Euphyllia group -> LPS.
+    "euphyllia": ("#euphyllia", "#lps"),
+    "torch": ("#torchcoral", "#euphyllia", "#lps"),
+    "hammer": ("#hammercoral", "#euphyllia", "#lps"),
+    "frogspawn": ("#frogspawn", "#euphyllia", "#lps"),
+    # Other LPS genera.
+    "favia": ("#favia", "#lps"),
+    "favites": ("#favites", "#lps"),
+    "acan": ("#acan", "#acanthastrea", "#lps"),
+    "acanthastrea": ("#acanthastrea", "#acan", "#lps"),
+    "micromussa": ("#micromussa", "#micro", "#lps"),
+    "micro": ("#micromussa", "#lps"),
+    "lobophyllia": ("#lobophyllia", "#lobo", "#lps"),
+    "lobo": ("#lobo", "#lobophyllia", "#lps"),
+    "scoly": ("#scoly", "#scolymia", "#lps"),
+    "scolymia": ("#scolymia", "#scoly", "#lps"),
+    "blasto": ("#blasto", "#blastomussa", "#lps"),
+    "blastomussa": ("#blastomussa", "#blasto", "#lps"),
+    "goniopora": ("#goniopora", "#gonio", "#lps"),
+    "gonio": ("#gonio", "#goniopora", "#lps"),
+    "goni": ("#goniopora", "#lps"),
+    "alveopora": ("#alveopora", "#lps"),
+    "leptoseris": ("#leptoseris", "#lepto", "#lps"),
+    "lepto": ("#lepto", "#leptoseris", "#lps"),
+    "turbinaria": ("#turbinaria", "#lps"),
+    "echinophyllia": ("#echinophyllia", "#echino", "#chalice", "#lps"),
+    "echino": ("#echino", "#echinophyllia", "#lps"),
+    "mycedium": ("#mycedium", "#chalice", "#lps"),
+    "duncan": ("#duncan", "#duncancoral", "#lps"),
+    "candycane": ("#candycane", "#caulastrea", "#lps"),
+    "caulastrea": ("#caulastrea", "#candycane", "#lps"),
+    "trumpet": ("#trumpetcoral", "#caulastrea", "#lps"),
+    "fungia": ("#fungia", "#platecoral", "#lps"),
+    "plate": ("#platecoral", "#fungia", "#lps"),
+    "wellso": ("#wellso", "#wellsophyllia", "#lps"),
+    "wellsophyllia": ("#wellsophyllia", "#wellso", "#lps"),
+    "trachyphyllia": ("#trachyphyllia", "#trach", "#lps"),
+    "trach": ("#trach", "#trachyphyllia", "#lps"),
+    "brain": ("#braincoral", "#lps"),
+    # Mushroom / corallimorph group.
+    "ricordea": ("#ricordea", "#mushroomcoral"),
+    "ric": ("#ric", "#ricordea", "#mushroomcoral"),
+    "discosoma": ("#discosoma", "#mushroomcoral"),
+    "rhodactis": ("#rhodactis", "#mushroomcoral"),
+    "bounce": ("#bounce", "#mushroomcoral"),
+    # Softies.
+    "gsp": ("#gsp", "#greenstarpolyp", "#softcorals"),
+    "xenia": ("#xenia", "#softcorals"),
+    "clove": ("#clovepolyp", "#softcorals"),
+    "leather": ("#leathercoral", "#softcorals"),
+    "lobophytum": ("#lobophytum", "#softcorals"),
+    "sinularia": ("#sinularia", "#softcorals"),
+    "nepthea": ("#nepthea", "#softcorals"),
+    "cespitularia": ("#cespitularia", "#softcorals"),
+}
+
+FIRST_COMMENT_TAG_CAP = 12  # rev4 "8-12 tag block" — hard maximum
+
+# Precedence tiers: kept on overflow in this order (lower = higher precedence).
+# Drop the lowest-precedence (standing) first (directive point 4).
+_TIER_LINEAGE, _TIER_BRANDED, _TIER_TYPE, _TIER_STANDING = 0, 1, 2, 3
+# Display order is independent of precedence: niche block (type) first, standing
+# next, the verify-marked lineage/branded candidates last so Jon spots the
+# [verify ...] markers at the tail (mirrors the pre-CTK-177 niche-then-markers shape).
+_DISPLAY_RANK = {_TIER_TYPE: 0, _TIER_STANDING: 1, _TIER_LINEAGE: 2, _TIER_BRANDED: 3}
+
+
+def title_type_nouns(raw_title: str) -> list[str]:
+    """The coral-type nouns literally present in raw_title, as their canonical
+    (singular) _CORAL_TYPE_NOUNS keys, in first-appearance order, deduped. Reuses
+    _contains_coral_type_noun's plural-tolerant matching (trailing-'s'), but
+    RETURNS the matches instead of a bool — the seed set for the niche tags."""
+    found: list[str] = []
+    seen: set[str] = set()
+    for tok in re.findall(r"[A-Za-z]+", (raw_title or "").lower()):
+        if tok in _CORAL_TYPE_NOUNS:
+            key = tok
+        elif tok.endswith("s") and tok[:-1] in _CORAL_TYPE_NOUNS:
+            key = tok[:-1]
+        else:
+            continue
+        if key not in seen:
+            seen.add(key)
+            found.append(key)
+    return found
+
+
+def type_tags_for_title(raw_title: str) -> list[str]:
+    """The ordered, deduped type/genus hashtags for the type nouns in raw_title.
+    Each matched noun maps through NICHE_TYPE_TAGS, or falls back to its bare
+    #<token> when unmapped (never drop a real type signal). _NICHE_SUPPRESS tokens
+    (whose bare form is a banned mega-tag) emit nothing. Empty when the title has
+    no recognizable type noun (or only suppressed ones) -> the caller falls back to
+    the {niche reef-category tags} fill-prompt."""
+    tags: list[str] = []
+    seen: set[str] = set()
+    for key in title_type_nouns(raw_title):
+        if key in _NICHE_SUPPRESS:
+            continue
+        for tag in NICHE_TYPE_TAGS.get(key, (f"#{key}",)):
+            if tag not in seen:
+                seen.add(tag)
+                tags.append(tag)
+    return tags
+
+
+def _assemble_first_comment_tags(type_tags: list[str], lineage: str | None,
+                                 branded: str | None) -> list[str]:
+    """Dedup + precedence-cap the real first-comment tags, returned in display
+    order. Precedence (kept on overflow): lineage > branded > type/genus >
+    standing — standing drops first, then type, never the verify-marked
+    lineage/branded. The markers ride the display string; dedup compares the bare
+    tag so a lineage/type collision can't double-emit."""
+    entries: list[tuple[int, str, str]] = []  # (tier, display, bare) — precedence order
     if lineage:
-        parts.append(f"{lineage}[verify live tag-feed]")
-    branded = vendor_attribution(c.vendor_slug).branded_hashtag
+        entries.append((_TIER_LINEAGE, f"{lineage}[verify live tag-feed]", lineage))
     if branded:
-        parts.append(f"{branded}[verify vendor branded tag]")
-    return " ".join(parts)
+        entries.append((_TIER_BRANDED, f"{branded}[verify vendor branded tag]", branded))
+    entries.extend((_TIER_TYPE, t, t) for t in type_tags)
+    entries.extend((_TIER_STANDING, t, t) for t in STANDING_COMMUNITY_TAGS)
+
+    seen: set[str] = set()
+    deduped: list[tuple[int, str]] = []
+    for tier, display, bare in entries:  # precedence order -> first occurrence wins
+        if bare in seen:
+            continue
+        seen.add(bare)
+        deduped.append((tier, display))
+
+    deduped = deduped[:FIRST_COMMENT_TAG_CAP]  # precedence-ordered -> tail (standing) drops first
+    deduped.sort(key=lambda d: _DISPLAY_RANK[d[0]])  # stable -> display order
+    return [display for _, display in deduped]
+
+
+def render_first_comment(c: Candidate) -> str:
+    """The first-comment hashtag block (rev4 §"The hashtag layer"; CTK-177 seeding):
+    text-derived type/genus tags from the coral-type nouns in raw_title + the
+    standing community set + the lineage candidate ([verify live tag-feed]) when a
+    named match exists + the vendor branded tag ([verify vendor branded tag]) for a
+    vendor that has one. Deduped, capped at 12 (standing drops first on overflow).
+
+    Fallback (canon CTK-177): a raw_title with no recognizable type noun preserves
+    the {niche reef-category tags} fill-prompt ahead of the standing tags — Jon
+    hand-fills the type tags only when the title gave no honest signal. The seeded
+    block is a Jon-edited candidate, never auto-posted."""
+    type_tags = type_tags_for_title(c.raw_title)
+    lineage = lineage_hashtag(c.coral_slug)
+    branded = vendor_attribution(c.vendor_slug).branded_hashtag
+    tags = _assemble_first_comment_tags(type_tags, lineage, branded)
+    if not type_tags:
+        tags = [NICHE_PROMPT] + tags
+    return " ".join(tags)
 
 
 def render_operator_block(c: Candidate) -> str:
@@ -500,6 +721,20 @@ def render_reel(c: Candidate, out_dir: str | Path) -> Path:
     return out_path
 
 
+def write_caption_sidecar(c: Candidate, out_dir: str | Path) -> Path:
+    """Write the caption sidecar next to a rendered reel (CTK-176): the same
+    {vendor_slug}-{listing_id} stem as render_reel's .mp4, with a .txt extension.
+    Content is render_caption(c) + a blank line + render_first_comment(c) — Jon
+    needs BOTH the caption skeleton and the first-comment tag block to post by
+    hand. ig_deliver reads this pair off disk so delivery never re-runs selection
+    (non-idempotent: re-fires record_picks, may pick a different candidate than
+    the one rendered). Returns the .txt path."""
+    out_path = Path(out_dir) / f"{c.vendor_slug}-{c.listing_id}.txt"
+    body = f"{render_caption(c)}\n\n{render_first_comment(c)}\n"
+    out_path.write_text(body, encoding="utf-8")
+    return out_path
+
+
 def render_batch(conn, mode: str, top_n: int, out_dir: str | Path):
     """Select candidates and render each selected one to a reel. A single
     render failure skips that candidate (logged) rather than crashing the batch
@@ -519,6 +754,19 @@ def render_batch(conn, mode: str, top_n: int, out_dir: str | Path):
                 file=sys.stderr,
             )
             path = None
+        # CTK-176: emit the caption sidecar only for a reel that actually rendered
+        # (no .mp4 means nothing to deliver, so a lone .txt would be a dangling
+        # half-pair). A sidecar-write failure must not crash the batch — mirror the
+        # render skip above; the reel still banks, it just lands without its caption.
+        if path is not None:
+            try:
+                write_caption_sidecar(c, out_dir)
+            except Exception as e:  # noqa: BLE001 — skip the sidecar, keep the batch going
+                print(
+                    f"WARN: caption sidecar failed for {c.vendor_slug} id={c.listing_id}: "
+                    f"{type(e).__name__}: {e}",
+                    file=sys.stderr,
+                )
         results.append((c, path))
     return candidates, gated, results
 
