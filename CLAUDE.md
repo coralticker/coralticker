@@ -92,21 +92,23 @@ These rules apply to lead/synthesis roles (same scope as the Forward Action bloc
 
 ## Ticket severity rubric
 
-Every CTK has an explicit tier. Tier determines whether a ticket blocks launch, lands at launch, lands post-launch, or stays asleep until a trigger fires. Five tiers:
+Every CTK has an explicit tier. Tier determines what gets worked next: live impact, then growth, then polish, then trigger-gated sleep. Five tiers.
 
-- **Tier 1A — CORRECTNESS BLOCKER.** User sees wrong info, broken interaction, or data is corrupted. Ship-stops.
-- **Tier 1B — EXPERIENCE FLOOR.** User can't form a mental model, can't navigate, can't find what they came for, or hits a moment that makes them close the tab. Test: *would a thoughtful reefer clicking the link from Reef2Reef close the tab and not come back?* Yes = Tier 1B. Nav, signup-form friction, empty-states-with-no-copy live here.
-- **Tier 2 — LAUNCH-MOMENT.** Only matters at the moment of public launch. SEO / OG cards / first-impression posture. Lands before launch day, never blocks deploy.
-- **Tier 3 — POST-LAUNCH POLISH.** Code quality, refactors, accessibility-beyond-baseline, perf-at-baseline-traffic, test coverage, primitive extractions. Lands when there's a slot.
-- **Tier 4 — TRIGGER-GATED.** Only matters if X happens (signup volume >50/day, edge-CDN variance, sibling CTK ships, etc.). Doesn't open as DRAFT until trigger fires. Doesn't count against any queue.
+**Post-launch cutover 2026-06-20** (Path A, Jon-ratified 2026-06-12; landed at the first realign after R2R launch 2026-06-14). Before this date the rubric was organized around *launch-relation* (1A=ship-stop, 1B=experience-floor-at-launch, 2=launch-moment, 3=post-launch-polish). Once launch passed, "blocks launch" stopped discriminating, so only Tier 2 was repurposed (launch-moment → growth/coverage) and 1A/1B re-based to *live* traffic; labels stayed `1A/1B/2/3/4` so INV-03, the /code-review template, and existing index values stay valid. Old results.md entries reading "Tier 2 = launch-moment" reflect the pre-cutover axis — legible as historical.
+
+- **Tier 1A — LIVE CORRECTNESS/TRUST.** Real users on live traffic see wrong info, a broken interaction, or corrupted data. Fix-now. (Trust-floor — wrong availability badge, click-through-to-sold-out — lives here, per `feedback_aggregator_staleness_tier_floor`.)
+- **Tier 1B — LIVE EXPERIENCE FLOOR.** Real users can't navigate, can't find what they came for, or hit a moment that loses them — measured against *actual* traffic, not a hypothetical R2R first-visitor.
+- **Tier 2 — GROWTH / COVERAGE.** *(repurposed from "launch-moment")* Work that compounds product value: new vendor scrapers (catalog breadth = the core moat), Hunter-tier features, anything that grows coverage or unlocks revenue. Outranks polish for "next-up."
+- **Tier 3 — POLISH / DEBT.** *(unchanged + absorbs minor live friction)* Refactors, a11y-beyond-baseline, perf-at-baseline, test coverage, primitive extractions — and live-but-cosmetic friction that isn't trust-critical (a dead-ending filter chip).
+- **Tier 4 — TRIGGER-GATED.** *(unchanged)* Only matters if X fires; doesn't open as DRAFT until the trigger fires; doesn't count against any queue.
 
 ### Tiebreaker
 
-If a finding is uncertain between BLOCKER (1A/1B) and POST-LAUNCH (3), default to POST-LAUNCH and flag for /reef-lead reconsideration. Reviewers always over-rate the issue they're staring at; the bias toward deferral is structurally correct.
+If a finding is uncertain between 1A/1B (live impact) and 3 (polish), default to Tier 3 and flag for /reef-lead reconsideration. Reviewers always over-rate the issue they're staring at; the bias toward deferral is structurally correct. New pair: uncertain between 2 (growth) and 3 (polish) → if it directly unblocks coverage or revenue, Tier 2; else Tier 3.
 
 ### Cost-to-fix-later filter
 
-Before promoting anything to Tier 1 or 2: does this get cheaper or more expensive to fix once users exist? Things that get expensive (URL structure, data model, anything users bookmark or link to) belong in Tier 1 or 2 even if cosmetic. Things that stay the same cost (refactors, comment sweeps, test coverage) belong in Tier 3 even if they feel important now.
+Users exist now, so the filter re-points from "does this get more expensive once users exist?" to "does cost *or value* compound over time?" Data-model / URL structure / anything users bookmark still gets expensive to fix (real bookmarks now) → Tier 1 or 2 even if cosmetic. Growth compounds in *value* — every week without a vendor is lost coverage → Tier 2. Things whose cost and value both stay flat (refactors, comment sweeps, test coverage) → Tier 3 even if they feel important now.
 
 ### Authority — which command does what
 
