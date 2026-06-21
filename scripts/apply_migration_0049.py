@@ -216,7 +216,15 @@ def main() -> int:
                         continue
                     # Match the SQL tiebreak: latest observed_at, then highest id.
                     latest = max(prior, key=lambda x: (x["observed_at"], x["id"]))
-                    if latest["in_stock"] and latest["price"] is not None:
+                    # Mirror the SQL gate exactly: in_stock AND price > 0 (the > 0
+                    # superseded the bare IS NOT NULL — $0/negative is a phantom
+                    # price, CTK-162 /code-review #1, Tier 1A). The `is not None`
+                    # check stays first so `> 0` never compares against NULL.
+                    if (
+                        latest["in_stock"]
+                        and latest["price"] is not None
+                        and latest["price"] > 0
+                    ):
                         prices.append(latest["price"])
                 return min(prices) if prices else None
 

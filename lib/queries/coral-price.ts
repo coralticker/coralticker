@@ -122,3 +122,69 @@ export async function getCoralPriceEnvelope(
     },
   )();
 }
+
+// ── get_coral_price_by_vendor — per-vendor daily-min line (LOCF) ────────────
+
+export interface CoralVendorPricePoint {
+  day: string; // YYYY-MM-DD
+  vendorId: number;
+  vendorSlug: string;
+  minPrice: number; // vendor's cheapest in-stock price that day
+  listingCount: number; // vendor's in-stock non-null listings behind the point
+}
+
+interface RpcVendorPriceRow {
+  // `day` is TEXT from SQL (YYYY-MM-DD) — same boundary note as the envelope;
+  // arrives a clean string, no Date round trip.
+  day: string;
+  vendor_id: number | string;
+  vendor_slug: string;
+  min_price: number | string;
+  listing_count: number | string; // integer back as string at the driver boundary
+}
+
+// One line per vendor: the vendor's cheapest in-stock price per calendar day,
+// LOCF over the sparse change-only price_history — the same pick as the envelope,
+// grouped per (day, vendor) instead of per day. By construction the per-day MIN
+// across these vendor lines equals get_coral_price_envelope's floor (proven live
+// in apply_migration_0050.py). A (day, vendor) pair where none of the vendor's
+// listings is in-stock/non-null is absent (honest gap in that vendor's line, not
+// a zero). windowDays bounds the series start only; the LOCF reaches before the
+// window so the opening level is carried in.
+//
+// windowDays DEFAULTS to 90 (NOT null, deliberately diverging from the sibling
+// getCoralPriceHistory / getCoralPriceEnvelope null-defaults). CTK-179 (c) cheap
+// half: an unbounded call runs the days×listings×LATERAL probe over the coral's
+// whole lifespan, so the safe default is a bounded window, not naming-consistency
+// with the siblings — a future call site that omits the window inherits a bounded
+// query instead of silently triggering full-history fan-out. The price-history
+// page passes 90 explicitly (no behaviour change). Pass null deliberately for the
+// unbounded series. (Sibling-consistency revert reconsidered with /lead-frontend:
+// a bounded default wins over a uniform null.)
+export async function getCoralPriceByVendor(
+  namedCoralId: number,
+  windowDays: number | null = 90,
+): Promise<CoralVendorPricePoint[]> {
+  return unstable_cache(
+    async () => {
+      const sql = getNeonSql();
+      const rows = (await sql`
+        SELECT day, vendor_id, vendor_slug, min_price, listing_count
+        FROM get_coral_price_by_vendor(${namedCoralId}::int, ${windowDays}::int)
+      `) as unknown as RpcVendorPriceRow[];
+
+      return rows.map((r) => ({
+        day: r.day,
+        vendorId: Number(r.vendor_id),
+        vendorSlug: r.vendor_slug,
+        minPrice: Number(r.min_price),
+        listingCount: Number(r.listing_count),
+      }));
+    },
+    ['getCoralPriceByVendorV1', String(namedCoralId), String(windowDays ?? '_')],
+    {
+      revalidate: 300,
+      tags: [`coral-${namedCoralId}-price-by-vendor`],
+    },
+  )();
+}
