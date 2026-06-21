@@ -189,11 +189,15 @@ export default async function PriceHistoryPage({
             displayNameBySlug={displayNameBySlug}
             ariaLabel={ariaLabel}
           />
-          {/* PROVISIONAL legend copy — pending /copy-writer. Near-black (not
-              mute — mute is sub-AA per /brand-manager). Glosses the trailing N
-              listing-count on each vendor label. */}
-          <p className="font-mono text-xs uppercase tracking-[0.07em] text-ink mt-3.5">
-            Bold line = cheapest across vendors, per day. Gap = no vendor in stock. Thin lines = each vendor&rsquo;s cheapest; the small number is how many of its listings are in stock.
+          {/* Legend (branding-guide §"Short-copy assets" price-history / D-3).
+              Content/prose register — sentence case, NOT the uppercase-mono
+              caption default (/brand-manager register correction). Terse copy
+              swaps in under sm. */}
+          <p className="text-sm leading-relaxed text-ink mt-3.5">
+            <span className="hidden sm:inline">
+              Heavy line: cheapest across vendors, per day. Thin lines: each vendor&rsquo;s cheapest in stock. (N) = listings at that vendor. Gap = none in stock.
+            </span>
+            <span className="sm:hidden">Gap = none in stock.</span>
           </p>
         </>
       )}

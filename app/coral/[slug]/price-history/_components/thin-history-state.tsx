@@ -7,9 +7,6 @@
 // (price-on-request / auction) → render "price on request" (the auction
 // null-price convention), with NO dot and NO $-axis. There is no path that
 // shows a $0 point/tick.
-//
-// COPY IS PROVISIONAL — voice-approved DIRECTION from the round-2 mock, pending
-// /copy-writer final wording + Jon's eyeball before it locks.
 
 import { niceTicksWithin, type Frame } from '@/lib/chart/price-history-geometry';
 
@@ -31,9 +28,11 @@ interface ThinObservation {
   price: number | null; // null = price on request (NEVER rendered as $0)
 }
 
+// Thin-history note (branding-guide §"Short-copy assets" price-history / D-3).
+// Sentence-case prose register (rendered in the content register below, not
+// uppercase mono).
 const GAP_NOTE =
-  // PROVISIONAL gap-moment copy — pending /copy-writer + Jon.
-  "Not much history with me yet — I started tracking this one recently. I’ll fill the line in as the price moves.";
+  "Not enough price history yet to show a trend. I’ll plot it as this coral lists again.";
 
 export function ThinHistoryState({ observation }: { observation: ThinObservation }) {
   // Falsy price (null = price-on-request/auction; 0/NaN = phantom): no honest
