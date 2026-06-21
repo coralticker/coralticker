@@ -26,10 +26,12 @@
 --
 -- Auction listings carry a parse-time NULL current_price ("price on request"),
 -- and their price_history rows therefore carry price IS NULL. The post-pick gate
--- `latest.price IS NOT NULL` drops them before MIN/COUNT — an auction row can
--- never reach the per-vendor min. No auction-specific clause needed; the same
--- in_stock = true AND price IS NOT NULL gate that covers the residual triple in
--- 0049 covers it here.
+-- `latest.price > 0` drops them before MIN/COUNT (NULL > 0 is unknown -> the row
+-- is excluded) — an auction row can never reach the per-vendor min. No auction-
+-- specific clause needed; the same in_stock = true AND price > 0 gate that covers
+-- the residual triple in 0049 covers it here. (The > 0 superseded the bare
+-- IS NOT NULL per CTK-162 /code-review #1, Tier 1A — a $0/negative is a phantom
+-- price, never a real line point; it also still excludes NULL.)
 --
 -- ─── Deferred hardening — rides CTK-179, NOT here ───
 --
@@ -129,7 +131,7 @@ AS $$
   ) latest
   -- Verbatim gate. Honest-gap property preserved per (day, vendor).
   WHERE latest.in_stock = true
-    AND latest.price IS NOT NULL
+    AND latest.price > 0  -- $0/negative is a phantom price, never a real line point (CTK-162 /code-review #1, Tier 1A); matches the 0049 envelope twin
   GROUP BY days.d, l.vendor_id, v.slug
   -- Vendor-major per the CTK-162 (b) directive spec: each vendor's line is a
   -- contiguous run in time order, ready for the chart to draw line-by-line. The

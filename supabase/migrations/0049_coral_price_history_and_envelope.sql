@@ -200,7 +200,7 @@ AS $$
   -- Honest-gap property preserved: a day where every listing's LATEST state is
   -- OOS/null contributes no rows -> the day is absent from the output.
   WHERE latest.in_stock = true
-    AND latest.price IS NOT NULL
+    AND latest.price > 0  -- $0/negative is a phantom price, never a real floor (CTK-162 /code-review #1, Tier 1A); supersedes the bare IS NOT NULL
   GROUP BY days.d
   ORDER BY days.d;
 $$;

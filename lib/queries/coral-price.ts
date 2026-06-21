@@ -152,11 +152,15 @@ interface RpcVendorPriceRow {
 // a zero). windowDays bounds the series start only; the LOCF reaches before the
 // window so the opening level is carried in.
 //
-// windowDays DEFAULTS to 90 (not null): an omitted window would otherwise inherit
-// the unbounded days x listings x LATERAL fan-out (CTK-179 (c) cheap half). The
-// page passes 90 explicitly, so this default only guards against a future call
-// site silently triggering full-history fan-out — pass null deliberately for the
-// unbounded series.
+// windowDays DEFAULTS to 90 (NOT null, deliberately diverging from the sibling
+// getCoralPriceHistory / getCoralPriceEnvelope null-defaults). CTK-179 (c) cheap
+// half: an unbounded call runs the days×listings×LATERAL probe over the coral's
+// whole lifespan, so the safe default is a bounded window, not naming-consistency
+// with the siblings — a future call site that omits the window inherits a bounded
+// query instead of silently triggering full-history fan-out. The price-history
+// page passes 90 explicitly (no behaviour change). Pass null deliberately for the
+// unbounded series. (Sibling-consistency revert reconsidered with /lead-frontend:
+// a bounded default wins over a uniform null.)
 export async function getCoralPriceByVendor(
   namedCoralId: number,
   windowDays: number | null = 90,
