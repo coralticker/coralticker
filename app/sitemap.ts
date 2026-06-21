@@ -1,15 +1,22 @@
 import type { MetadataRoute } from 'next';
-import { getAllNamedCoralSlugs } from '@/lib/queries/named-corals';
+import { getSitemapCoralSlugs } from '@/lib/queries/named-corals';
 import { getAllActiveVendorSlugs } from '@/lib/queries/vendors';
 import { SITE_URL } from '@/lib/seo/site-url';
 
 // CTK-162 scope (d): the sitemap lives here (CTK-017's parallel-bundle routing
 // is dead — CTK-017 was never scaffolded; Jon ratified building it in CTK-162
 // on 2026-06-20). Enumerates the static content/landing routes + the
-// data-driven /coral/[slug] and /vendor/[slug] detail pages off the same
-// catalog generateStaticParams rides. Designed to extend for the INV-02-gated
-// /coral/[slug]/price-history + /guides/[slug] later — those routes don't exist
-// yet, so they are intentionally NOT listed.
+// data-driven /vendor/[slug] detail pages and the in-window-gated /coral/[slug]
+// set. Designed to extend for the INV-02-gated /coral/[slug]/price-history +
+// /guides/[slug] later — those routes don't exist yet, so they are
+// intentionally NOT listed.
+//
+// The coral set is in-window-coupled to CORAL_RECENCY_DAYS via
+// getSitemapCoralSlugs — never-/stale-listed seed corals render thin pages and
+// are excluded to avoid a soft-404 signal (PR #21 /code-review F1). This is NOT
+// the full /coral/[slug] route set: generateStaticParams stays ungated so those
+// pages still resolve when hit directly. Evergreen-end-state TODO: open the
+// gate once scope b/c (price-history + guides) give every coral durable content.
 //
 // No lastModified: there's no cheap honest per-page "updated" signal (a
 // fabricated now() on every entry is worse than omitting it). Refreshed on a
@@ -35,7 +42,7 @@ const STATIC_ROUTES: Array<{
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [coralSlugs, vendorSlugs] = await Promise.all([
-    getAllNamedCoralSlugs(),
+    getSitemapCoralSlugs(),
     getAllActiveVendorSlugs(),
   ]);
 

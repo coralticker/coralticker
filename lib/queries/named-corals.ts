@@ -69,6 +69,43 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
   return rows;
 }
 
+// Sitemap-scoped slug set: in-window-gated, NOT the full active seed list
+// getAllNamedCoralSlugs returns. A never-/stale-listed coral renders a thin
+// 200 "Currently unavailable." page (no noindex); listing those in the sitemap
+// is a soft-404 signal to Google (CTK-162 scope d, PR #21 /code-review F1).
+//
+// The EXISTS gate uses the same in-window predicate the page's content rides —
+// windowStart derives from the imported CORAL_RECENCY_DAYS, so this set can
+// never drift from the page's content window. NOTE: app-clock windowStart (the
+// established sibling pattern — getCoralAvailability, getAllNamedCoralsWithListings)
+// is used instead of the directive's literal SQL `now() - interval` form
+// precisely BECAUSE the SQL form would gate on the DB clock and reintroduce the
+// drift the coupling exists to prevent. Predicate is stock-agnostic on purpose:
+// an in-window all-OOS coral still renders a real "Currently out of stock." page
+// (eyebrow count + toggle), so it is indexable, not thin.
+//
+// Evergreen-end-state TODO: once scope b/c land (price-history + guides give
+// every coral durable indexable content), this gate opens — the page stops
+// being thin for never-listed corals and the sitemap can return to the full set.
+export async function getSitemapCoralSlugs(): Promise<{ slug: string }[]> {
+  const sql = getNeonSql();
+  const windowStart = new Date(
+    Date.now() - CORAL_RECENCY_DAYS * MS_PER_DAY,
+  ).toISOString();
+  const rows = (await sql`
+    SELECT nc.slug
+    FROM named_corals nc
+    WHERE nc.active = true
+      AND EXISTS (
+        SELECT 1
+        FROM vendor_listings vl
+        WHERE vl.named_coral_id = nc.id
+          AND vl.last_seen_at > ${windowStart}
+      )
+  `) as unknown as { slug: string }[];
+  return rows;
+}
+
 // Powers /corals index page. Flat alphabetical by canonical_name
 // (vendor-neutrality, mirrors getAllActiveVendors). Dormancy gate: only corals
 // with at-least-one in-window listing render — a row must never route to an

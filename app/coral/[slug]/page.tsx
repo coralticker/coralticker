@@ -20,7 +20,7 @@ import { formatRelativeTime } from '@/lib/format/relative-time';
 import { latestTimestamp } from '@/lib/format/latest-timestamp';
 import { buildLineageFields } from '@/lib/format/lineage-fields';
 import { pluralize } from '@/lib/format/pluralize';
-import { buildCoralJsonLd } from '@/lib/seo/coral-jsonld';
+import { buildCoralJsonLd, serializeJsonLd } from '@/lib/seo/coral-jsonld';
 import { SITE_URL } from '@/lib/seo/site-url';
 import { VendorAvailabilityRow } from './_components/vendor-availability-row';
 
@@ -198,7 +198,7 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
     <PageShell as="article">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
       />
       <PageEyebrow chunks={eyebrowChunks} />
       <PageH1 className="mb-4">

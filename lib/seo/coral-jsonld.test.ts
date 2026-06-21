@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCoralJsonLd } from './coral-jsonld.ts';
+import { buildCoralJsonLd, serializeJsonLd } from './coral-jsonld.ts';
 import type { Listing } from '../queries/listings.ts';
 
 // Minimal in-stock, priced base. Each test overrides only the relevant fields.
@@ -118,6 +118,19 @@ test('description included only when present', () => {
     productOf(build([listing({})], { description: 'A chunky green chalice.' })).description,
     'A chunky green chalice.',
   );
+});
+
+test('serializeJsonLd escapes < so an embedded </script> cannot break out', () => {
+  const graph = buildCoralJsonLd({
+    siteUrl: SITE,
+    canonicalName: 'Evil </script><script>alert(1)</script> Coral',
+    description: null,
+    slug: 'evil',
+    listings: [listing({})],
+  });
+  const out = serializeJsonLd(graph);
+  assert.ok(!out.includes('</script>'), 'no literal </script> survives serialization');
+  assert.ok(out.includes('\\u003c'), 'angle brackets are unicode-escaped');
 });
 
 test('BreadcrumbList is Home > Corals > {coral} with absolute items', () => {
