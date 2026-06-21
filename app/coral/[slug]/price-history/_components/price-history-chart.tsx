@@ -179,8 +179,11 @@ export function PriceHistoryChart({
                 {label.text}
               </tspan>
               {n !== undefined ? (
+                // Parenthesized to match the legend canon "(N) = listings at
+                // that vendor" (/brand-manager) + disambiguate from the name.
+                // Near-black, smaller size only — no mid-dot, no forest.
                 <tspan className="font-mono fill-ink" fontSize={9}>
-                  {` ${n}`}
+                  {` (${n})`}
                 </tspan>
               ) : null}
             </text>
