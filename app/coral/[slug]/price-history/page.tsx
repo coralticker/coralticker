@@ -5,7 +5,10 @@ import {
   getNamedCoralBySlug,
   getCoralLastSeenAt,
 } from '@/lib/queries/named-corals';
-import { getCoralAvailability } from '@/lib/queries/listings';
+import {
+  getCoralAvailability,
+  getCoralInWindowVendorCount,
+} from '@/lib/queries/listings';
 import { getVendorDisplayNamesBySlug } from '@/lib/queries/vendors';
 import {
   getCoralPriceByVendor,
@@ -91,13 +94,14 @@ export default async function PriceHistoryPage({
   const coral = await getNamedCoralBySlug(slug);
   if (!coral) notFound();
 
-  const [envelope, vendorPoints, listings, displayNameBySlug, lastSeenAt] =
+  const [envelope, vendorPoints, listings, displayNameBySlug, lastSeenAt, inWindowVendorCount] =
     await Promise.all([
       getCoralPriceEnvelope(coral.id, WINDOW_DAYS), // floor — heavy line, unchanged
       getCoralPriceByVendor(coral.id, WINDOW_DAYS), // per-vendor lines
-      getCoralAvailability(coral.id), // summary row + thin fallback
+      getCoralAvailability(coral.id), // summary row + thin fallback (in-stock only)
       getVendorDisplayNamesBySlug(), // end-label fallback names
       getCoralLastSeenAt(coral.id), // eyebrow freshness (last CHECKED, not last changed)
+      getCoralInWindowVendorCount(coral.id), // stock-unfiltered all-OOS vendor fallback
     ]);
 
   const tracks = groupByVendor(vendorPoints);
@@ -106,11 +110,13 @@ export default async function PriceHistoryPage({
   const thin = isThinHistory(envelope, tracks);
 
   // Vendor N = vendors with a rendered line (honest-gap → a vendor only appears
-  // if it had an in-stock priced day). Falls back to the in-stock availability
-  // vendor set in the thin / price-on-request case so a coral that's carried but
-  // has no priced series never reads "0 VENDORS".
+  // if it had an in-stock priced day). Cascading fallback so a carried coral
+  // never reads "0 VENDORS": rendered tracks → in-stock availability vendors →
+  // the stock-UNFILTERED in-window vendor count (the all-OOS case — getCoral-
+  // Availability defaults to in-stock only, so an all-OOS coral has zero of the
+  // first two; mirrors the parent /coral/[slug] all-OOS eyebrow).
   const availabilityVendors = new Set(listings.map((l) => l.vendorSlug)).size;
-  const vendorN = tracks.length > 0 ? tracks.length : availabilityVendors;
+  const vendorN = tracks.length || availabilityVendors || inWindowVendorCount;
 
   // Eyebrow. Normal: N VENDORS · 90 DAYS · UPDATED {last-seen freshness}.
   // Freshness is last_seen_at (when the data was last CONFIRMED), NOT the last
@@ -136,7 +142,11 @@ export default async function PriceHistoryPage({
   // accepted for v1 (reconciling would couple the caches; not free). The summary
   // row + aria share the availability source, so they stay consistent with each
   // other.
-  const priced = listings.filter((l) => l.inStock && l.currentPrice !== null);
+  // > 0, not just non-null: a phantom currentPrice of 0 would surface as aria
+  // "current cheapest $0" (CTK-162 /code-review #1, Tier 1A).
+  const priced = listings.filter(
+    (l) => l.inStock && l.currentPrice !== null && l.currentPrice > 0,
+  );
   const cheapest = priced.length
     ? priced.reduce((a, b) =>
         (b.currentPrice as number) < (a.currentPrice as number) ? b : a,

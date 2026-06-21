@@ -36,9 +36,10 @@ const GAP_NOTE =
   "Not much history with me yet — I started tracking this one recently. I’ll fill the line in as the price moves.";
 
 export function ThinHistoryState({ observation }: { observation: ThinObservation }) {
-  // Null-price (price-on-request / auction): no honest y-position, so no dot and
-  // no $-axis — a single mono line carries the state instead of a fake $0 point.
-  if (observation.price === null) {
+  // Falsy price (null = price-on-request/auction; 0/NaN = phantom): no honest
+  // y-position, so no dot and no $-axis — a single mono line carries the state
+  // instead of a fabricated $0 point (and a 0 would divide-by-zero the padding).
+  if (!observation.price) {
     return (
       <div>
         {observation.dateLabel ? (
@@ -52,9 +53,12 @@ export function ThinHistoryState({ observation }: { observation: ThinObservation
   }
 
   const price = observation.price;
-  const ticks = niceTicksWithin(price * 0.95, price * 1.05, 2);
-  const yMin = price * 0.95;
-  const yMax = price * 1.05;
+  // Additive padding with a floor (mirrors computeDomain's flat-series band) —
+  // a multiplicative band would collapse to zero height at price 0 (NaN y).
+  const pad = Math.max(Math.abs(price) * 0.1, 1);
+  const yMin = price - pad;
+  const yMax = price + pad;
+  const ticks = niceTicksWithin(yMin, yMax, 2);
   const plotH = THIN_FRAME.plotBottom - THIN_FRAME.plotTop;
   const yOf = (p: number) => THIN_FRAME.plotTop + ((yMax - p) / (yMax - yMin)) * plotH;
   const dotX = THIN_FRAME.plotRight - 30; // sits near (not on) the right edge
@@ -66,7 +70,7 @@ export function ThinHistoryState({ observation }: { observation: ThinObservation
         <svg
           viewBox={`0 0 ${THIN_FRAME.vbW} ${THIN_FRAME.vbH}`}
           role="img"
-          aria-label={`One recorded price point: $${price}, ${observation.dateLabel}.`}
+          aria-label={`One recorded price point: $${price.toFixed(0)}, ${observation.dateLabel}.`}
           className="block w-full h-auto overflow-visible"
         >
           {ticks.map((p) => (

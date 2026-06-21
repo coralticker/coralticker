@@ -268,14 +268,22 @@ export function endLabels(
       vendorSlug: t.vendorSlug,
     });
   }
+  // Down-pass: push each label below the one above to clear the min gap.
   raw.sort((a, b) => a.y - b.y);
   for (let i = 1; i < raw.length; i++) {
     if (raw[i]!.y < raw[i - 1]!.y + LABEL_MIN_GAP) {
       raw[i]!.y = raw[i - 1]!.y + LABEL_MIN_GAP;
     }
   }
-  for (const l of raw) {
-    if (l.y > frame.axisY) l.y = frame.axisY;
+  // Up-pass: a dense cluster can push the bottom labels past the axis; a naive
+  // clamp would re-stack them all on axisY. Clamp the bottom one, then walk
+  // upward keeping the min gap so the overflow redistributes into free space
+  // above instead of collapsing into a pile.
+  for (let i = raw.length - 1; i >= 0; i--) {
+    if (raw[i]!.y > frame.axisY) raw[i]!.y = frame.axisY;
+    if (i < raw.length - 1 && raw[i]!.y > raw[i + 1]!.y - LABEL_MIN_GAP) {
+      raw[i]!.y = raw[i + 1]!.y - LABEL_MIN_GAP;
+    }
   }
   return raw;
 }
@@ -349,7 +357,15 @@ export function isThinHistory(envelope: CoralEnvelopePoint[], tracks: VendorTrac
 export function thinObservation(tracks: VendorTrack[]): CoralVendorPricePoint | null {
   const all = tracks.flatMap((t) => t.points);
   if (!all.length) return null;
-  return all.reduce((a, b) => (parseDay(b.day) >= parseDay(a.day) ? b : a));
+  // Most recent day; on a same-day tie pick the lowest price — deterministic
+  // (a bare >= would return whichever vendor happened to come last).
+  return all.reduce((a, b) => {
+    const da = parseDay(a.day);
+    const db = parseDay(b.day);
+    if (db > da) return b;
+    if (db < da) return a;
+    return b.minPrice < a.minPrice ? b : a;
+  });
 }
 
 // ── Nice ticks (Heckbert) ────────────────────────────────────────────────────

@@ -192,6 +192,30 @@ test('thinObservation: no per-vendor data → null (page falls back to availabil
   assert.equal(thinObservation([]), null);
 });
 
+test('thinObservation: same-day tie → lowest price, deterministic (not arbitrary)', () => {
+  const tracks = groupByVendor([
+    vp(10, 'wwc', '2026-06-19', 680),
+    vp(20, 'tsa', '2026-06-19', 650), // same day, cheaper
+  ]);
+  assert.equal(thinObservation(tracks)?.minPrice, 650);
+});
+
+test('endLabels: a dense cluster near the axis redistributes, none past axisY', () => {
+  // five vendors all bottoming out near the same low price → labels collide and
+  // would pile on axisY without the up-pass.
+  const tracks = groupByVendor(
+    ['a', 'b', 'c', 'd', 'e'].map((s, i) => vp(i + 1, s, '2026-05-20', 100 + i)),
+  );
+  const now = Date.parse('2026-05-25T00:00:00Z');
+  const d = computeDomain([], tracks, now);
+  const labels = endLabels(tracks, d, upper);
+  for (const l of labels) assert.ok(l.y <= FRAME.axisY);
+  const ys = labels.map((l) => l.y).sort((a, b) => a - b);
+  for (let i = 1; i < ys.length; i++) {
+    assert.ok(ys[i]! - ys[i - 1]! >= 13 - 1e-6, 'min gap preserved after re-stack');
+  }
+});
+
 // ── nice ticks within ────────────────────────────────────────────────────────
 test('niceTicksWithin: round values strictly inside the range', () => {
   const ticks = niceTicksWithin(305, 525, 4);

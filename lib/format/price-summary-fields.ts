@@ -55,9 +55,13 @@ export function buildPriceSummaryFields(
     fields.push({ label: 'Vendor', value: renderTieVendors(tieRows) });
   }
 
-  const origin = resolveOriginVendor(coral.origin_vendor as string);
-  if (!('suppress' in origin && origin.suppress)) {
-    fields.push({ label: 'Lineage', value: origin.display });
+  // Truthy guard (mirrors buildLineageFields) — rules out null AND empty-string
+  // drift in one boundary, no cast.
+  if (coral.origin_vendor) {
+    const origin = resolveOriginVendor(coral.origin_vendor);
+    if (!('suppress' in origin && origin.suppress)) {
+      fields.push({ label: 'Lineage', value: origin.display });
+    }
   }
 
   if (cheapest) {
