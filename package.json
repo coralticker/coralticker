@@ -11,7 +11,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types lib/*.test.ts lib/format/*.test.ts lib/queries/*.test.ts lib/email/*.test.ts lib/email/templates/*.test.ts scripts/*.test.ts"
+    "test": "node --test --experimental-strip-types lib/*.test.ts lib/format/*.test.ts lib/queries/*.test.ts lib/email/*.test.ts lib/email/templates/*.test.ts lib/seo/*.test.ts scripts/*.test.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.3",
