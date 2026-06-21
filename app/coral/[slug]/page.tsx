@@ -245,6 +245,15 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
         </p>
       )}
 
+      {/* Per-coral link to the price-history child route (CTK-162). Near the
+          price ladder, not a global-nav entry. Shown unconditionally — the
+          destination renders a real chart or its own thin-history state. */}
+      <p className="mt-6 text-sm">
+        <Link href={`/coral/${slug}/price-history`} className="underline">
+          Price history
+        </Link>
+      </p>
+
       {/* The canonical match-provenance copy lives in the /corals "About this
           list." block — link, never duplicate. */}
       <p className="mt-4 text-sm">

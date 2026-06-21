@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
   getAllNamedCoralSlugs,
@@ -68,6 +69,18 @@ export async function generateMetadata({
         "This coral isn't in the seed list yet. I'm working through the long tail.",
     };
   }
+  // noindex the thin-history state. The sitemap excludes thin pages, but the
+  // parent /coral/[slug] links here UNCONDITIONALLY (UX — users can still reach
+  // it), so a thin child is crawlable from the indexed parent and
+  // sitemap-exclusion alone won't deindex it; the robots meta closes that
+  // soft-404 loop. follow: true so the breadcrumb back to the indexable parent
+  // is still crawled. Gate signal = envelope rows >= 2, the EXACT check
+  // getPriceHistorySitemapSlugs uses (count >= 2) and the inverse of
+  // isThinHistory — sourced from the same SQL function so the sitemap gate and
+  // this meta gate cannot diverge.
+  const envelope = await getCoralPriceEnvelope(coral.id, WINDOW_DAYS);
+  const isThin = envelope.length < 2;
+
   // Self-canonical child route with its own intent-meta ("[coral] price history
   // / price trend") — NOT canonical'd back to the parent /coral/[slug] (D-1).
   // No JSON-LD on this route (no honest schema.org type for a price-trend view).
@@ -75,6 +88,7 @@ export async function generateMetadata({
     title: `${coral.canonical_name} price history`,
     description: `Price history for ${coral.canonical_name}: the cross-vendor cheapest price and per-vendor price trend across reef coral vendors.`,
     alternates: { canonical: `/coral/${slug}/price-history` },
+    ...(isThin ? { robots: { index: false, follow: true } } : {}),
     openGraph: {
       url: `/coral/${slug}/price-history`,
       siteName: 'CoralTicker',
@@ -173,6 +187,16 @@ export default async function PriceHistoryPage({
 
   return (
     <PageShell as="article">
+      {/* Breadcrumb back-link to the parent coral page. Load-bearing for SEO:
+          the price-history sitemap gate is history-depth-based, so this page can
+          be indexed while its (OOS-today) parent drops out of the parent sitemap
+          — the back-link keeps it from being an orphan. Ink, not mute (AA). */}
+      <nav aria-label="Breadcrumb" className="text-sm mb-3">
+        <Link href={`/coral/${slug}`} className="underline">
+          {coral.canonical_name}
+        </Link>
+        <span aria-hidden="true"> / </span>Price history
+      </nav>
       <PageEyebrow chunks={eyebrowChunks} />
       <PageH1 className="mb-4">{coral.canonical_name}</PageH1>
 
