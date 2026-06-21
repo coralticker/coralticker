@@ -221,6 +221,19 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
 
       <IncludeOOSToggle slug={slug} includeOOS={includeOOS} />
 
+      {/* Link to this coral's price-history child route (CTK-162). Top of the
+          price block — anchored to the cheapest-price context that motivates the
+          click, above the ladder. Content register (sentence-case Plex Sans,
+          underline-at-rest) so it reads as navigation, distinct from the
+          mono-uppercase OOS control above; /brand-manager ruling 2026-06-21 (D-3).
+          No arrow (reserved for outbound). Shown unconditionally — the
+          destination renders a real chart or its own thin-history state. */}
+      <p className="mt-3 mb-2 text-sm">
+        <Link href={`/coral/${slug}/price-history`} className="underline">
+          See price history
+        </Link>
+      </p>
+
       {hasListings ? (
         <div>
           {listings.map((listing) => (
@@ -244,15 +257,6 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
           {EMPTY_FALLBACK}
         </p>
       )}
-
-      {/* Per-coral link to the price-history child route (CTK-162). Near the
-          price ladder, not a global-nav entry. Shown unconditionally — the
-          destination renders a real chart or its own thin-history state. */}
-      <p className="mt-6 text-sm">
-        <Link href={`/coral/${slug}/price-history`} className="underline">
-          Price history
-        </Link>
-      </p>
 
       {/* The canonical match-provenance copy lives in the /corals "About this
           list." block — link, never duplicate. */}
