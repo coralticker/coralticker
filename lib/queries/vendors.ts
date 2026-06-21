@@ -54,6 +54,33 @@ export async function getVendorBySlug(slug: string): Promise<Vendor | null> {
   )();
 }
 
+// Raw snake-slug → display_name map for active vendors. The price-history chart
+// end-labels resolve a vendor shorthand from the branding-guide canon table, but
+// the four canon FULL-NAME vendors (and any un-canon vendor) fall through to the
+// display_name — which get_coral_price_history doesn't project (it returns
+// vendor_slug only). Keyed by the DB snake slug (NOT kebab-normalized) so it
+// joins directly to the function's vendor_slug. Active-only is sufficient: a
+// retired vendor's historical track still resolves via the canon shorthand map
+// for the seven wired vendors; an un-canon retired vendor would miss, an
+// accepted edge until /brand-manager extends the canon.
+export async function getVendorDisplayNamesBySlug(): Promise<Record<string, string>> {
+  return unstable_cache(
+    async () => {
+      const sql = getNeonSql();
+      const rows = (await sql`
+        SELECT slug, display_name
+        FROM vendors
+        WHERE active = true
+      `) as unknown as { slug: string; display_name: string }[];
+      const map: Record<string, string> = {};
+      for (const row of rows) map[row.slug] = row.display_name;
+      return map;
+    },
+    ['getVendorDisplayNamesBySlug'],
+    { revalidate: 600, tags: ['vendors-index'] },
+  )();
+}
+
 export async function getAllActiveVendorSlugs(): Promise<{ slug: string }[]> {
   const sql = getNeonSql();
   // `_..._test` sentinel-slug convention for test rows. Filter keeps the test
