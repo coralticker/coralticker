@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
   getAllNamedCoralSlugs,
@@ -173,6 +174,16 @@ export default async function PriceHistoryPage({
 
   return (
     <PageShell as="article">
+      {/* Breadcrumb back-link to the parent coral page. Load-bearing for SEO:
+          the price-history sitemap gate is history-depth-based, so this page can
+          be indexed while its (OOS-today) parent drops out of the parent sitemap
+          — the back-link keeps it from being an orphan. Ink, not mute (AA). */}
+      <nav aria-label="Breadcrumb" className="text-sm mb-3">
+        <Link href={`/coral/${slug}`} className="underline">
+          {coral.canonical_name}
+        </Link>
+        <span aria-hidden="true"> / </span>Price history
+      </nav>
       <PageEyebrow chunks={eyebrowChunks} />
       <PageH1 className="mb-4">{coral.canonical_name}</PageH1>
 

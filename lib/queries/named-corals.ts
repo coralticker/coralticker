@@ -106,6 +106,34 @@ export async function getSitemapCoralSlugs(): Promise<{ slug: string }[]> {
   return rows;
 }
 
+// Sitemap-scoped slug set for the price-history CHILD route
+// (/coral/[slug]/price-history). A coral qualifies iff its price-history page
+// renders a real chart, not the thin "not enough history yet" state — i.e.
+// get_coral_price_envelope(id, 90) returns >= 2 rows (>= 2 distinct days with an
+// in-stock priced floor). That is the EXACT inverse of the frontend
+// isThinHistory check (envelope <= 1 day AND no vendor >= 2 points): the
+// envelope carries a row for every day any vendor is in-stock-priced, so <= 1
+// envelope day means no vendor can have 2 points either. Reusing the same SQL
+// function the chart consumes means this gate can't drift from the render.
+//
+// Listing thin pages would be a soft-404 signal to Google — same exclusion
+// rationale as getSitemapCoralSlugs (PR #21 /code-review F1), but the predicate
+// is history-DEPTH, not current-stock: a coral with rich history that is OOS
+// today still renders a real historical trend, so it stays IN the price-history
+// sitemap (and the parent-page back-link prevents the SEO orphan when its OOS
+// parent drops out of getSitemapCoralSlugs).
+export async function getPriceHistorySitemapSlugs(): Promise<{ slug: string }[]> {
+  const sql = getNeonSql();
+  const rows = (await sql`
+    SELECT nc.slug
+    FROM named_corals nc
+    WHERE nc.active = true
+      AND (SELECT count(*) FROM get_coral_price_envelope(nc.id, 90)) >= 2
+    ORDER BY nc.slug
+  `) as unknown as { slug: string }[];
+  return rows;
+}
+
 // Powers /corals index page. Flat alphabetical by canonical_name
 // (vendor-neutrality, mirrors getAllActiveVendors). Dormancy gate: only corals
 // with at-least-one in-window listing render — a row must never route to an
