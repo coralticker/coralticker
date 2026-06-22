@@ -755,6 +755,18 @@ def test_filter_rejects_twcheap_sku_row(products):
     assert _should_keep(multi_variant, TSA_CATEGORY_FILTER) is False, (
         "twcheap marker on a non-first variant should still reject (all-variants gate)"
     )
+    # CTK-181 review-fold: the numbered-variant form '…-twcheap-<n>' (real residue
+    # id 131678 'AWxTSAAquaRim-twcheap-2') must also reject — it slipped the bare
+    # endswith and re-ingested under the original gate.
+    numbered = {
+        "title": "TSA Aquarim Montipora Coral",   # real coral name (the live 131678 title)
+        "product_type": "Livestock",
+        "tags": [],
+        "variants": [{"available": True, "sku": "AWxTSAAquaRim-twcheap-2"}],
+    }
+    assert _should_keep(numbered, TSA_CATEGORY_FILTER) is False, (
+        "numbered twcheap variant '…-twcheap-2' should reject (review-fold tail tolerance)"
+    )
 
 
 def test_filter_keeps_real_coral_sku(products):

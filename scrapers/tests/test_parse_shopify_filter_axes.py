@@ -339,6 +339,30 @@ def test_sku_denylist_suffix_multi_suffix_tuple():
     assert _should_keep(_p_skus(["x-clean"]), flt) is True
 
 
+def test_sku_denylist_suffix_drops_numbered_variant():
+    """CTK-181 review-fold (2026-06-22): the '-twcheap' entry must ALSO catch the
+    numbered-variant form '…-twcheap-<n>' (id 131678 'AWxTSAAquaRim-twcheap-2'
+    slipped the bare endswith). The gate strips one trailing '-<digits>' tail
+    before the suffix match. Deletes the tail-strip and this fails."""
+    flt = _mk_sku_filter(["-twcheap"])
+    for sku in ("AWxTSAAquaRim-twcheap-2", "X-twcheap-10", "Y-twcheap-1"):
+        assert _should_keep(_p_skus([sku]), flt) is False, (
+            f"numbered-variant SKU {sku!r} should drop via the -<n> tail tolerance"
+        )
+
+
+def test_sku_denylist_suffix_numbered_tail_on_non_match_survives():
+    """Review-fold FP-guard: the tail-strip must not turn the suffix axis into a
+    substring axis. A SKU whose stripped base does NOT end '-twcheap' survives,
+    even with a numbered tail — '…-twcheap-real-frag' (mid-string) and a real
+    coral '…-2' frag SKU both stay kept."""
+    flt = _mk_sku_filter(["-twcheap"])
+    for sku in ("x-twcheap-real-2", "ACRO-FRAG-2", "WWC-DRAGON-SOUL-7234"):
+        assert _should_keep(_p_skus([sku]), flt) is True, (
+            f"SKU {sku!r} false-killed — tail-strip widened the axis to substring"
+        )
+
+
 def main() -> int:
     tests = [
         test_yaml_mixed_case_api_lowercase_drops,
@@ -368,6 +392,8 @@ def main() -> int:
         test_sku_denylist_suffix_real_coral_sku_survives,
         test_sku_denylist_suffix_none_and_missing_sku_safe,
         test_sku_denylist_suffix_multi_suffix_tuple,
+        test_sku_denylist_suffix_drops_numbered_variant,
+        test_sku_denylist_suffix_numbered_tail_on_non_match_survives,
     ]
     failed = 0
     for t in tests:

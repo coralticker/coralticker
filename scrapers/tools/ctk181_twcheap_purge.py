@@ -10,11 +10,12 @@ Selector: a FROZEN id snapshot (--frozen-ids PATH), NOT a live LIKE. The set is
 frozen once at the Step-2 confirm (after the forward gate is live + the live FP
 audit is clean), so --apply deletes EXACTLY the audited rows — a -twcheap row
 that appeared after the audit can't slip into the delete. Each frozen id is
-re-verified as a still-present TSA -twcheap row before the delete (case-sensitive
-'%-twcheap' LIKE, mirroring the parse_shopify axis); ABORT on any drift (missing
-id, or an id whose vendor_sku no longer ends -twcheap = id reuse). The snapshot
-is written by the Step-2 freeze (ctk181_purge_freeze_snapshot.json in the ticket
-dir, exclusive-create).
+re-verified as a still-present TSA -twcheap row before the delete (tail-tolerant
+_is_twcheap_sku, mirroring parse_shopify._sku_hits_denylist — so '…-twcheap' and
+the numbered-variant '…-twcheap-<n>' both qualify, CTK-181 review-fold); ABORT on
+any drift (missing id beyond the backfill overlap, or an id whose vendor_sku is no
+longer a -twcheap row = id reuse). The snapshot is written by the freeze step
+(ctk181_purge_freeze_snapshot.json in the ticket dir, exclusive-create).
 
 Overlap note: the 4 matched -twcheap rows (131712/131951/132317/132475) are in
 BOTH this cohort and ctk181_template_match_backfill's EXPECTED_IDS. Run the
@@ -44,14 +45,22 @@ import sys
 from pathlib import Path
 
 from scrapers.common import db
+from scrapers.common.parse_shopify import _SKU_NUM_VARIANT_TAIL
 
 TSA_VENDOR_ID = 3
-# Case-sensitive LIKE — mirrors the case-sensitive endswith in
-# parse_shopify._should_keep's sku_denylist_suffix axis. '%-twcheap' = SKU
-# ending in the literal suffix (the '-' anchors it to a real suffix, not a
-# mid-string coincidence). Used ONLY to re-verify each frozen id is still a
-# -twcheap row, never to (re-)derive the delete set.
-SKU_LIKE = "%-twcheap"
+# Broad residual sweep pattern — '%-twcheap%' catches both '…-twcheap' and the
+# numbered-variant form '…-twcheap-<n>' (CTK-181 review-fold) for the post-DELETE
+# "anything left?" report. Used ONLY for the residual sweep, never to derive the
+# delete set (that's the frozen id snapshot).
+SKU_LIKE_BROAD = "%-twcheap%"
+
+
+def _is_twcheap_sku(sku: str | None) -> bool:
+    """Tail-tolerant -twcheap suffix test — mirrors parse_shopify._sku_hits_
+    denylist: strip one trailing '-<digits>' numbered-variant tail, then check the
+    '-twcheap' suffix. So '…-twcheap' and '…-twcheap-2' both qualify, a mid-string
+    '-twcheap-real' does not. Case-sensitive."""
+    return _SKU_NUM_VARIANT_TAIL.sub("", sku or "").endswith("-twcheap")
 
 
 def _load_frozen_ids(path: Path) -> list[int]:
@@ -75,8 +84,7 @@ def _fetch_frozen(cur, frozen_ids: list[int]) -> tuple[list[dict], list[int], li
     rows = cur.fetchall()
     found = {r["id"] for r in rows}
     missing = [i for i in frozen_ids if i not in found]
-    non_twcheap = [r["id"] for r in rows
-                   if not (r["vendor_sku"] or "").endswith("-twcheap")]
+    non_twcheap = [r["id"] for r in rows if not _is_twcheap_sku(r["vendor_sku"])]
     return rows, missing, non_twcheap
 
 
@@ -164,7 +172,7 @@ def run(apply: bool, frozen_ids: list[int]) -> int:
             # is live).
             cur.execute(
                 "SELECT id FROM vendor_listings WHERE vendor_id = %s AND vendor_sku LIKE %s",
-                (TSA_VENDOR_ID, SKU_LIKE),
+                (TSA_VENDOR_ID, SKU_LIKE_BROAD),
             )
             broad = [r["id"] for r in cur.fetchall()]
             if broad:

@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 
 from scrapers.common import http, normalize
@@ -294,14 +295,12 @@ def fetch_and_parse(config: dict) -> ParseResult:
                         # (substring before prefix) so a dual-hit attributes
                         # to the substring branch above, same as the gate.
                         skipped_title_denylist += 1
-                    elif sku_denylist_suffix and any(
-                        (v.get("sku") or "").endswith(sku_denylist_suffix)
-                        for v in (p.get("variants") or [])
-                    ):
+                    elif _sku_hits_denylist(p, sku_denylist_suffix):
                         # CTK-181: SKU-suffix axis fires LAST in _should_keep's
                         # order, so attribution mirrors that (after the title
                         # axes). Own counter so the operator can tell a twcheap
-                        # test-SKU drop from a title/category drop.
+                        # test-SKU drop from a title/category drop. Same helper as
+                        # the gate — no gate-vs-counter drift on the -<n> tolerance.
                         skipped_sku_denylist += 1
                     else:
                         skipped_category += 1
@@ -368,6 +367,31 @@ def _normalize_tag(value: str) -> str:
     return " ".join((value or "").lower().replace("-", " ").split())
 
 
+# CTK-181 review-fold (/lead-backend 2026-06-22): the -twcheap test SKUs also
+# ship a numbered-variant form ('…-twcheap-2'), which a bare endswith('-twcheap')
+# misses (id 131678 slipped both the gate and the purge). Strip a single trailing
+# '-<digits>' variant tail before the suffix match so '-twcheap' catches BOTH
+# '…-twcheap' and '…-twcheap-<n>'. Deliberately NARROWER than a substring match:
+# a mid-string '…-twcheap-real-frag' stays kept — the axis is a suffix axis, not a
+# contains axis (preserves the anchored-semantics FP-guard test). FP-safe (no real
+# coral SKU ends -twcheap). Case-sensitive (SKUs are identifiers). Shared by the
+# gate (_should_keep) and the fetch_and_parse attribution counter so the two can't
+# drift (the CTK-096/117 gate-vs-counter drift class).
+_SKU_NUM_VARIANT_TAIL = re.compile(r"-\d+$")
+
+
+def _sku_hits_denylist(product: dict, sku_denylist_suffix: tuple) -> bool:
+    """True if any variant SKU ends with a denylisted suffix, tolerating one
+    trailing '-<digits>' numbered-variant tail. Permissive on empty config."""
+    if not sku_denylist_suffix:
+        return False
+    for v in (product.get("variants") or []):
+        base = _SKU_NUM_VARIANT_TAIL.sub("", v.get("sku") or "")
+        if base.endswith(sku_denylist_suffix):
+            return True
+    return False
+
+
 def _should_keep(
     product: dict,
     category_filter: dict | None,
@@ -428,13 +452,16 @@ def _should_keep(
         pattern could collide word-final inside coral names — substring
         `ws - ` would false-kill "Rainbows - ..." / "Jaws - ..."; the
         anchor kills exactly the title-initial class.
-      - sku_denylist_suffix (CTK-181) — no variant SKU may END WITH an entry
-        (`sku.endswith(tuple(entries))`, checked across ALL variants). The only
-        structural discriminator for cross-vendor TEST-DATA rows that carry real
-        coral titles (TSA `…-twcheap`: famous coral names at $1–$15, so
-        product_type/tag/title axes are all blind). Case-SENSITIVE — SKUs are
-        identifiers, not prose; matched as emitted. Use when the junk class is
-        identifiable only by a vendor SKU convention, never by catalog taxonomy.
+      - sku_denylist_suffix (CTK-181) — no variant SKU may END WITH an entry,
+        tolerating one trailing '-<digits>' numbered-variant tail (so '-twcheap'
+        catches both '…-twcheap' and '…-twcheap-<n>'; review-fold 2026-06-22),
+        checked across ALL variants via _sku_hits_denylist. The only structural
+        discriminator for cross-vendor TEST-DATA rows that carry real coral titles
+        (TSA `…-twcheap`: famous coral names at $1–$15, so product_type/tag/title
+        axes are all blind). Case-SENSITIVE — SKUs are identifiers, not prose.
+        Deliberately NARROWER than a substring match (a mid-string '-twcheap'
+        stays kept). Use when the junk class is identifiable only by a vendor SKU
+        convention, never by catalog taxonomy.
 
     Each axis short-circuits to False on miss; permissive when unset (so a
     config carrying only one axis behaves identically to the prior single-axis
@@ -515,16 +542,13 @@ def _should_keep(
         title_lower = (product.get("title") or "").lower()
         if title_lower.startswith(tuple(e.lower() for e in title_denylist_prefix)):
             return False
-    # CTK-181 D-1: 7th axis. Variant SKU endswith — the only structural
+    # CTK-181 D-1: 7th axis. Variant SKU suffix — the only structural
     # discriminator for cross-vendor test-data rows that carry REAL coral titles
     # (TSA '…-twcheap', famous names at $1–$15 → title/tag axes blind). Case-
-    # SENSITIVE (SKUs are identifiers, not prose); checks ALL variants, since the
-    # suffix can ride any variant's SKU, not just the first one _normalize_product
-    # picks. tuple passed straight to str.endswith (multi-suffix accepted).
-    if sku_denylist_suffix:
-        if any((v.get("sku") or "").endswith(sku_denylist_suffix)
-               for v in (product.get("variants") or [])):
-            return False
+    # SENSITIVE; checks ALL variants; tolerates a trailing '-<n>' numbered-variant
+    # tail (review-fold) via the shared _sku_hits_denylist helper.
+    if _sku_hits_denylist(product, sku_denylist_suffix):
+        return False
     return True
 
 
