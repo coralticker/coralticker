@@ -6,11 +6,15 @@ axes are all blind; the SKU suffix is the only discriminator). Half 1 builds the
 sku_denylist_suffix forward gate so no NEW -twcheap row ingests; this script
 clears the already-persisted backlog the forward gate can't retroactively reach.
 
-Selector: vendor_listings.vendor_sku LIKE '%-twcheap' (TSA only). Case-sensitive
-LIKE mirrors the case-sensitive endswith in the parse_shopify axis — same match
-semantics on both sides. The id-set is FROZEN at run-time from the live DB (re-
-pull the feed for the FP audit + the in_stock count separately; this script
-reports both at execution).
+Selector: a FROZEN id snapshot (--frozen-ids PATH), NOT a live LIKE. The set is
+frozen once at the Step-2 confirm (after the forward gate is live + the live FP
+audit is clean), so --apply deletes EXACTLY the audited rows — a -twcheap row
+that appeared after the audit can't slip into the delete. Each frozen id is
+re-verified as a still-present TSA -twcheap row before the delete (case-sensitive
+'%-twcheap' LIKE, mirroring the parse_shopify axis); ABORT on any drift (missing
+id, or an id whose vendor_sku no longer ends -twcheap = id reuse). The snapshot
+is written by the Step-2 freeze (ctk181_purge_freeze_snapshot.json in the ticket
+dir, exclusive-create).
 
 Overlap note: the 4 matched -twcheap rows (131712/131951/132317/132475) are in
 BOTH this cohort and ctk181_template_match_backfill's EXPECTED_IDS. Run the
@@ -24,8 +28,8 @@ enumerates BOTH dependents' totals + ABORTS if any purge-target is in
 ig_spotlight_picks (Q-1 fold).
 
 Run via:
-  python -m scrapers.tools.ctk181_twcheap_purge            # DRY-RUN (default)
-  python -m scrapers.tools.ctk181_twcheap_purge --apply    # writes
+  python -m scrapers.tools.ctk181_twcheap_purge --frozen-ids PATH            # DRY-RUN (default)
+  python -m scrapers.tools.ctk181_twcheap_purge --frozen-ids PATH --apply    # writes
 
 Run --apply AFTER the Half-1 forward-gate push + AFTER the backfill. Idempotent:
 re-running finds 0 rows once clean. Exit 0 on success, 1 on an abort / post-verify
@@ -35,7 +39,9 @@ gap. Reads NEON_DATABASE_URL from .env.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from pathlib import Path
 
 from scrapers.common import db
 
@@ -43,19 +49,35 @@ TSA_VENDOR_ID = 3
 # Case-sensitive LIKE — mirrors the case-sensitive endswith in
 # parse_shopify._should_keep's sku_denylist_suffix axis. '%-twcheap' = SKU
 # ending in the literal suffix (the '-' anchors it to a real suffix, not a
-# mid-string coincidence).
+# mid-string coincidence). Used ONLY to re-verify each frozen id is still a
+# -twcheap row, never to (re-)derive the delete set.
 SKU_LIKE = "%-twcheap"
 
 
-def _fetch_cohort(cur) -> list[dict]:
+def _load_frozen_ids(path: Path) -> list[int]:
+    snap = json.loads(path.read_text(encoding="utf-8"))
+    ids = snap.get("twcheap_purge_ids")
+    if not isinstance(ids, list) or not ids:
+        raise ValueError(f"{path}: 'twcheap_purge_ids' missing or empty")
+    return [int(i) for i in ids]
+
+
+def _fetch_frozen(cur, frozen_ids: list[int]) -> tuple[list[dict], list[int], list[int]]:
+    """Resolve the frozen id set. Returns (rows, missing_ids, non_twcheap_ids).
+    A frozen id absent from the table, or present but whose vendor_sku no longer
+    ends -twcheap, is DRIFT → caller ABORTS (id reuse / unexpected mutation)."""
     cur.execute(
         "SELECT id, raw_title, vendor_sku, in_stock, current_price, named_coral_id "
-        "FROM vendor_listings "
-        "WHERE vendor_id = %s AND vendor_sku LIKE %s "
+        "FROM vendor_listings WHERE vendor_id = %s AND id = ANY(%s) "
         "ORDER BY in_stock DESC, id",
-        (TSA_VENDOR_ID, SKU_LIKE),
+        (TSA_VENDOR_ID, frozen_ids),
     )
-    return cur.fetchall()
+    rows = cur.fetchall()
+    found = {r["id"] for r in rows}
+    missing = [i for i in frozen_ids if i not in found]
+    non_twcheap = [r["id"] for r in rows
+                   if not (r["vendor_sku"] or "").endswith("-twcheap")]
+    return rows, missing, non_twcheap
 
 
 def _dependent_totals(cur, ids: list[int]) -> tuple[int, dict[int, int]]:
@@ -75,15 +97,15 @@ def _dependent_totals(cur, ids: list[int]) -> tuple[int, dict[int, int]]:
     return ph_total, ig
 
 
-def run(apply: bool) -> int:
+def run(apply: bool, frozen_ids: list[int]) -> int:
     with db.get_conn() as conn:
         with conn.cursor() as cur:
-            cohort = _fetch_cohort(cur)
+            cohort, missing, non_twcheap = _fetch_frozen(cur, frozen_ids)
             ids = [r["id"] for r in cohort]
             in_stock_rows = [r for r in cohort if r["in_stock"]]
             matched_rows = [r for r in cohort if r["named_coral_id"] is not None]
-            print(f"twcheap cohort (TSA vendor_id={TSA_VENDOR_ID}, "
-                  f"vendor_sku LIKE {SKU_LIKE!r}): {len(cohort)} rows")
+            print(f"frozen twcheap set (TSA vendor_id={TSA_VENDOR_ID}): "
+                  f"{len(frozen_ids)} ids requested, {len(cohort)} resolved")
             print(f"  in_stock: {len(in_stock_rows)}   matched: {len(matched_rows)}")
             for r in in_stock_rows:
                 print(f"  [IN_STOCK] id={r['id']:8d}  price={r['current_price']}  "
@@ -93,8 +115,22 @@ def run(apply: bool) -> int:
                 print(f"  [MATCHED]  id={r['id']:8d}  coral={r['named_coral_id']}  "
                       f"sku={r['vendor_sku']!r}  {r['raw_title']!r}")
 
+            # --- Drift rail: the frozen set must resolve exactly to TSA -twcheap rows ---
+            if missing:
+                # Already-gone ids are fine ONLY if the backfill removed them
+                # (the 4 matched overlap). Surface them; they're a no-op for the
+                # delete (ANY() skips absent ids) but must be accounted for.
+                print(f"\nNOTE: {len(missing)} frozen id(s) absent from vendor_listings "
+                      f"(expected for the 4 matched-twcheap ids the backfill DELETEd "
+                      f"first): {sorted(missing)}")
+            if non_twcheap:
+                print(f"\nABORT: {len(non_twcheap)} frozen id(s) present but no longer "
+                      f"a -twcheap row (id reuse / drift): {non_twcheap}. Re-audit; do "
+                      f"NOT delete.", file=sys.stderr)
+                return 1
             if not cohort:
-                print("no -twcheap rows remain — nothing to purge. Exiting clean.")
+                print("frozen set fully resolved to 0 present rows — nothing to purge "
+                      "(idempotent re-run or backfill already cleared all). Exiting clean.")
                 return 0
 
             ph_total, ig = _dependent_totals(cur, ids)
@@ -117,22 +153,40 @@ def run(apply: bool) -> int:
             print(f"\nDELETE affected: {cur.rowcount} vendor_listings rows "
                   f"(FK CASCADE cleaned dependents).")
 
-            residual = _fetch_cohort(cur)
-            if residual:
-                print(f"WARN: {len(residual)} -twcheap rows still present post-DELETE",
-                      file=sys.stderr)
+            # Post-verify the frozen set is gone...
+            still, _, _ = _fetch_frozen(cur, frozen_ids)
+            if still:
+                print(f"WARN: {len(still)} frozen ids still present post-DELETE: "
+                      f"{[r['id'] for r in still]}", file=sys.stderr)
                 return 1
-            print("post-DELETE verify: 0 -twcheap rows remain for TSA")
+            # ...and belt-and-suspenders: no TSA -twcheap row remains AT ALL (would
+            # catch a row that landed post-freeze — should be 0, the forward gate
+            # is live).
+            cur.execute(
+                "SELECT id FROM vendor_listings WHERE vendor_id = %s AND vendor_sku LIKE %s",
+                (TSA_VENDOR_ID, SKU_LIKE),
+            )
+            broad = [r["id"] for r in cur.fetchall()]
+            if broad:
+                print(f"NOTE: {len(broad)} TSA -twcheap row(s) remain that were NOT in "
+                      f"the frozen set (landed post-freeze): {broad}. Forward gate "
+                      f"blocks new intake — re-snapshot + re-run if these are real.")
+            print("post-DELETE verify: 0 frozen ids remain "
+                  f"({len(broad)} unfrozen -twcheap rows outstanding)")
     return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--frozen-ids", required=True, metavar="PATH",
+                        help="Path to the Step-2 freeze snapshot JSON "
+                             "(ctk181_purge_freeze_snapshot.json).")
     parser.add_argument("--apply", action="store_true",
                         help="Write the DELETE (default: dry-run, read-only).")
     args = parser.parse_args()
     try:
-        return run(args.apply)
+        frozen_ids = _load_frozen_ids(Path(args.frozen_ids))
+        return run(args.apply, frozen_ids)
     except Exception as e:  # noqa: BLE001 — surface loudly, exit 1
         print(f"ERROR: {type(e).__name__}: {e}", file=sys.stderr)
         return 1
