@@ -2,6 +2,7 @@ import { cache } from 'react';
 import { unstable_cache } from 'next/cache';
 import { getNeonSql } from '@/lib/db/neon';
 import { CORAL_RECENCY_DAYS, MS_PER_DAY } from '@/lib/queries/listings';
+import { mapNamedCoralRow } from '@/lib/queries/named-coral-row';
 
 // description stays on NamedCoral with a null-coerce at the cast site — hosted
 // named_corals lacks the column; the description-<p> branch on /coral/[slug]
@@ -11,6 +12,8 @@ export interface NamedCoral {
   slug: string;
   canonical_name: string;
   coral_type: string | null;
+  genus: string | null;
+  lore: string | null;
   origin_vendor: string | null;
   description: string | null;
   source_urls: string[] | null;
@@ -23,6 +26,8 @@ interface NamedCoralRow {
   slug: string;
   canonical_name: string;
   coral_type: string | null;
+  genus: string | null;
+  lore: string | null;
   origin_vendor: string | null;
   source_urls: string[] | null;
   requires_vendor_prefix: boolean;
@@ -43,6 +48,8 @@ export const getNamedCoralBySlug = cache(
         slug,
         canonical_name,
         coral_type,
+        genus,
+        lore,
         origin_vendor,
         source_urls,
         requires_vendor_prefix,
@@ -55,7 +62,7 @@ export const getNamedCoralBySlug = cache(
 
     const row = rows[0];
     if (!row) return null;
-    return { ...row, description: null };
+    return mapNamedCoralRow(row);
   },
 );
 
