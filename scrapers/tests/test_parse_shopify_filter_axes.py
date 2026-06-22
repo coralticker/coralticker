@@ -246,6 +246,99 @@ def test_title_denylist_prefix_anchored_not_substring():
         )
 
 
+# --- sku_denylist_suffix (CTK-181) — variant-SKU anchored-suffix axis ---
+#
+# The only structural discriminator for cross-vendor TEST-DATA rows that carry
+# REAL coral titles (TSA '…-twcheap', famous names at $1–$15 → title/tag/PT
+# axes all blind). Case-SENSITIVE endswith, checked across ALL variants (not
+# just the first SKU _normalize_product picks). Permissive when unset so every
+# vendor without the axis stays byte-identical.
+
+def _mk_sku_filter(sku_denylist_suffix: list[str]) -> dict:
+    """Like _mk_filter but exercises sku_denylist_suffix. Empty
+    product_type_allowlist = permissive (no PT gate)."""
+    return {"product_type_allowlist": [], "sku_denylist_suffix": sku_denylist_suffix}
+
+
+def _p_skus(skus: list, title: str = "Rainbow Acan") -> dict:
+    """Synthetic product whose VARIANTS carry the test SKUs. Real coral title +
+    empty PT/tags so ONLY the SKU axis can gate it — mirrors the twcheap reality
+    (title/tag/PT all blind on a famous-name $15 test row)."""
+    return {
+        "title": title,
+        "product_type": "",
+        "tags": [],
+        "variants": [{"sku": s} for s in skus],
+    }
+
+
+def test_sku_denylist_suffix_unset_preserves_behavior():
+    """No sku_denylist_suffix key = permissive — the sharpest pin: a '-twcheap'
+    SKU row that WOULD drop on TSA passes when the axis is unset. Pins every
+    vendor without the axis byte-identical."""
+    flt = {"product_type_allowlist": [], "tag_denylist": ["goods"]}
+    assert _should_keep(_p_skus(["AWXKrissKrossChalice-twcheap"]), flt) is True
+
+
+def test_sku_denylist_suffix_empty_permissive():
+    """Empty list = no gate, same shape as the other axes' empty semantics."""
+    assert _should_keep(_p_skus(["x-twcheap"]), _mk_sku_filter([])) is True
+
+
+def test_sku_denylist_suffix_drops_on_suffix_match():
+    """Title-blind drop: real coral title, the only signal is the SKU suffix.
+    The core behavior — deletes the gate and this fails."""
+    flt = _mk_sku_filter(["-twcheap"])
+    assert _should_keep(_p_skus(["AWXKrissKrossChalice-twcheap"]), flt) is False
+
+
+def test_sku_denylist_suffix_checks_all_variants_not_just_first():
+    """LOAD-BEARING (fails if the gate checked only the first SKU the way
+    _normalize_product does): the suffix on a NON-first variant still drops.
+    A twcheap row can carry the marker on any variant, not just variant[0]."""
+    flt = _mk_sku_filter(["-twcheap"])
+    assert _should_keep(_p_skus(["CLEAN-001", None, "AWX-twcheap"]), flt) is False
+
+
+def test_sku_denylist_suffix_anchored_endswith_not_substring():
+    """Anchored: a SKU that merely CONTAINS '-twcheap' mid-string survives —
+    only a true suffix drops. A substring reimplementation breaks this."""
+    flt = _mk_sku_filter(["-twcheap"])
+    assert _should_keep(_p_skus(["x-twcheap-real-frag"]), flt) is True
+
+
+def test_sku_denylist_suffix_case_sensitive():
+    """SKUs are identifiers, matched as EMITTED — uppercase '-TWCHEAP' does NOT
+    match the lowercase entry (unlike the lowercase-runtime title/tag axes).
+    Pins the deliberate case-sensitivity decision; flip the gate to .lower()
+    and this fails."""
+    flt = _mk_sku_filter(["-twcheap"])
+    assert _should_keep(_p_skus(["ACRO-TWCHEAP"]), flt) is True
+
+
+def test_sku_denylist_suffix_real_coral_sku_survives():
+    """FP guard: a real coral SKU not ending in the suffix is kept."""
+    flt = _mk_sku_filter(["-twcheap"])
+    assert _should_keep(_p_skus(["WWC-DRAGON-SOUL-7234"]), flt) is True
+
+
+def test_sku_denylist_suffix_none_and_missing_sku_safe():
+    """None / missing / empty variants don't crash the gate and don't false-drop
+    — the `(v.get('sku') or '')` guard + `(variants or [])` guard hold."""
+    flt = _mk_sku_filter(["-twcheap"])
+    assert _should_keep(_p_skus([None, None]), flt) is True
+    assert _should_keep({"title": "x", "product_type": "", "tags": [], "variants": []}, flt) is True
+    assert _should_keep({"title": "x", "product_type": "", "tags": []}, flt) is True  # no variants key
+
+
+def test_sku_denylist_suffix_multi_suffix_tuple():
+    """Multiple suffixes: any match drops (str.endswith takes the tuple); a SKU
+    matching none survives."""
+    flt = _mk_sku_filter(["-twcheap", "-testsku"])
+    assert _should_keep(_p_skus(["x-testsku"]), flt) is False
+    assert _should_keep(_p_skus(["x-clean"]), flt) is True
+
+
 def main() -> int:
     tests = [
         test_yaml_mixed_case_api_lowercase_drops,
@@ -266,6 +359,15 @@ def main() -> int:
         test_title_denylist_prefix_drops_title_initial,
         test_title_denylist_prefix_case_insensitive_both_directions,
         test_title_denylist_prefix_anchored_not_substring,
+        test_sku_denylist_suffix_unset_preserves_behavior,
+        test_sku_denylist_suffix_empty_permissive,
+        test_sku_denylist_suffix_drops_on_suffix_match,
+        test_sku_denylist_suffix_checks_all_variants_not_just_first,
+        test_sku_denylist_suffix_anchored_endswith_not_substring,
+        test_sku_denylist_suffix_case_sensitive,
+        test_sku_denylist_suffix_real_coral_sku_survives,
+        test_sku_denylist_suffix_none_and_missing_sku_safe,
+        test_sku_denylist_suffix_multi_suffix_tuple,
     ]
     failed = 0
     for t in tests:

@@ -85,6 +85,19 @@ TSA_CATEGORY_FILTER = {
         # CTK-155 (2026-06-14) launch-day junk purge — see YAML rationale.
         "Live stock test", "Test Suppl",
     ],
+    # Mirrors scrapers/vendors/tsa.yaml title_denylist_prefix (CTK-181 2026-06-21).
+    # 'Template Garf Bonsai Acropora Colony Coral' (id 129920) leaked in_stock +
+    # matched coral 14 via PT='Livestock' allowlist + no title gate. Anchored
+    # prefix; FP-immune to 'Templeton…'-class names.
+    "title_denylist_prefix": [
+        "template ",
+    ],
+    # Mirrors scrapers/vendors/tsa.yaml sku_denylist_suffix (CTK-181 2026-06-21).
+    # '-twcheap' cross-vendor test-data SKUs carry REAL coral titles at $1–$15, so
+    # title/tag/PT axes are blind; the variant SKU suffix is the only discriminator.
+    "sku_denylist_suffix": [
+        "-twcheap",
+    ],
 }
 
 
@@ -677,6 +690,92 @@ def test_filter_keeps_coral_with_test_substring(products):
         )
 
 
+# ─── CTK-181: title_denylist_prefix rejects the 'Template …' row ──────────────
+def test_filter_rejects_template_row(products):
+    """CTK-181 (2026-06-21) — 'Template Garf Bonsai Acropora Colony Coral' (id
+    129920) leaked in_stock=true @ $99.99 AND matched named coral 14 via
+    PT='Livestock' (allowlisted) + no title gate. Pin the structural leak shape
+    (allowlisted PT + the matched template title) so the reject is attributed to
+    the title_denylist_prefix axis. Verbatim title from the live row; second
+    synthetic pins a future template rotation under blank-PT."""
+    for title, pt in (
+        ("Template Garf Bonsai Acropora Colony Coral", "Livestock"),  # id 129920, the live leak
+        ("Template SPS Pack Placeholder", ""),                        # synthetic future rotation, blank-PT
+    ):
+        product = {"title": title, "product_type": pt, "tags": [],
+                   "variants": [{"available": True}]}
+        assert _should_keep(product, TSA_CATEGORY_FILTER) is False, (
+            f"template row {title!r} should reject via title_denylist_prefix; product passed"
+        )
+
+
+def test_filter_keeps_coral_containing_template_word(products):
+    """CTK-181 FP-guard — the entry is the ANCHORED prefix 'template ' (trailing
+    space), so a real coral that merely CONTAINS 'template' mid-title, or starts
+    with 'Templeton'/'Template-' as one word, must survive. A regression to a
+    substring entry or a space-less prefix breaks this."""
+    for title in (
+        "Templeton Acan Coral",          # 'template' is a prefix of the word but not 'template '
+        "Acro Template Reference Coral", # 'template' mid-title
+    ):
+        coral = {"title": title, "product_type": "Livestock", "tags": [],
+                 "variants": [{"available": True}]}
+        assert _should_keep(coral, TSA_CATEGORY_FILTER) is True, (
+            f"coral {title!r} false-killed — 'template ' must stay an anchored, "
+            f"space-terminated prefix"
+        )
+
+
+# ─── CTK-181: sku_denylist_suffix rejects the '-twcheap' test-data row ────────
+def test_filter_rejects_twcheap_sku_row(products):
+    """CTK-181 (2026-06-21) — '-twcheap' test-data rows carry REAL coral titles
+    at $1–$15 (131946 'AWXKrissKrossChalice-twcheap', in_stock today), so
+    product_type/tag/title axes are all blind — only the variant SKU suffix
+    catches them. Pin the structural leak shape (real coral title + allowlisted
+    PT + clean tags, marker only on the SKU). Second case carries the suffix on a
+    NON-first variant to pin the all-variants gate."""
+    one_variant = {
+        "title": "AWX KrissKross Chalice",   # real coral name — title axis is blind
+        "product_type": "Livestock",
+        "tags": [],
+        "variants": [{"available": True, "sku": "AWXKrissKrossChalice-twcheap"}],
+    }
+    assert _should_keep(one_variant, TSA_CATEGORY_FILTER) is False, (
+        "twcheap row should reject via sku_denylist_suffix; product passed"
+    )
+    multi_variant = {
+        "title": "Rainbow Splice Acan",      # real coral name
+        "product_type": "",                  # blank-PT allowlist surface
+        "tags": [],
+        "variants": [
+            {"available": True, "sku": "RAINBOW-SPLICE-001"},
+            {"available": True, "sku": "RAINBOW-SPLICE-twcheap"},  # marker on variant[1]
+        ],
+    }
+    assert _should_keep(multi_variant, TSA_CATEGORY_FILTER) is False, (
+        "twcheap marker on a non-first variant should still reject (all-variants gate)"
+    )
+
+
+def test_filter_keeps_real_coral_sku(products):
+    """CTK-181 FP-guard — a real coral with a normal SKU (no '-twcheap' suffix)
+    must survive. The SKU axis is endswith-anchored + case-sensitive, so a SKU
+    that merely contains 'twcheap' mid-string, or carries an uppercase variant,
+    is kept; a regression to substring or lowercased matching breaks this."""
+    for sku in ("AWXKrissKrossChalice-001", "TWCHEAP-INTERNAL-REF",
+                "x-twcheap-real-frag", "ACRO-TWCHEAP"):
+        coral = {
+            "title": "AWX KrissKross Chalice",
+            "product_type": "Livestock",
+            "tags": [],
+            "variants": [{"available": True, "sku": sku}],
+        }
+        assert _should_keep(coral, TSA_CATEGORY_FILTER) is True, (
+            f"real-coral SKU {sku!r} false-killed — sku_denylist_suffix must stay "
+            f"endswith-anchored + case-sensitive"
+        )
+
+
 # ─── Test 19 (CTK-037 Session 5.5): predicate normalization keeps None/absent ─
 def test_filter_normalizes_none_product_type_to_empty_string(products):
     """CTK-037 Session 5.5 — None or key-absent product_type normalizes to "" so
@@ -736,6 +835,10 @@ def main() -> int:
         test_filter_keeps_hide_tagged_coral,
         test_filter_rejects_test_placeholder_rows,
         test_filter_keeps_coral_with_test_substring,
+        test_filter_rejects_template_row,
+        test_filter_keeps_coral_containing_template_word,
+        test_filter_rejects_twcheap_sku_row,
+        test_filter_keeps_real_coral_sku,
         test_filter_normalizes_none_product_type_to_empty_string,
         test_filter_rejects_none_product_type_when_empty_not_in_allowlist,
     ]

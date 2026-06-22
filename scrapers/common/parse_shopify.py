@@ -32,6 +32,7 @@ FILTER_AXES = (
     "tag_denylist",
     "title_denylist",
     "title_denylist_prefix",
+    "sku_denylist_suffix",  # CTK-181: variant-SKU anchored-suffix axis (TSA -twcheap test data)
 )
 
 # CTK-160: the coral-gate ALLOWLIST axes — the ones _should_keep(skip_allowlists
@@ -151,6 +152,7 @@ def fetch_and_parse(config: dict) -> ParseResult:
     skipped_unavailable = 0  # CTK-088 fold #4: dropped by the in_stock_only availability gate
     skipped_category = 0     # CTK-088 fold #4: dropped by product_type_allowlist / tag_allowlist / tag_denylist
     skipped_title_denylist = 0  # CTK-096 D-1: dropped by title_denylist axis (split out from skipped_category so an operator can tell which YAML axis catches the row); CTK-119 prefix-axis drops share this counter (same title-axis bucket)
+    skipped_sku_denylist = 0  # CTK-181: dropped by the sku_denylist_suffix axis (variant SKU suffix match); split out like skipped_title_denylist so an operator can attribute a twcheap test-SKU drop
     filtered_urls: set[str] = set()  # CTK-094 fold #4: URLs rejected by _should_keep, excluded from cohort absent-set
     html_hash: str | None = None
     http_status_last: int | None = None
@@ -167,6 +169,11 @@ def fetch_and_parse(config: dict) -> ParseResult:
     title_denylist_prefix_lower = tuple(
         e.lower() for e in ((category_filter or {}).get("title_denylist_prefix") or [])
     )
+    # CTK-181: hoist the SKU-suffix denylist entries for the gate + the call-site
+    # attribution. SKUs are case-sensitive identifiers (vendor test-data signature
+    # '-twcheap'), so NO lowercasing — matched as emitted, unlike the title axes.
+    # tuple() so str.endswith can take it directly (multi-suffix accepted).
+    sku_denylist_suffix = tuple((category_filter or {}).get("sku_denylist_suffix") or [])
     # CTK-096 close-fold F5 2026-06-01: hoist tag_denylist at fetch_and_parse
     # scope — needed at the call-site attribution to detect the dual-hit case
     # (tag_denylist + title_denylist both match the same product, intentional UC
@@ -287,6 +294,15 @@ def fetch_and_parse(config: dict) -> ParseResult:
                         # (substring before prefix) so a dual-hit attributes
                         # to the substring branch above, same as the gate.
                         skipped_title_denylist += 1
+                    elif sku_denylist_suffix and any(
+                        (v.get("sku") or "").endswith(sku_denylist_suffix)
+                        for v in (p.get("variants") or [])
+                    ):
+                        # CTK-181: SKU-suffix axis fires LAST in _should_keep's
+                        # order, so attribution mirrors that (after the title
+                        # axes). Own counter so the operator can tell a twcheap
+                        # test-SKU drop from a title/category drop.
+                        skipped_sku_denylist += 1
                     else:
                         skipped_category += 1
                     # CTK-094 fold #4 + Session 4 fold #1: scope-gated to
@@ -312,9 +328,10 @@ def fetch_and_parse(config: dict) -> ParseResult:
     # availability and only a handful on the category filter.
     if category_filter or in_stock_only:
         log.info(
-            "filter: kept %d, skipped %d (unavailable %d, category-filter %d, title-denylist %d)",
-            len(items), skipped_unavailable + skipped_category + skipped_title_denylist,
-            skipped_unavailable, skipped_category, skipped_title_denylist,
+            "filter: kept %d, skipped %d (unavailable %d, category-filter %d, title-denylist %d, sku-denylist %d)",
+            len(items),
+            skipped_unavailable + skipped_category + skipped_title_denylist + skipped_sku_denylist,
+            skipped_unavailable, skipped_category, skipped_title_denylist, skipped_sku_denylist,
         )
 
     return ParseResult(
@@ -371,7 +388,7 @@ def _should_keep(
     class membership stays declared once, here next to the axis logic, instead of
     a hardcoded strip-set elsewhere.
 
-    Six filter axes, AND-semantics when more than one is configured:
+    Seven filter axes, AND-semantics when more than one is configured:
       - in_stock_only (CTK-088) — when True, drop any product with no buyable
         variant (`not any(v.available ...)`). Opt-in per-vendor (default False
         = fleet behavior). For vendors whose catalog is a permanent archive of
@@ -411,6 +428,13 @@ def _should_keep(
         pattern could collide word-final inside coral names — substring
         `ws - ` would false-kill "Rainbows - ..." / "Jaws - ..."; the
         anchor kills exactly the title-initial class.
+      - sku_denylist_suffix (CTK-181) — no variant SKU may END WITH an entry
+        (`sku.endswith(tuple(entries))`, checked across ALL variants). The only
+        structural discriminator for cross-vendor TEST-DATA rows that carry real
+        coral titles (TSA `…-twcheap`: famous coral names at $1–$15, so
+        product_type/tag/title axes are all blind). Case-SENSITIVE — SKUs are
+        identifiers, not prose; matched as emitted. Use when the junk class is
+        identifiable only by a vendor SKU convention, never by catalog taxonomy.
 
     Each axis short-circuits to False on miss; permissive when unset (so a
     config carrying only one axis behaves identically to the prior single-axis
@@ -433,6 +457,7 @@ def _should_keep(
         tag_denylist_norm = {_normalize_tag(e) for e in (category_filter.get("tag_denylist") or [])}
     title_denylist = category_filter.get("title_denylist") or []
     title_denylist_prefix = category_filter.get("title_denylist_prefix") or []  # CTK-119: anchored variant
+    sku_denylist_suffix = tuple(category_filter.get("sku_denylist_suffix") or [])  # CTK-181: variant-SKU anchored suffix
     product_type = product.get("product_type") or ""  # CTK-037 Session 5.5: normalize None/absent to "" so allowlist entry "" matches both shapes
     tags = product.get("tags") or []
     if not skip_allowlists and allowlist and product_type not in allowlist:
@@ -489,6 +514,16 @@ def _should_keep(
     if title_denylist_prefix:
         title_lower = (product.get("title") or "").lower()
         if title_lower.startswith(tuple(e.lower() for e in title_denylist_prefix)):
+            return False
+    # CTK-181 D-1: 7th axis. Variant SKU endswith — the only structural
+    # discriminator for cross-vendor test-data rows that carry REAL coral titles
+    # (TSA '…-twcheap', famous names at $1–$15 → title/tag axes blind). Case-
+    # SENSITIVE (SKUs are identifiers, not prose); checks ALL variants, since the
+    # suffix can ride any variant's SKU, not just the first one _normalize_product
+    # picks. tuple passed straight to str.endswith (multi-suffix accepted).
+    if sku_denylist_suffix:
+        if any((v.get("sku") or "").endswith(sku_denylist_suffix)
+               for v in (product.get("variants") or [])):
             return False
     return True
 

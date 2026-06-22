@@ -200,3 +200,22 @@ category_filter:
     # DB-wide = 0 named-coral collision.
     - Live stock test     # placeholder rows 'Live stock test' + 'Live stock test b' (CTK-155 2026-06-14)
     - Test Suppl          # placeholder rows 'Test Supply' + 'Test Supplies Product' (+ already-OOS UPC variant) (CTK-155 2026-06-14)
+  # CTK-181 (2026-06-21) Template-row gate. 'Template Garf Bonsai Acropora Colony
+  # Coral' (id 129920) leaked in_stock=true @ $99.99 AND matched named coral 14
+  # (tsa-garf-bonsai-acropora) — rendered a real buyable $99.99 listing on the
+  # coral page + /new + /vendor/tsa + a bogus 5th vendor line on the price-history
+  # chart. PT='Livestock' allowlisted + no title gate = leak path. Anchored prefix
+  # (trailing space) over substring: FP-immune to a one-word 'Templeton…'-class
+  # coral name; the bare-word 'template ' kills exactly the title-initial template
+  # cohort. Two-lens FP audit at execution 2026-06-21.
+  title_denylist_prefix:
+    - "template "         # vendor template/placeholder rows (CTK-181 2026-06-21); catches 'Template …' at title-start
+  # CTK-181 (2026-06-21) twcheap test-SKU gate. 202 '-twcheap' variant-SKU rows
+  # ($1–$15, REAL/famous coral titles → product_type/tag/title axes all blind),
+  # confirmed cross-vendor test data, STILL PUBLISHING in the live feed (131946
+  # 'AWXKrissKrossChalice-twcheap' in_stock today; 4 twcheap rows seen last 2 days).
+  # The variant SKU suffix is the only structural discriminator — hence the new
+  # sku_denylist_suffix axis (parse_shopify CTK-181). Case-sensitive endswith;
+  # FP-immune (no real coral SKU ends '-twcheap'). Two-lens FP audit at execution.
+  sku_denylist_suffix:
+    - "-twcheap"          # cross-vendor test-data SKUs (CTK-181 2026-06-21); real coral titles, $1–$15
