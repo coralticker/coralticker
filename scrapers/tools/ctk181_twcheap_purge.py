@@ -161,6 +161,14 @@ def run(apply: bool, frozen_ids: list[int]) -> int:
             print(f"\nDELETE affected: {cur.rowcount} vendor_listings rows "
                   f"(FK CASCADE cleaned dependents).")
 
+            # NOTE (autocommit): db.get_conn() is autocommit=True (db.py:154) — the
+            # DELETE is ALREADY durable here. Safety is the PRE-write rails (the
+            # frozen-id drift re-verify + dual-dependent IG-pick ABORT); the post-
+            # verifies below are confirmation, not a rollback gate. Same autocommit
+            # convention as the ctk041/ctk155/ctk160 tools. `missing` ids are a
+            # NOTE-not-ABORT because a DELETE on an already-gone id is a safe no-op
+            # (under-deletes, never over-deletes); a wrong-cohort snapshot is caught
+            # instead by the present-id non_twcheap drift ABORT above.
             # Post-verify the frozen set is gone...
             still, _, _ = _fetch_frozen(cur, frozen_ids)
             if still:

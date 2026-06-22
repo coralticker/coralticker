@@ -149,6 +149,12 @@ def run(apply: bool) -> int:
             print(f"\nDELETE affected: {cur.rowcount} vendor_listings rows "
                   f"(FK CASCADE cleaned dependents).")
 
+            # NOTE (autocommit): db.get_conn() is autocommit=True (db.py:154) — the
+            # DELETE above is ALREADY durable here, not pending a block-exit commit.
+            # The safety is the PRE-write ABORT rails (sanity + dual-dependent
+            # IG-pick check); this post-verify is a confirmation, not a rollback
+            # gate (a residual>0 return-1 cannot un-delete). Matches the autocommit
+            # convention of the ctk041/ctk155/ctk160 remediation tools.
             # Post-verify.
             cur.execute(
                 "SELECT COUNT(*) AS c FROM vendor_listings WHERE id = ANY(%s)",
