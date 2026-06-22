@@ -15,26 +15,8 @@ import type { DataRowField } from '@/components/ui/data-row';
 import type { Listing } from '@/lib/queries/listings';
 import type { NamedCoral } from '@/lib/queries/named-corals';
 import { resolveOriginVendor } from './origin-vendor.ts';
-import { vendorShorthand } from './vendor-label.ts';
-
-function formatPrice(value: number): string {
-  return `$${value.toFixed(2)}`;
-}
-
-// Up to 3 shorthands then `+N` (D-3 overflow cap), comma-separated, distinct
-// vendors (not listings), stable order — a plain string value, near-black, no
-// chrome register.
-function renderTieVendors(tieRows: Listing[]): string {
-  const seen = new Set<string>();
-  const shorthands: string[] = [];
-  for (const row of tieRows) {
-    if (seen.has(row.vendorSlug)) continue;
-    seen.add(row.vendorSlug);
-    shorthands.push(vendorShorthand(row.vendorSlug, row.vendorDisplayName));
-  }
-  if (shorthands.length <= 3) return shorthands.join(', ');
-  return `${shorthands.slice(0, 3).join(', ')} +${shorthands.length - 3}`;
-}
+import { renderTieVendors } from './vendor-label.ts';
+import { formatPrice } from './price.ts';
 
 export function buildPriceSummaryFields(
   listings: Listing[],

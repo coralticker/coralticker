@@ -264,3 +264,30 @@ export async function getCoralLastSeenAt(
     { revalidate: 1800, tags: [`named-coral-${namedCoralId}-last-seen`] },
   )();
 }
+
+// Lifetime first-seen anchor for the /guides market line "First seen." field —
+// the EARLIEST first_seen_at across every listing of this coral, LIFETIME (no
+// recency cap, like getCoralLastSeenAt). The price-history first-seen anchor
+// (diff.py:419 writes a price_history row on the "new" decision at the listing's
+// first_seen_at), surfaced here off vendor_listings.first_seen_at rather than a
+// raw price_history scan — same substrate getCoralLastSeenAt rides. Returns null
+// when no listing has ever surfaced (seed-list entry, no vendor row). NOT
+// windowed: range + vendor count are windowed, first-seen is lifetime.
+export async function getCoralFirstSeenAt(
+  namedCoralId: number,
+): Promise<string | null> {
+  return unstable_cache(
+    async () => {
+      const sql = getNeonSql();
+      const rows = (await sql`
+        SELECT MIN(first_seen_at) AS first_seen_at
+        FROM vendor_listings
+        WHERE named_coral_id = ${namedCoralId}
+      `) as unknown as { first_seen_at: string | null }[];
+
+      return rows[0]?.first_seen_at ?? null;
+    },
+    ['getCoralFirstSeenAt', String(namedCoralId)],
+    { revalidate: 1800, tags: [`named-coral-${namedCoralId}-first-seen`] },
+  )();
+}
