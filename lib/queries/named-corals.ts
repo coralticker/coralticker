@@ -2,6 +2,7 @@ import { cache } from 'react';
 import { unstable_cache } from 'next/cache';
 import { getNeonSql } from '@/lib/db/neon';
 import { CORAL_RECENCY_DAYS, MS_PER_DAY } from '@/lib/queries/listings';
+import { mapNamedCoralRow } from '@/lib/queries/named-coral-row';
 
 // description stays on NamedCoral with a null-coerce at the cast site — hosted
 // named_corals lacks the column; the description-<p> branch on /coral/[slug]
@@ -11,6 +12,8 @@ export interface NamedCoral {
   slug: string;
   canonical_name: string;
   coral_type: string | null;
+  genus: string | null;
+  lore: string | null;
   origin_vendor: string | null;
   description: string | null;
   source_urls: string[] | null;
@@ -23,6 +26,8 @@ interface NamedCoralRow {
   slug: string;
   canonical_name: string;
   coral_type: string | null;
+  genus: string | null;
+  lore: string | null;
   origin_vendor: string | null;
   source_urls: string[] | null;
   requires_vendor_prefix: boolean;
@@ -43,6 +48,8 @@ export const getNamedCoralBySlug = cache(
         slug,
         canonical_name,
         coral_type,
+        genus,
+        lore,
         origin_vendor,
         source_urls,
         requires_vendor_prefix,
@@ -55,7 +62,7 @@ export const getNamedCoralBySlug = cache(
 
     const row = rows[0];
     if (!row) return null;
-    return { ...row, description: null };
+    return mapNamedCoralRow(row);
   },
 );
 
@@ -255,5 +262,32 @@ export async function getCoralLastSeenAt(
     },
     ['getCoralLastSeenAt', String(namedCoralId)],
     { revalidate: 1800, tags: [`named-coral-${namedCoralId}-last-seen`] },
+  )();
+}
+
+// Lifetime first-seen anchor for the /guides market line "First seen." field —
+// the EARLIEST first_seen_at across every listing of this coral, LIFETIME (no
+// recency cap, like getCoralLastSeenAt). The price-history first-seen anchor
+// (diff.py:419 writes a price_history row on the "new" decision at the listing's
+// first_seen_at), surfaced here off vendor_listings.first_seen_at rather than a
+// raw price_history scan — same substrate getCoralLastSeenAt rides. Returns null
+// when no listing has ever surfaced (seed-list entry, no vendor row). NOT
+// windowed: range + vendor count are windowed, first-seen is lifetime.
+export async function getCoralFirstSeenAt(
+  namedCoralId: number,
+): Promise<string | null> {
+  return unstable_cache(
+    async () => {
+      const sql = getNeonSql();
+      const rows = (await sql`
+        SELECT MIN(first_seen_at) AS first_seen_at
+        FROM vendor_listings
+        WHERE named_coral_id = ${namedCoralId}
+      `) as unknown as { first_seen_at: string | null }[];
+
+      return rows[0]?.first_seen_at ?? null;
+    },
+    ['getCoralFirstSeenAt', String(namedCoralId)],
+    { revalidate: 1800, tags: [`named-coral-${namedCoralId}-first-seen`] },
   )();
 }

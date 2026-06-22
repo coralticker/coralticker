@@ -20,6 +20,13 @@
 import { unstable_cache } from 'next/cache';
 import { getNeonSql } from '@/lib/db/neon';
 
+// Shared lookback for the per-coral price surfaces. The price-history page and
+// the /guides market line both anchor their window + range to this — neither
+// hardcodes 90, so a window change moves both surfaces together. EXPLICIT on the
+// series calls (never null) — null trips the unbounded days×listings×LATERAL
+// fan-out (CTK-179 (c)).
+export const PRICE_HISTORY_WINDOW_DAYS = 90;
+
 // ── get_coral_price_history — per-listing step series ──────────────────────
 
 export interface CoralPricePoint {

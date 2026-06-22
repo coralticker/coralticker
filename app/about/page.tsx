@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { SocialLinks } from './_components/social-links';
+import { SocialLinks } from '@/components/ui/social-links';
 import { PageShell } from '@/components/ui/page-shell';
 import { PageH1 } from '@/components/ui/page-h1';
 

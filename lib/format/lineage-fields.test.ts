@@ -15,6 +15,8 @@ function coral(overrides: Partial<NamedCoral>): NamedCoral {
     slug: 'test-coral',
     canonical_name: 'Test Coral',
     coral_type: null,
+    genus: null,
+    lore: null,
     origin_vendor: null,
     description: null,
     source_urls: null,

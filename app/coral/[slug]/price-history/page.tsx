@@ -14,6 +14,7 @@ import { getVendorDisplayNamesBySlug } from '@/lib/queries/vendors';
 import {
   getCoralPriceByVendor,
   getCoralPriceEnvelope,
+  PRICE_HISTORY_WINDOW_DAYS,
 } from '@/lib/queries/coral-price';
 import {
   computeDomain,
@@ -32,10 +33,9 @@ import { PriceHistoryChart } from './_components/price-history-chart';
 import { ThinHistoryState } from './_components/thin-history-state';
 import { PriceSummaryRow } from './_components/price-summary-row';
 
-// Default lookback window (D-3 eyebrow shows "90 DAYS"). EXPLICIT 90, never null
-// — null would trip the unbounded days×listings×LATERAL fan-out on both series
-// functions (CTK-179 (c)); the page never wants that.
-const WINDOW_DAYS = 90;
+// Default lookback window (D-3 eyebrow shows "90 DAYS"). Shared with the /guides
+// market line via PRICE_HISTORY_WINDOW_DAYS so the two surfaces can't drift.
+const WINDOW_DAYS = PRICE_HISTORY_WINDOW_DAYS;
 
 // Static + ISR: no searchParams here (unlike the parent /coral/[slug]), so the
 // route prerenders and revalidates every 300s — matching the unstable_cache

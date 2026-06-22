@@ -4,14 +4,15 @@ import {
   getPriceHistorySitemapSlugs,
 } from '@/lib/queries/named-corals';
 import { getAllActiveVendorSlugs } from '@/lib/queries/vendors';
+import { getAllGuideSlugs } from '@/lib/content/guides';
 import { SITE_URL } from '@/lib/seo/site-url';
 
 // CTK-162 scope (d): the sitemap lives here (CTK-017's parallel-bundle routing
 // is dead — CTK-017 was never scaffolded; Jon ratified building it in CTK-162
 // on 2026-06-20). Enumerates the static content/landing routes + the
 // data-driven /vendor/[slug] detail pages, the in-window-gated /coral/[slug]
-// set, and the non-thin-gated /coral/[slug]/price-history child set. /guides/[slug]
-// doesn't exist yet, so it is intentionally NOT listed.
+// set, the non-thin-gated /coral/[slug]/price-history child set, and the
+// /guides/[slug] editorial pages (every authored .mdx, no stock gate).
 //
 // Two DIFFERENT coral gates, by design:
 //   * /coral/[slug] — getSitemapCoralSlugs: in-window-coupled to
@@ -82,10 +83,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }));
 
+  // /guides/[slug] — data-driven off the content dir (every authored .mdx). No
+  // thin-gate (a guide is durable editorial content, not a stock-dependent page);
+  // changeFrequency monthly matches the editorial-revision cadence.
+  const guideEntries: MetadataRoute.Sitemap = getAllGuideSlugs().map(({ slug }) => ({
+    url: `${SITE_URL}/guides/${slug}`,
+    changeFrequency: 'monthly',
+    priority: 0.6,
+  }));
+
   return [
     ...staticEntries,
     ...coralEntries,
     ...priceHistoryEntries,
     ...vendorEntries,
+    ...guideEntries,
   ];
 }
