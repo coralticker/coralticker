@@ -1,6 +1,8 @@
+import { Fragment } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { getGuidesFeaturingCoral, stripTrailingPeriod } from '@/lib/content/guides';
 import {
   getAllNamedCoralSlugs,
   getCoralLastSeenAt,
@@ -131,6 +133,11 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
   const lineageFields = buildLineageFields(coral);
   const hasListings = listings.length > 0;
 
+  // Reverse index: the guides that feature this coral, for the crawlable
+  // "Featured in:" back-link (the SEO point — real internal coral→guide edges).
+  // Derived from the MDX bodies at read-time, so it stays correct as guides change.
+  const featuredInGuides = getGuidesFeaturingCoral(slug);
+
   // Product + AggregateOffer + BreadcrumbList (CTK-162 scope d). Offers are
   // built from in-stock priced rows only (INV-05 guard inside the builder), so
   // the structured lowPrice is stable across the ?include-oos=1 toggle and
@@ -213,6 +220,27 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
 
       {coral.description !== null ? (
         <p className="text-base leading-relaxed mb-8">{coral.description}</p>
+      ) : null}
+
+      {/* Contextual back-link to any buying guide that features this coral
+          (CTK-184 part b). Crawlable <Link> — a real internal coral→guide edge,
+          the SEO point. Derived from the guide MDX, so it tracks editorial
+          changes; renders nothing when no guide features the coral. */}
+      {featuredInGuides.length > 0 ? (
+        <p className="text-base leading-relaxed mb-8">
+          Featured in:{' '}
+          {featuredInGuides.map((guide, i) => (
+            <Fragment key={guide.frontmatter.slug}>
+              {i > 0 ? ', ' : ''}
+              <Link
+                href={`/guides/${guide.frontmatter.slug}`}
+                className="text-ink underline underline-offset-2 decoration-1"
+              >
+                {stripTrailingPeriod(guide.frontmatter.title)}
+              </Link>
+            </Fragment>
+          ))}
+        </p>
       ) : null}
 
       <SectionHeader className="mt-10">

@@ -1,7 +1,12 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { MDXRemote } from 'next-mdx-remote/rsc';
-import { getAllGuideSlugs, getGuideBySlug, updatedMonthYear } from '@/lib/content/guides';
+import {
+  getAllGuideSlugs,
+  getGuideBySlug,
+  stripTrailingPeriod,
+  updatedMonthYear,
+} from '@/lib/content/guides';
 import { buildGuideJsonLd } from '@/lib/seo/guide-jsonld';
 import { serializeJsonLd } from '@/lib/seo/coral-jsonld';
 import { SITE_URL } from '@/lib/seo/site-url';
@@ -23,7 +28,7 @@ export async function generateStaticParams(): Promise<{ slug: string }[]> {
 // template's em-dash is the only separator (the on-page H1 keeps the declarative
 // period per casing canon).
 function metaTitle(title: string): string {
-  return title.replace(/\.$/, '');
+  return stripTrailingPeriod(title);
 }
 
 export async function generateMetadata({
