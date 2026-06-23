@@ -32,6 +32,14 @@ const MONTHS = [
   'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
 ];
 
+// Strip a single trailing period off a declarative title for use as an inline
+// label (link text, SERP <title>) where the on-page period would read as a
+// sentence-ender mid-line. Shared so the /guides SERP metaTitle and the
+// /coral/[slug] "Featured in:" back-link strip identically — one rule, two sites.
+export function stripTrailingPeriod(title: string): string {
+  return title.replace(/\.$/, '');
+}
+
 // "2026-06-21" → "JUN 2026". Absolute month-year, never relative (D-4: relative
 // time implies an auto-freshness the editorial layer doesn't have). String split
 // (not Date) so it's tz-independent.
@@ -100,4 +108,36 @@ export function getAllGuides(): Guide[] {
     .map(({ slug }) => getGuideBySlug(slug))
     .filter((g): g is Guide => g !== null)
     .sort((a, b) => b.frontmatter.updated.localeCompare(a.frontmatter.updated));
+}
+
+// Matches the two MDX coral-citation components — <CoralEntry slug="…"> and
+// <CoralReference slug="…"> — capturing the slug. Component tags ONLY: a bare
+// /coral/… prose link (e.g. the price-history mention) is deliberately not a
+// "featured" signal. Featuring is the editorial act of giving a coral its own
+// entry/market line, not naming its URL in passing — so a coral linked only in
+// prose earns no back-link. [^>]* keeps the match inside the opening tag, and the
+// slug attribute can sit anywhere among the tag's attributes.
+const FEATURED_CORAL_RE = /<Coral(?:Entry|Reference)\b[^>]*?\bslug="([^"]+)"/g;
+
+// The distinct coral slugs a guide body features via component tags. Set dedups
+// the same coral cited as both a <CoralEntry> and a <CoralReference> (or twice).
+function featuredCoralSlugs(body: string): Set<string> {
+  const slugs = new Set<string>();
+  for (const match of body.matchAll(FEATURED_CORAL_RE)) {
+    // Capture group 1 always present when the pattern matches; the guard is for
+    // TS strict (RegExp groups type as string | undefined).
+    if (match[1]) slugs.add(match[1]);
+  }
+  return slugs;
+}
+
+// Guides whose body features the given coral via a <CoralEntry>/<CoralReference>
+// component — the reverse index behind the /coral/[slug] "Featured in:" back-link.
+// Derived from the MDX at read-time, never a hand-kept map: add a coral to a guide
+// and its coral page links back with no second edit. Order follows getAllGuides
+// (newest-revised first). Empty array when no guide features the coral.
+export function getGuidesFeaturingCoral(coralSlug: string): Guide[] {
+  return getAllGuides().filter((guide) =>
+    featuredCoralSlugs(guide.body).has(coralSlug),
+  );
 }

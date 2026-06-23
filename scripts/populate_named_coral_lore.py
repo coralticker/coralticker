@@ -1,5 +1,7 @@
-"""CTK-162 — populate named_corals.lore for the 7 most-hunted acros (decision #85
-backfill, /brand-manager + /copy-writer copy Jon-ratified verbatim).
+"""CTK-162 / CTK-184 — populate named_corals.lore for the active named corals
+(decision #85 backfill, copy Jon-ratified verbatim). CTK-162 seeded the 7
+most-hunted acros; CTK-184 extends to the remaining 13 (audit trail in
+.claude/plans/tickets/CTK-162/coral-facts-reconciliation.md, "CTK-184" section).
 
 Data UPDATE keyed on slug against live Neon (NOT a migration — the lore column
 shipped in migration 0051). Parameterized psycopg write (slug = %s) so em-dashes
@@ -55,6 +57,72 @@ ROWS: list[tuple[str, str]] = [
         "tyree-pink-lemonade",
         "A classic Tyree limited edition and one of the old-guard named acros "
         "— lime-green branches under pink polyps.",
+    ),
+    # CTK-184 — remaining 13, curated down from named_corals.notes (Jon-ratified).
+    (
+        "gorilla-nipple-zoa",
+        "A teal zoa with orange polyps, named for its distinctively raised, "
+        "knobby shape.",
+    ),
+    (
+        "jf-burning-banana-stylocoeniella",
+        "A Jason Fox signature in Stylocoeniella, an encrusting SPS — not the "
+        "acros and montis that usually get the designer names.",
+    ),
+    (
+        "jf-foxflame",
+        "A pink-bodied acro tipped in yellow, one of the Jason Fox signature "
+        "pieces from the early top-ten lists.",
+    ),
+    (
+        "jf-jack-o-lantern-leptoseris",
+        "A Leptoseris with an orange base and green centers — one of Jason "
+        "Fox's most-copied pieces, so the name gets around.",
+    ),
+    (
+        "jf-raja-rampage-chalice",
+        "Jason Fox's signature chalice, and the best-known piece in his chalice "
+        "lineup.",
+    ),
+    (
+        "jf-slow-burn-monti",
+        "A green, fluorescence-heavy Montipora, one of the early Jason Fox "
+        "top-ten.",
+    ),
+    (
+        "magician-zoanthid",
+        "A zoa with a glittering blue center that sits right on the line "
+        "between zoanthid and paly.",
+    ),
+    (
+        "tsa-bill-murray-acropora",
+        "A signature Acropora lineage from Top Shelf Aquatics.",
+    ),
+    (
+        "tsa-fruity-pebbles-acropora",
+        "Top Shelf Aquatics' best-known acro and the parent of the Fruity "
+        "Splice morph — the name's spread well past the original piece.",
+    ),
+    (
+        "utter-chaos-zoanthid",
+        "A purple-based zoa swirled with yellow-green and skirted in orange — "
+        "chaotic enough to earn the name.",
+    ),
+    (
+        "wwc-dragon-soul-torch",
+        "A torch that turns up under several names — Hellfire, Indo Gold, 24k — "
+        "reportedly the same coral; Dragon Soul is World Wide Corals' label for "
+        "it.",
+    ),
+    (
+        "wwc-og-bounce-mushroom",
+        "World Wide Corals' original bounce mushroom, the piece the whole "
+        "bounce craze traces back to.",
+    ),
+    (
+        "wwc-sunkist-bounce-mushroom",
+        "Orange bubbles over a dark blue-green base, a bounce World Wide Corals "
+        "has propagated for more than a decade.",
     ),
 ]
 
