@@ -37,6 +37,7 @@ const NAV_LINKS: NavLink[] = [
   { href: '/deals', label: 'DEALS' },
   { href: '/corals', label: 'CORALS', matchPrefixes: ['/coral/'] },
   { href: '/vendors', label: 'VENDORS', matchPrefixes: ['/vendor/'] },
+  { href: '/guides', label: 'GUIDES', matchPrefixes: ['/guides/'] },
   { href: '/about', label: 'ABOUT' },
 ];
 

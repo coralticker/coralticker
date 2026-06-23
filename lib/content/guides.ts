@@ -42,6 +42,17 @@ export function updatedMonthYear(updated: string): string {
   return name ? `${name} ${year}` : String(year ?? updated);
 }
 
+// gray-matter auto-parses an unquoted YAML ISO date (`updated: 2026-06-22`) into
+// a JS Date — String()ing that yields the full `toString()` form (and a local-tz
+// off-by-one). Coerce a Date back to YYYY-MM-DD via the UTC slice (gray-matter
+// parses the date as midnight UTC, so the UTC date is the authored date) so the
+// downstream updatedMonthYear string-split sees the shape it expects. Defends
+// against future unquoted .mdx authoring — the fix lives at the read layer, not
+// in each .mdx's quoting.
+function normalizeUpdated(raw: unknown): string {
+  return raw instanceof Date ? raw.toISOString().slice(0, 10) : String(raw ?? '');
+}
+
 // Kebab-slug gate. Single source so the prerender/sitemap slug set
 // (getAllGuideSlugs) and the render gate (fileExists/getGuideBySlug) agree on
 // what's valid — a non-kebab filename must not be advertised then 404.
@@ -72,9 +83,21 @@ export function getGuideBySlug(slug: string): Guide | null {
   const frontmatter: GuideFrontmatter = {
     slug,
     kind: String(data.kind ?? 'GUIDE'),
-    updated: String(data.updated ?? ''),
+    updated: normalizeUpdated(data.updated),
     title: String(data.title ?? slug),
     ...(data.description ? { description: String(data.description) } : {}),
   };
   return { frontmatter, body: content };
+}
+
+// All guides as full objects, newest-revised first — the canonical full-list
+// accessor (getAllGuideSlugs is the slug-only sibling for generateStaticParams /
+// sitemap). Drops any slug whose file fails the gate (getGuideBySlug → null) so a
+// malformed .mdx can't crash a list consumer. Sort is by the YYYY-MM-DD `updated`
+// string (lexical == chronological for ISO dates, tz-independent).
+export function getAllGuides(): Guide[] {
+  return getAllGuideSlugs()
+    .map(({ slug }) => getGuideBySlug(slug))
+    .filter((g): g is Guide => g !== null)
+    .sort((a, b) => b.frontmatter.updated.localeCompare(a.frontmatter.updated));
 }
