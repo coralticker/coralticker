@@ -116,17 +116,22 @@ export function getAllGuides(): Guide[] {
 // "featured" signal. Featuring is the editorial act of giving a coral its own
 // entry/market line, not naming its URL in passing — so a coral linked only in
 // prose earns no back-link. [^>]* keeps the match inside the opening tag, and the
-// slug attribute can sit anywhere among the tag's attributes.
-const FEATURED_CORAL_RE = /<Coral(?:Entry|Reference)\b[^>]*?\bslug="([^"]+)"/g;
+// slug attribute can sit anywhere among the tag's attributes. Both quote styles
+// are accepted (slug="…" and slug='…') — JSX allows either, and a back-link that
+// silently vanishes on a valid authoring choice is exactly the failure this
+// derive-from-MDX reverse index exists to avoid.
+const FEATURED_CORAL_RE =
+  /<Coral(?:Entry|Reference)\b[^>]*?\bslug=(?:"([^"]+)"|'([^']+)')/g;
 
 // The distinct coral slugs a guide body features via component tags. Set dedups
 // the same coral cited as both a <CoralEntry> and a <CoralReference> (or twice).
 function featuredCoralSlugs(body: string): Set<string> {
   const slugs = new Set<string>();
   for (const match of body.matchAll(FEATURED_CORAL_RE)) {
-    // Capture group 1 always present when the pattern matches; the guard is for
-    // TS strict (RegExp groups type as string | undefined).
-    if (match[1]) slugs.add(match[1]);
+    // Group 1 = double-quoted value, group 2 = single-quoted; exactly one is set
+    // per match. The guard also satisfies TS strict (groups type string | undefined).
+    const slug = match[1] ?? match[2];
+    if (slug) slugs.add(slug);
   }
   return slugs;
 }
