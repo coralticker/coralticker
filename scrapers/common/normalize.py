@@ -62,6 +62,47 @@ _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 
+# CTK-189 reverse-precision guard. The CATEGORY_PATTERNS above match a coral
+# category whenever a coral WORD appears in product_type/tags/title — but a
+# non-coral product can carry a coral word ("Marine Anemone Pellets", "Rio
+# Precision SPS Coral Clipper", "Bejeweled Favites Sticker", "Salinity Probe
+# Stability Kit (SPS)"). Those mis-tag into a coral category, and the CTK-186
+# step-2 feed exclusion (category IS DISTINCT FROM 'equipment') can't touch a
+# coral-tagged row. This is the reverse of CTK-186's direction (which fixed
+# corals mis-tagged equipment/fish); CTK-186 cannot reach it.
+#
+# Guard: when a coral-category pattern wins AND the TITLE carries a non-coral
+# marker, reroute to 'equipment' so the feed exclusion drops it. 'equipment'
+# is the established "non-livestock, exclude-from-feed" bucket (deliberately
+# overloaded — a coral-food/sticker row reading 'equipment' is CORRECT, not a
+# bug to fix later; a dedicated 'food' enum would need a migration + a CTK-186
+# exclusion-set addition, over-engineering at this tier).
+#
+# Marker set finalized against the live catalog (CTK-189 FP check 2026-06-23):
+#   - TITLE-scoped only — a coral whose vendor TAGS carry "kit" must not flip.
+#   - bare 'food' DROPPED: it false-matched only real corals (Battle Corals'
+#     whimsical names "Fairy Food", "...trying to steal my food") and 0 real
+#     food products — every real food item carries 'pellet'. Replaced by the
+#     phrase 'coral food' (0 coral-categoried FPs; forward-insurance for a
+#     future "X Coral Food" that lacks 'pellet').
+#   - 'pellet' uses a TRAILING boundary only (`pellets?\b`, no leading \b) so
+#     it catches the brand portmanteau "Benepellet" (Benepets fish-food) where
+#     a full `\bpellet\b` would miss it — substring-pellet is FP-safe (0/237
+#     matched corals). The other markers keep BOTH boundaries: a leading-loose
+#     "kit" would false-fire on real coral names ("S[kit]tles").
+#   - FP check (final set): 0/237 matched corals (named_coral_id NOT NULL)
+#     carry a marker; all coral-categoried reroutes are genuinely non-coral.
+_CORAL_CATEGORIES = frozenset(
+    {"sps", "lps", "softie", "zoa", "mushroom", "anemone", "clam", "chalice"}
+)
+_NONCORAL_TITLE_MARKERS = re.compile(
+    r"\b(?:sticker|kit|probe|clipper|cartridge|earrings)s?\b"
+    r"|pellets?\b"
+    r"|\bcoral\s+foods?\b",
+    re.I,
+)
+
+
 def normalize_title(raw_title: str, originator_prefix: str | None = None) -> str:
     """Lowercase + unaccent + whitespace-collapse + strip trailing junk.
     Vendor prefix PRESERVED per decision #18 (§3.2 cascade fix); the matcher
@@ -192,8 +233,16 @@ def infer_category(product: dict) -> str | None:
         product.get("title") or "",
     ]
     haystack = " ".join(haystack_parts)
+    title = product.get("title") or ""
     for label, pat in _CATEGORY_PATTERNS:
         if pat.search(haystack):
+            # CTK-189 reverse-precision guard — surgical: only intervene when a
+            # CORAL pattern wins AND the TITLE carries a non-coral marker. Every
+            # other path (non-coral matches, clean coral matches, NULL) is
+            # untouched, so blast radius is exactly the coral-tagged-non-coral
+            # failure mode and nothing else.
+            if label in _CORAL_CATEGORIES and _NONCORAL_TITLE_MARKERS.search(title):
+                return "equipment"
             return label
     return None
 
