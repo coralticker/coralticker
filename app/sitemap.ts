@@ -44,6 +44,10 @@ const STATIC_ROUTES: Array<{
   { path: '/new', changeFrequency: 'daily', priority: 0.9 },
   { path: '/corals', changeFrequency: 'weekly', priority: 0.7 },
   { path: '/vendors', changeFrequency: 'weekly', priority: 0.7 },
+  // /guides index — matches the /corals + /vendors index priority. The
+  // /guides/[slug] entries are mapped separately below (getAllGuideSlugs); this
+  // is the index route only, no duplication.
+  { path: '/guides', changeFrequency: 'weekly', priority: 0.7 },
   { path: '/about', changeFrequency: 'monthly', priority: 0.5 },
   { path: '/signup', changeFrequency: 'monthly', priority: 0.5 },
 ];
