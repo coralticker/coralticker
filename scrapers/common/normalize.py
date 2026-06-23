@@ -28,18 +28,37 @@ _WHITESPACE_RUN = re.compile(r"\s+")
 # ('sps','lps','softie','zoa','mushroom','anemone','clam','chalice',
 #  'fish','invert','equipment','other').
 # Order matters — first hit wins. More specific labels before generic ones.
+#
+# CTK-186: each alternative is boundary-anchored PER-TERM (`\bTERM\b`). The
+# pre-CTK-186 form anchored `\b` only on the first/last alternative of each
+# pattern, so every MIDDLE term substring-matched: `\bpump` hit "Pumpkin",
+# `tang` hit "Tangerine"/"Tango" — real corals false-tagged equipment/fish on
+# the live feed. Same alternation-boundary bug documented in
+# ctk117_fish_leak_detector.py:14-23 (fixed there only inside the WIDE operator
+# probe; production stays NARROW per CTK-117 — anchor existing terms, add no
+# nouns/genera). `s?` plural-tolerance is retained where a live product_type/
+# title/tag plural needs it (chalice/softie/crab/clam + the six equipment
+# terms: bare `\bpump\b` would drop "ECM Pumps" to NULL and re-leak equipment
+# past the step-2 feed exclusion; `trachyphyllias?` keeps Vivid's pluralised
+# genus bucket tag "WYSIWYG Scolymias Trachyphyllias & Wellsophyllias" matching
+# lps — 17 live LPS rows would otherwise drop to NULL, caught in the CTK-186
+# backfill dry run) or to preserve an original open-trailing form
+# (anemone/mushroom/snail). Deliberate structures kept verbatim: the
+# `\bzoa(?:nthid)?s?\b` suffix flex (test_tidal_gardens_parse.py:523), the
+# leading-anchored/trailing-open `\bpaly` (catches "palythoa" + the Cornbred
+# "Paly" product_type), and the `\bacan\b` abbreviation.
 _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("chalice",  re.compile(r"\bchalice|echinophyllia|mycedium|oxypora\b", re.I)),
-    ("anemone",  re.compile(r"\banemone|bta|rbta|condy\b", re.I)),
-    ("clam",     re.compile(r"\bclam\b|tridacna", re.I)),
-    ("mushroom", re.compile(r"\bmushroom|rhodactis|discosoma|ricordea\b", re.I)),
-    ("zoa",      re.compile(r"\bzoa(?:nthid)?s?\b|paly", re.I)),
-    ("softie",   re.compile(r"\bsoftie|softy|leather|toadstool|kenya|sinularia|sarcophyton\b", re.I)),
-    ("sps",      re.compile(r"\bsps\b|acropora|montipora|stylophora|seriatopora|pocillopora", re.I)),
-    ("lps",      re.compile(r"\blps\b|euphyllia|torch|hammer|frogspawn|acanthophyllia|trachyphyllia|cynarina|symphyllia|favia|favites|micromussa|acan\b", re.I)),
-    ("fish",     re.compile(r"\bfish|wrasse|tang|goby|clownfish|blenny\b", re.I)),
-    ("invert",   re.compile(r"\bsnail|shrimp|crab|urchin|starfish|cucumber\b", re.I)),
-    ("equipment",re.compile(r"\bpump|skimmer|reactor|heater|controller|filter\b", re.I)),
+    ("chalice",  re.compile(r"\bchalices?\b|\bechinophyllia\b|\bmycedium\b|\boxypora\b", re.I)),
+    ("anemone",  re.compile(r"\banemones?\b|\bbta\b|\brbta\b|\bcondy\b", re.I)),
+    ("clam",     re.compile(r"\bclams?\b|\btridacna\b", re.I)),
+    ("mushroom", re.compile(r"\bmushrooms?\b|\brhodactis\b|\bdiscosoma\b|\bricordea\b", re.I)),
+    ("zoa",      re.compile(r"\bzoa(?:nthid)?s?\b|\bpaly", re.I)),
+    ("softie",   re.compile(r"\bsofties?\b|\bsofty\b|\bleather\b|\btoadstool\b|\bkenya\b|\bsinularia\b|\bsarcophyton\b", re.I)),
+    ("sps",      re.compile(r"\bsps\b|\bacropora\b|\bmontipora\b|\bstylophora\b|\bseriatopora\b|\bpocillopora\b", re.I)),
+    ("lps",      re.compile(r"\blps\b|\beuphyllia\b|\btorch\b|\bhammer\b|\bfrogspawn\b|\bacanthophyllia\b|\btrachyphyllias?\b|\bcynarina\b|\bsymphyllia\b|\bfavia\b|\bfavites\b|\bmicromussa\b|\bacan\b", re.I)),
+    ("fish",     re.compile(r"\bfish\b|\bwrasse\b|\btang\b|\bgoby\b|\bclownfish\b|\bblenny\b", re.I)),
+    ("invert",   re.compile(r"\bsnails?\b|\bshrimp\b|\bcrabs?\b|\burchin\b|\bstarfish\b|\bcucumber\b", re.I)),
+    ("equipment",re.compile(r"\bpumps?\b|\bskimmers?\b|\breactors?\b|\bheaters?\b|\bcontrollers?\b|\bfilters?\b", re.I)),
 )
 
 
