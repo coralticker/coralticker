@@ -225,6 +225,7 @@ export async function getRecentDrops(limit = 10): Promise<Listing[]> {
     LEFT JOIN named_corals nc ON nc.id = vl.named_coral_id
     WHERE vl.in_stock = true
       AND vl.first_seen_at > ${sevenDaysAgo}
+      AND vl.category IS DISTINCT FROM 'equipment'
     ORDER BY vl.first_seen_at DESC
     LIMIT ${overFetch}
   `) as unknown as VendorListingRow[];
@@ -467,6 +468,7 @@ export async function getVendorInventory(
               AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
               AND (${includeOOSParam}::boolean OR vl.in_stock = true)
               AND vl.is_auction = false
+              AND vl.category IS DISTINCT FROM 'equipment'
             ORDER BY vl.current_price ASC NULLS LAST, vl.first_seen_at DESC
             LIMIT ${PAGE_SIZE} OFFSET ${offset}
           `;
@@ -489,6 +491,7 @@ export async function getVendorInventory(
               AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
               AND (${includeOOSParam}::boolean OR vl.in_stock = true)
               AND vl.is_auction = false
+              AND vl.category IS DISTINCT FROM 'equipment'
             ORDER BY vl.current_price DESC NULLS LAST, vl.first_seen_at DESC
             LIMIT ${PAGE_SIZE} OFFSET ${offset}
           `;
@@ -511,6 +514,7 @@ export async function getVendorInventory(
             AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
             AND (${includeOOSParam}::boolean OR vl.in_stock = true)
             AND vl.is_auction = false
+            AND vl.category IS DISTINCT FROM 'equipment'
           ORDER BY vl.first_seen_at DESC
           LIMIT ${PAGE_SIZE} OFFSET ${offset}
         `;
@@ -532,7 +536,10 @@ export async function getVendorInventory(
       // serving auction rows for up to the 300s revalidate window — bump forces
       // an immediate clean re-query so the Tier 1B leak clears on deploy, not on
       // revalidate.
-      'getVendorInventoryV6',
+      // V7 (CTK-186 step 2): set narrows again — category='equipment' rows gated
+      // out. Same deploy-not-revalidate rationale: without the bump, stale entries
+      // serve the reclassified equipment for up to 300s.
+      'getVendorInventoryV7',
       String(vendorId),
       String(page),
       sort,
@@ -574,6 +581,7 @@ export async function getVendorInventoryTotal(
           AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
           AND (${includeOOSParam}::boolean OR vl.in_stock = true)
           AND vl.is_auction = false
+          AND vl.category IS DISTINCT FROM 'equipment'
       `) as unknown as { total: number | string }[];
       const first = rows[0];
       return first ? Number(first.total) : 0;
@@ -585,7 +593,10 @@ export async function getVendorInventoryTotal(
       // count = phantom pages (count includes auctions the row feed omits). The
       // return shape is still `number`; this bump is for value-staleness, not
       // shape.
-      'getVendorInventoryTotalV3',
+      // V4 (CTK-186 step 2): count narrows again — equipment rows gated out.
+      // Lockstep with getVendorInventoryV7 (same predicate); a mismatch reintro-
+      // duces phantom pages (count includes equipment the row feed now omits).
+      'getVendorInventoryTotalV4',
       String(vendorId),
       category ?? '_',
       includeOOS ? '1' : '0',
@@ -718,22 +729,33 @@ async function orderedEventRows(
   const categoryParam = category ?? null;
   const capParam = cap ?? null;
   if (sort === 'newest' && categoryParam === null) {
-    // Bare branch — no JOIN needed; one template capped or not (LIMIT NULL ≡ no
-    // limit). The wrapper owns the total order on every path: the arrivals RPC's
-    // internal ORDER BY carries no id tiebreak, so "function-internal order" was
-    // never contractual here.
+    // Bare branch (default /new + /deals). The category-filter JOIN is skipped,
+    // but the equipment exclusion (CTK-186 step 2) needs the same vendor_listings
+    // join — `IS DISTINCT FROM` is NULL-safe so the reclassified None corals pass
+    // while category='equipment' rows drop. SELECT e.* keeps the projection event-
+    // only (vl is join-for-filter, 1:1 on e.id). The wrapper still owns the total
+    // order on every path: the arrivals RPC's internal ORDER BY carries no id
+    // tiebreak, so "function-internal order" was never contractual here.
     return sql`
       SELECT e.*
       FROM ${sql.unsafe(fnCall)} e
+      JOIN vendor_listings vl ON vl.id = e.id
+      WHERE vl.category IS DISTINCT FROM 'equipment'
       ORDER BY ${sql.unsafe(EVENT_ORDER_LADDER.newest)}
       LIMIT ${capParam}
     `;
   }
+  // JOIN branch (sorted/filtered /new + /deals). Category filter folds via NULL
+  // constant-folding; the equipment exclusion ANDs on unconditionally — NULL-safe
+  // so reclassified None corals survive (a plain <> would drop them). When a
+  // category filter IS set, vl.category = <cat> already excludes equipment and
+  // the extra predicate is harmless.
   return sql`
     SELECT e.*
     FROM ${sql.unsafe(fnCall)} e
     JOIN vendor_listings vl ON vl.id = e.id
     WHERE (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
+      AND vl.category IS DISTINCT FROM 'equipment'
     ORDER BY ${sql.unsafe(EVENT_ORDER_LADDER[sort])}
     LIMIT ${capParam}
   `;
@@ -762,7 +784,9 @@ export async function getRecentPriceDrops(
       // Bump the prefix when the row shape or served set changes — the Data
       // Cache persists across deploys, so stale entries keep serving the old
       // shape/scope for up to 300s otherwise.
-      'getRecentPriceDropsV3',
+      // V4 (CTK-186 step 2): served set narrows — orderedEventRows now excludes
+      // category='equipment' on both branches.
+      'getRecentPriceDropsV4',
       sort,
       category ?? '_',
     ],
@@ -793,7 +817,10 @@ export async function getLatestPriceDropAt(
       )) as unknown as RpcPriceDropRow[];
       return rows[0]?.event_at ?? null;
     },
-    ['getLatestPriceDropAtV1', category ?? '_'],
+    // V2 (CTK-186 step 2): the latest-drop source reads through orderedEventRows,
+    // which now excludes category='equipment' — the eyebrow timestamp must not be
+    // sourced from an equipment drop. Bump so the value isn't served stale 300s.
+    ['getLatestPriceDropAtV2', category ?? '_'],
     {
       revalidate: 300,
       tags: [`latest-price-drop-${category ?? '_'}`],
@@ -912,7 +939,9 @@ export async function getRecentArrivals(
       // arrivals+restocks population vs. the 24h all-events capped set). The Data
       // Cache persists across deploys, so window MUST be in the key or the week
       // feed serves the day-shape cached entry.
-      'getRecentArrivalsV3',
+      // V4 (CTK-186 step 2): served set narrows — orderedEventRows now excludes
+      // category='equipment' on both branches (covers default /new + filtered).
+      'getRecentArrivalsV4',
       window,
       sort,
       category ?? '_',
