@@ -47,15 +47,37 @@ _WHITESPACE_RUN = re.compile(r"\s+")
 # `\bzoa(?:nthid)?s?\b` suffix flex (test_tidal_gardens_parse.py:523), the
 # leading-anchored/trailing-open `\bpaly` (catches "palythoa" + the Cornbred
 # "Paly" product_type), and the `\bacan\b` abbreviation.
+#
+# CTK-194: a coverage-ADD pass (the OPPOSITE of CTK-117/186's NARROW "anchor
+# existing terms, add no genera" posture — this ticket explicitly authorizes new
+# genera/common-names, FP-gated). 718 in_stock rows sat at category IS NULL
+# fleet-wide (POTO 305 + Cornbred 165 = 470; the two recently-onboarded vendors
+# arrive with generic product_types — collection / live sale / Other / Blasto /
+# Paly — and coral common-name titles absent from the patterns). The shipped
+# 8-type category INCLUDE filter (WHERE category = …) drops NULL rows, so those
+# corals vanished from any type-filtered view (Tier 1B). Terms below are
+# evidence-driven (fleet audit + a full-catalog FP probe): each fills NULL rows
+# and its category is the MAJORITY-VOTE of the already-categorized rows that
+# carry it — so cyphastrea + leptastrea map to lps (91 + 36 existing lps rows;
+# the textbook "encrusting SPS" call loses to vendor convention), not sps. Bare
+# color/generic words (candy / rainbow / grafted) and split-genus words (bare
+# echinata 33 lps vs 7 sps; bare plate = frag-plate risk; bare lepto =
+# leptoseris-lps vs leptastrea) were EXCLUDED at the probe — Caulastrea is caught
+# via the "candy cane" phrase, not bare "candy". Prefix anchors (`\bblasto`,
+# `\bmonti`, `\bacro`, `\bdigi`, `\bstylo`, `\bscoly`, `\bpectin`, `\bgoni`,
+# `\blobo`, `\banacro`) catch genus + its vendor abbreviation in one term
+# (`\bmonti` = montipora + "Monti"); the SPS abbreviations were the single
+# biggest uncaught bucket (Cornbred/BattleCorals "...Milli / ...Monti / ...Digi /
+# ...Acro / ...Stylo"). 0 named-coral collisions; CTK-189 reverse-guard intact.
 _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("chalice",  re.compile(r"\bchalices?\b|\bechinophyllia\b|\bmycedium\b|\boxypora\b", re.I)),
     ("anemone",  re.compile(r"\banemones?\b|\bbta\b|\brbta\b|\bcondy\b", re.I)),
     ("clam",     re.compile(r"\bclams?\b|\btridacna\b", re.I)),
     ("mushroom", re.compile(r"\bmushrooms?\b|\brhodactis\b|\bdiscosoma\b|\bricordea\b", re.I)),
     ("zoa",      re.compile(r"\bzoa(?:nthid)?s?\b|\bpaly", re.I)),
-    ("softie",   re.compile(r"\bsofties?\b|\bsofty\b|\bleather\b|\btoadstool\b|\bkenya\b|\bsinularia\b|\bsarcophyton\b", re.I)),
-    ("sps",      re.compile(r"\bsps\b|\bacropora\b|\bmontipora\b|\bstylophora\b|\bseriatopora\b|\bpocillopora\b", re.I)),
-    ("lps",      re.compile(r"\blps\b|\beuphyllia\b|\btorch\b|\bhammer\b|\bfrogspawn\b|\bacanthophyllia\b|\btrachyphyllias?\b|\bcynarina\b|\bsymphyllia\b|\bfavia\b|\bfavites\b|\bmicromussa\b|\bacan\b", re.I)),
+    ("softie",   re.compile(r"\bsofties?\b|\bsofty\b|\bleather\b|\btoadstool\b|\bkenya\b|\bsinularia\b|\bsarcophyton\b|\bcloves?\b|\bgorgonian|\bxenia\b|\bcespitularia\b|\bstar\s+polyps?\b", re.I)),
+    ("sps",      re.compile(r"\bsps\b|\bacropora\b|\bmontipora\b|\bstylophora\b|\bseriatopora\b|\bpocillopora\b|\bmonti|\bacro|\bmilli|\bdigi|\bstylo|\banacro|\bpsammocora\b|\bbirds?\s*nest\b", re.I)),
+    ("lps",      re.compile(r"\blps\b|\beuphyllia\b|\btorch\b|\bhammer\b|\bfrogspawn\b|\bacanthophyllia\b|\btrachyphyllias?\b|\bcynarina\b|\bsymphyllia\b|\bfavia\b|\bfavites\b|\bmicromussa\b|\bacan\b|\bacantho|\bblasto|\bduncan|\blobo|\bscoly|\bpectin|\bfungia|\bbowerbanki\b|\bgoni|\balveopora\b|\bgalaxea\b|\belegance\b|\baustralomussa\b|\bleptoseris\b|\bleptastrea\b|\bcyphastrea\b|\bcaulastrea\b|\bcandy\s+cane\b", re.I)),
     ("fish",     re.compile(r"\bfish\b|\bwrasse\b|\btang\b|\bgoby\b|\bclownfish\b|\bblenny\b", re.I)),
     ("invert",   re.compile(r"\bsnails?\b|\bshrimp\b|\bcrabs?\b|\burchin\b|\bstarfish\b|\bcucumber\b", re.I)),
     ("equipment",re.compile(r"\bpumps?\b|\bskimmers?\b|\breactors?\b|\bheaters?\b|\bcontrollers?\b|\bfilters?\b", re.I)),
