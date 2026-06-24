@@ -28,6 +28,9 @@ import { groupByVendor, isThinHistory } from '@/lib/chart/price-history-geometry
 import { buildCoralReferenceFields } from '@/lib/format/coral-reference-fields';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { pluralize } from '@/lib/format/pluralize';
+import { distinctInStockVendorCount } from '@/lib/format/vendor-count';
+import { marketLineState } from '@/lib/format/market-line-state';
+import { PRICE_ON_REQUEST } from '@/lib/format/listing-price';
 
 // Per-coral micro-chrome — distinct from <PageEyebrow> (the page-level KIND ·
 // UPDATED line). Mono-uppercase + forest mid-dot; the range chunk drops tracking
@@ -85,16 +88,27 @@ export async function CoralReference({ slug }: { slug: string }) {
   const now = new Date();
   const tracks = groupByVendor(vendorPoints);
 
-  // N = vendors with a rendered (in-stock-priced) line in the range window.
-  // Three-stage cascade IN LOCKSTEP with the price-history page (page.tsx L133):
-  // rendered tracks → in-stock availability vendors → stock-unfiltered in-window
-  // count. The third stage is load-bearing for the OOS/thin branches: an all-OOS
-  // coral has zero tracks AND zero in-stock availability vendors, so without it
-  // the chrome would read a false "0 VENDORS" (the Tier-1B defect already fixed on
-  // the sibling surface — the two must agree on the same coral).
-  const availabilityVendors = new Set(listings.map((l) => l.vendorSlug)).size;
-  const vendorN = tracks.length || availabilityVendors || inWindowVendorCount;
-  const vendorLabel = pluralize(vendorN, 'VENDOR', 'VENDORS');
+  // Current-availability count = distinct IN-STOCK vendors (CTK-187), shared with
+  // the /coral/[slug] eyebrow via distinctInStockVendorCount so the two surfaces
+  // can't drift on the in-stock rule (the divergence the old vendorN cascade —
+  // tracks.length || availabilityVendors || inWindowVendorCount — invited; its
+  // all-OOS fallback to the carrier count was exactly the Tier-1B "1 VENDOR"
+  // defect). getCoralAvailability(coral.id) here is in-stock-only, so this counts
+  // the rendered vendors; the helper's inStock filter is a belt-and-suspenders
+  // guard. inWindowVendorCount (stock-unfiltered, 7-day recency window) survives
+  // ONLY as the all-OOS vs. truly-not-listed fork — an all-OOS coral has 0
+  // in-stock vendors but >0 in-window carriers; a never-listed/stale coral has 0
+  // of both.
+  //
+  // The isAllOOS FORMULA differs from the parent /coral/[slug] on purpose — do
+  // NOT "align" them: the coral page can carry OOS rows in its listings array via
+  // ?include-oos=1, so it derives all-OOS from the rendered set + an in-window
+  // count; this guide surface is in-stock-only (no toggle), so 0 in-stock vendors
+  // + >0 in-window carriers is the whole signal. Same three states, different
+  // inputs.
+  const inStockVendorCount = distinctInStockVendorCount(listings);
+  const isAllOOS = inStockVendorCount === 0 && inWindowVendorCount > 0;
+  const vendorChunk = `${inStockVendorCount} ${pluralize(inStockVendorCount, 'VENDOR', 'VENDORS')}`;
 
   // Buyable-now floor for the promoted price (> 0, never a phantom $0).
   const priced = listings.filter(
@@ -120,28 +134,97 @@ export async function CoralReference({ slug }: { slug: string }) {
     </p>
   );
 
-  // Thin history: too few observations to show a range. A single current listing
-  // can still render (Listed now.); otherwise just the thin-note gap line.
+  // Current-availability state drives the whole market line (CTK-187 /code-review
+  // #1; wording /brand-manager-LOCKED 2026-06-24). Classify ONCE on the shared
+  // helper, then render. The three no-price states (not-listed / all-oos /
+  // price-on-request) render the SAME thin or non-thin — thin only changes the
+  // `available` render below (range vs. thin-note). All three no-price states
+  // drop the range chunk: a range's home is the price-history surface (labeled
+  // {W}-DAY HISTORY); an unlabeled range here reads as an actionable price.
+  const hasBuyablePrice = cheapestNow !== null && rowFields.length > 0;
+  const state = marketLineState({ inStockVendorCount, isAllOOS, hasBuyablePrice });
+
+  // not-listed: truly absent (0 in-stock vendors, 0 in-window carriers). Matches
+  // the parent /coral/[slug] NOT LISTED arm (branding-guide §"/guides/[slug]"
+  // state 3). Own body — the carriers genuinely aren't there.
+  if (state === 'not-listed') {
+    const lastSeen = lastSeenAt ? formatRelativeTime(lastSeenAt, now) : null;
+    return (
+      <div className="mt-3.5">
+        <MarketChrome chunks={['NOT CURRENTLY LISTED']} />
+        <p className="text-base leading-relaxed text-ink">
+          No vendor has it listed right now
+          {lastSeen ? ` — last seen ${lastSeen}` : ''}. I&rsquo;ll surface it when it lists again.
+        </p>
+        {phLink}
+      </div>
+    );
+  }
+
+  // all-OOS: in-window carriers exist, all out of stock. Bare state word, thin
+  // AND non-thin unified (reverses the earlier [FIRST SEEN, ALL OUT OF STOCK]
+  // thin choice). Own body — the listings exist, they're just out of stock.
+  if (state === 'all-oos') {
+    return (
+      <div className="mt-3.5">
+        <MarketChrome chunks={['ALL OUT OF STOCK']} />
+        <p className="text-base leading-relaxed text-ink">
+          Every listing&rsquo;s out of stock right now. I&rsquo;ll flag it when it&rsquo;s back in stock.
+        </p>
+        {phLink}
+      </div>
+    );
+  }
+
+  // price-on-request: in stock, no posted price (non-auction cut-to-order /
+  // event-drop, current_price null) — MUST NOT read as out of stock. Body links
+  // "the listing" to the single in-stock listing when there's exactly one; the
+  // no-link fallback reuses the shared PRICE_ON_REQUEST token (don't re-mint).
+  if (state === 'price-on-request') {
+    const inStockListings = listings.filter((l) => l.inStock);
+    const single = inStockListings.length === 1 ? inStockListings[0]! : null;
+    return (
+      <div className="mt-3.5">
+        <MarketChrome chunks={[vendorChunk, PRICE_ON_REQUEST]} />
+        <p className="text-base leading-relaxed text-ink">
+          {single ? (
+            <>
+              In stock now &mdash;{' '}
+              <a
+                href={single.productUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-ink underline underline-offset-2 decoration-1"
+              >
+                check the listing
+              </a>{' '}
+              for the price.
+            </>
+          ) : (
+            <>In stock now &mdash; {PRICE_ON_REQUEST}.</>
+          )}
+        </p>
+        {phLink}
+      </div>
+    );
+  }
+
+  // available (the only state left): a buyable price exists. Thin history →
+  // thin-note + promoted price; otherwise the normal market line with the range.
   if (isThinHistory(envelope, tracks)) {
     const firstSeenChunk = firstSeenAt
       ? `FIRST SEEN ${formatRelativeTime(firstSeenAt, now).toUpperCase()}`
       : 'JUST STARTED TRACKING';
     return (
       <div className="mt-3.5">
-        <MarketChrome chunks={[`${vendorN} ${vendorLabel}`, firstSeenChunk]} />
+        <MarketChrome chunks={[vendorChunk, firstSeenChunk]} />
         <p className="text-base leading-relaxed text-ink">
           Not enough history yet to show a range. I&rsquo;ll plot it as this coral lists again.
         </p>
-        {cheapestNow !== null && rowFields.length > 0 && (
-          <>
-            <p className="font-mono text-2xl font-bold text-ink mt-3">
-              {promotedPrice}
-            </p>
-            <div className="mt-1">
-              <DataRow fields={rowFields} />
-            </div>
-          </>
-        )}
+        <p className="font-mono text-2xl font-bold text-ink mt-3">{promotedPrice}</p>
+        <div className="mt-1">
+          <DataRow fields={rowFields} />
+        </div>
         {phLink}
       </div>
     );
@@ -152,31 +235,16 @@ export async function CoralReference({ slug }: { slug: string }) {
   const rangeMin = Math.min(...floors);
   const rangeMax = Math.max(...floors);
 
-  // OOS-with-history: range still shows, freshness flips to NOT IN STOCK, NO
-  // buyable price renders — gap line in the price-history gap voice.
-  if (cheapestNow === null || rowFields.length === 0) {
-    const lastSeen = lastSeenAt ? formatRelativeTime(lastSeenAt, now) : null;
-    return (
-      <div className="mt-3.5">
-        <MarketChrome
-          chunks={[`${vendorN} ${vendorLabel}`, rangeChunk(rangeMin, rangeMax), 'NOT IN STOCK']}
-        />
-        <p className="text-base leading-relaxed text-ink">
-          No vendor has it listed right now
-          {lastSeen ? ` — last seen ${lastSeen}` : ''}. I&rsquo;ll surface it when it lists again.
-        </p>
-        {phLink}
-      </div>
-    );
-  }
-
-  // Normal: in stock now, with history. Promoted price (centerpiece) + canon
-  // 14px DataRow (Cheapest now./Listed now. — Vendor. — First seen.).
+  // Normal: in stock now, with a real range. Promoted price (centerpiece) + canon
+  // 14px DataRow (Cheapest now./Listed now. — Vendor. — First seen.). The
+  // rangeMin/Max compute just above is the sole remaining consumer of the
+  // envelope floors (/code-review #4 simplification — the no-price states above
+  // dropped the range chunk).
   return (
     <div className="mt-3.5">
       <MarketChrome
         chunks={[
-          `${vendorN} ${vendorLabel}`,
+          vendorChunk,
           rangeChunk(rangeMin, rangeMax),
           `${WINDOW} DAYS`,
         ]}

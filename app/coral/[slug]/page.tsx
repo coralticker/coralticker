@@ -22,6 +22,7 @@ import { formatRelativeTime } from '@/lib/format/relative-time';
 import { latestTimestamp } from '@/lib/format/latest-timestamp';
 import { buildLineageFields } from '@/lib/format/lineage-fields';
 import { pluralize } from '@/lib/format/pluralize';
+import { distinctInStockVendorCount } from '@/lib/format/vendor-count';
 import { buildCoralJsonLd, serializeJsonLd } from '@/lib/seo/coral-jsonld';
 import { SITE_URL } from '@/lib/seo/site-url';
 import { VendorAvailabilityRow } from './_components/vendor-availability-row';
@@ -156,22 +157,27 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
   // listings; NOT LISTED / "Currently unavailable." reserved for this state —
   // they were false over an all-OOS set). State classifies by stock, not by
   // rendered-row count, so the toggled-on view of an all-OOS set also reads
-  // "Currently out of stock." N = distinct vendors across the in-window
-  // (all-OOS) set: derived from the rendered rows when toggled on, from the
-  // stock-unfiltered count query when the default view excludes them (separate
-  // cheap signal, do NOT widen the default availability query). The count fires
-  // unconditionally in the Promise.all above; its value is CONSUMED only on the
-  // innermost leaf (no in-stock row AND zero rendered rows). The rendered-rows
-  // derivation on the middle arm is load-bearing: the eyebrow N must match the
-  // rows the user is looking at, not a count from a second cache entry that can
-  // skew within its own 300s window.
-  const hasInStockRow = listings.some((l) => l.inStock);
-  const oosVendorCount = hasInStockRow
-    ? 0
-    : hasListings
-      ? new Set(listings.map((l) => l.vendorSlug)).size
-      : inWindowVendorCount;
-  const isAllOOS = !hasInStockRow && oosVendorCount > 0;
+  // "Currently out of stock."
+  //
+  // Populated-arm count = distinct IN-STOCK vendors (CTK-187), not the listing-
+  // row count: three in-stock frags from one shop read "1 VENDOR". The inStock
+  // filter is load-bearing on the toggled-on view, where listings carries OOS
+  // rows the count must exclude. Shared helper so #1 (here) and #2 (the /guides
+  // market line) cannot drift on the in-stock rule. hasInStockRow derives from
+  // this single predicate so an in-stock-rule edit can't diverge the eyebrow
+  // count from the sectionHeader fork (/code-review #3).
+  const inStockVendorCount = distinctInStockVendorCount(listings);
+  const hasInStockRow = inStockVendorCount > 0;
+
+  // all-OOS fork: no in-stock vendor, but in-window carriers exist (a state-fork
+  // boolean, no longer a rendered count — post-CTK-187 the all-OOS eyebrow is the
+  // bare state word, not "{N} VENDORS · ALL OUT OF STOCK"). "Carriers exist" =
+  // rendered OOS rows on the ?include-oos=1 view (hasListings while !hasInStockRow
+  // ⟺ a toggled-on all-OOS set) OR the stock-unfiltered in-window count on the
+  // default view (separate cheap signal — do NOT widen the default availability
+  // query). The old oosVendorCount integer was consumed only as > 0, so it
+  // collapsed to this boolean (/code-review #4).
+  const isAllOOS = !hasInStockRow && (hasListings || inWindowVendorCount > 0);
 
   const sectionHeader = hasInStockRow
     ? 'Currently available.'
@@ -182,21 +188,21 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
   const now = new Date();
   const lastSeenAt =
     hasInStockRow || isAllOOS ? null : await getCoralLastSeenAt(coral.id);
-  // All-OOS eyebrow: count chunk keeps continuity with the populated state;
-  // freshness chunk omitted ("last seen" is ambiguous across an all-OOS set;
-  // per-row Listed. carries it once toggled on).
+  // All-OOS eyebrow: bare state word, no count (CTK-187) — the count chunk it
+  // previously carried read as present-tense availability beside an empty
+  // default buy-view. Freshness chunk omitted ("last seen" is ambiguous across
+  // an all-OOS set; per-row Listed. carries it once toggled on). The carrier
+  // signal now lives on the price-history eyebrow + the INCLUDE OUT OF STOCK
+  // body toggle.
   // LATEST = max(firstSeenAt) over the set — the buy-intent ladder orders
   // cheapest-first, so index 0 is no longer the newest row.
   const eyebrowChunks = hasInStockRow
     ? [
-        `${listings.length} ${pluralize(listings.length, 'VENDOR', 'VENDORS')}`,
+        `${inStockVendorCount} ${pluralize(inStockVendorCount, 'VENDOR', 'VENDORS')}`,
         `LATEST ${formatRelativeTime(latestTimestamp(listings, (l) => l.firstSeenAt), now).toUpperCase()}`,
       ]
     : isAllOOS
-      ? [
-          `${oosVendorCount} ${pluralize(oosVendorCount, 'VENDOR', 'VENDORS')}`,
-          'ALL OUT OF STOCK',
-        ]
+      ? ['ALL OUT OF STOCK']
       : lastSeenAt === null
         ? ['NOT LISTED']
         : ['NOT LISTED', `LAST SEEN ${formatRelativeTime(lastSeenAt, now).toUpperCase()}`];
