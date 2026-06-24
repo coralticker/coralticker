@@ -148,8 +148,10 @@ def test_cross_vendor_line_contract():
 # --- CTK-164 content-card selection filters --------------------------------
 
 from scrapers.tools.content_queries import (  # noqa: E402
+    BULK_SPIKE_ABS_FLOOR,
     MIRROR_HOST,
     build_card_fields,
+    count_new_arrivals,
     drop_price_value,
     is_single_card_eligible,
     is_surface_b_card_eligible,
@@ -287,8 +289,9 @@ def test_price_value_helpers():
 
 
 class _FakeCursor:
-    def __init__(self, rows):
-        self._rows = rows
+    def __init__(self, conn):
+        self._conn = conn
+        self._result = []
 
     def __enter__(self):
         return self
@@ -297,18 +300,56 @@ class _FakeCursor:
         return False
 
     def execute(self, sql, params=None):
-        self._sql = sql
+        self._result = self._conn._dispatch(sql, params)
 
     def fetchall(self):
-        return self._rows
+        return self._result
+
+    def fetchone(self):
+        return self._result[0] if self._result else None
+
+
+# A warm anchor sentinel — any non-None prior_run_finished_at means "we watched it
+# appear" (not cold-start). The CTK-191 guard only checks None vs not-None.
+_WARM_ANCHOR = datetime(2000, 1, 1, tzinfo=timezone.utc)
 
 
 class _FakeConn:
-    def __init__(self, rows):
+    """Dispatches the THREE queries the F7 guard path issues, so the SELECTION logic
+    is exercised purely (no DB — the SQL itself is the DB parity test's job):
+      - get_listing_lead_event   -> the population rows (`rows`)
+      - fetch_arrival_anchors    -> per-id cold-start anchor (scraper_runs join)
+      - fetch_trailing_daily_arrivals -> per-vendor daily counts
+
+    Pre-CTK-191 callers pass ONLY `rows`; the anchor/daily defaults make the guard a
+    no-op (every just-listed row warm, no trailing baseline so the threshold is the
+    ABS_FLOOR), so the existing selection tests are unaffected. The guard tests pass
+    `anchors`/`daily` to drive the cold-start + bulk-spike paths."""
+
+    def __init__(self, rows, *, anchors=None, daily=None):
         self._rows = rows
+        self._anchors = anchors or {}   # {listing_id: datetime|None}; absent id => warm
+        self._daily = daily or {}       # {vendor_id: [daily counts]} for the trailing baseline
 
     def cursor(self):
-        return _FakeCursor(self._rows)
+        return _FakeCursor(self)
+
+    def _dispatch(self, sql, params):
+        if "get_listing_lead_event" in sql:
+            return self._rows
+        if "scraper_runs" in sql:
+            ids = (params[0] if params else []) or []
+            return [
+                {"id": i, "prior_run_finished_at": self._anchors.get(i, _WARM_ANCHOR)}
+                for i in ids
+            ]
+        if "first_seen_at" in sql:   # fetch_trailing_daily_arrivals
+            return [
+                {"vendor_id": v, "cnt": c}
+                for v, counts in self._daily.items()
+                for c in counts
+            ]
+        return self._rows
 
 
 def _le_row(event, *, coral_id=1, coral="WWC Sunkist Bounce", vendor="WWC",
@@ -427,6 +468,80 @@ def test_f7_dedupes_on_coral_and_spreads_vendors():
     # (Dragon Soul @ Tidal, sharing Magician's vendor) is deferred to the tail.
     assert len(set(vendors[:3])) == 3
     assert vendors[-1] == "Tidal Gardens"
+
+
+# ---------------------------------------------------------------------------
+# CTK-191 — F7 arrivals honest-count guard (cold-start + bulk-relist exclusion).
+# Each test fails if its guard mechanism is removed (non-tautological): the
+# asserted count differs from the unguarded population count.
+# ---------------------------------------------------------------------------
+
+
+def test_f7_cold_start_backfill_excluded():
+    # A newly-onboarded vendor's whole catalog registers as just-listed on its first
+    # scrape (no successful run finished before first_seen => cold-start). Those are
+    # not observed arrivals and must not count. Two established-vendor arrivals are
+    # warm and survive. Removing the cold-start filter makes true_count 7, not 2.
+    cold = [_le_row("just-listed", id=900 + i, coral_id=900 + i,
+                    coral=f"Cornbred Backfill {i}", vendor="Cornbred", vendor_id=99)
+            for i in range(5)]
+    warm = [
+        _le_row("just-listed", id=1, coral_id=1, coral="WWC Sunkist", vendor="WWC", vendor_id=10),
+        _le_row("just-listed", id=2, coral_id=2, coral="TSA Bounce", vendor="TSA", vendor_id=11),
+    ]
+    conn = _FakeConn(cold + warm, anchors={900 + i: None for i in range(5)})
+    true_count, composition, items = select_f7_arrivals(conn)
+    assert true_count == 2                       # cold-start 5 dropped; unguarded == 7
+    assert composition == "all-arrivals"
+    names = {it["name"] for it in items}
+    assert names == {"WWC Sunkist", "TSA Bounce"}
+    assert not any("Cornbred" in n for n in names)   # backfill never sampled
+    # The count-up N routes the SAME guard, so it agrees with the cover's arrival count.
+    assert count_new_arrivals(conn) == 2
+
+
+def test_f7_bulk_relist_cohort_excluded():
+    # A vendor WITH prior runs (warm — passes cold-start) dumps 100 just-listed on one
+    # calendar-day: a re-index, not 100 organic drops. Trailing median 1/day -> the
+    # threshold is the ABS_FLOOR, and 100 > floor -> whole cohort excluded. A
+    # normal-size same-day cohort from another vendor survives. Unguarded == 105.
+    dump = [_le_row("just-listed", id=2000 + i, coral_id=2000 + i, vendor="POTO",
+                    vendor_id=20, at="2026-06-21T10:00:00Z") for i in range(100)]
+    normal = [_le_row("just-listed", id=2100 + i, coral_id=2100 + i, vendor="Aqua SD",
+                      vendor_id=21, at="2026-06-21T09:00:00Z") for i in range(5)]
+    conn = _FakeConn(dump + normal, daily={20: [1] * 15, 21: [5] * 15})
+    true_count, _, items = select_f7_arrivals(conn)
+    assert true_count == 5                        # 100-cohort dropped; unguarded == 105
+    assert all(it["vendor"] == "Aqua SD" for it in items)
+    assert count_new_arrivals(conn) == 5
+
+
+def test_f7_genuine_low_not_over_corrected():
+    # An honest-low week: 3 warm arrivals, no spike (well under the ABS_FLOOR). The
+    # guard removes FALSE arrivals only — it must not trim real ones, so an honest
+    # low still reports low.
+    rows = [_le_row("just-listed", id=10 + i, coral_id=10 + i, vendor="WWC", vendor_id=10)
+            for i in range(3)]
+    conn = _FakeConn(rows, daily={10: [2, 1, 3, 2, 1]})
+    true_count, _, items = select_f7_arrivals(conn)
+    assert true_count == 3
+    assert len(items) == 3
+    assert count_new_arrivals(conn) == 3
+
+
+def test_f7_restock_arm_passes_through_guard():
+    # The guard touches the just-listed arm ONLY. Restocks are inherently cross-scrape
+    # (a back-in-stock needs a prior in-stock-then-OOS observation), so they bypass
+    # BOTH gates — even a vendor with no prior run (anchors None) and a 90-strong
+    # same-day restock cohort (which would trip the bulk gate if it applied) passes
+    # through whole. Applying either gate to restocks would drop these to 0.
+    rows = [_le_row("back-in-stock", id=3000 + i, coral_id=3000 + i, vendor="WWC", vendor_id=30,
+                    at="2026-06-21T08:00:00Z") for i in range(90)]
+    conn = _FakeConn(rows, anchors={3000 + i: None for i in range(90)}, daily={30: [1] * 15})
+    true_count, composition, items = select_f7_arrivals(conn)
+    assert true_count == 90                       # all restocks survive
+    assert composition == "all-restocks"
+    assert len(items) == 9                         # sample capped, population intact
 
 
 def test_f9_single_vendor_returns_none():
