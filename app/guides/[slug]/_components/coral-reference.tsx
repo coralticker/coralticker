@@ -28,6 +28,7 @@ import { groupByVendor, isThinHistory } from '@/lib/chart/price-history-geometry
 import { buildCoralReferenceFields } from '@/lib/format/coral-reference-fields';
 import { formatRelativeTime } from '@/lib/format/relative-time';
 import { pluralize } from '@/lib/format/pluralize';
+import { distinctInStockVendorCount } from '@/lib/format/vendor-count';
 
 // Per-coral micro-chrome — distinct from <PageEyebrow> (the page-level KIND ·
 // UPDATED line). Mono-uppercase + forest mid-dot; the range chunk drops tracking
@@ -85,16 +86,20 @@ export async function CoralReference({ slug }: { slug: string }) {
   const now = new Date();
   const tracks = groupByVendor(vendorPoints);
 
-  // N = vendors with a rendered (in-stock-priced) line in the range window.
-  // Three-stage cascade IN LOCKSTEP with the price-history page (page.tsx L133):
-  // rendered tracks → in-stock availability vendors → stock-unfiltered in-window
-  // count. The third stage is load-bearing for the OOS/thin branches: an all-OOS
-  // coral has zero tracks AND zero in-stock availability vendors, so without it
-  // the chrome would read a false "0 VENDORS" (the Tier-1B defect already fixed on
-  // the sibling surface — the two must agree on the same coral).
-  const availabilityVendors = new Set(listings.map((l) => l.vendorSlug)).size;
-  const vendorN = tracks.length || availabilityVendors || inWindowVendorCount;
-  const vendorLabel = pluralize(vendorN, 'VENDOR', 'VENDORS');
+  // Current-availability count = distinct IN-STOCK vendors (CTK-187), shared with
+  // the /coral/[slug] eyebrow via distinctInStockVendorCount so the two surfaces
+  // can't drift on the in-stock rule (the divergence the old vendorN cascade —
+  // tracks.length || availabilityVendors || inWindowVendorCount — invited; its
+  // all-OOS fallback to the carrier count was exactly the Tier-1B "1 VENDOR"
+  // defect). getCoralAvailability(coral.id) here is in-stock-only, so this counts
+  // the rendered vendors; the helper's inStock filter is a belt-and-suspenders
+  // guard. inWindowVendorCount (stock-unfiltered) survives ONLY as the all-OOS
+  // vs. truly-not-listed fork — an all-OOS coral has 0 in-stock vendors but >0
+  // in-window carriers; a never-listed coral has 0 of both. Mirrors the parent
+  // /coral/[slug] isAllOOS fork.
+  const inStockVendorCount = distinctInStockVendorCount(listings);
+  const isAllOOS = inStockVendorCount === 0 && inWindowVendorCount > 0;
+  const vendorChunk = `${inStockVendorCount} ${pluralize(inStockVendorCount, 'VENDOR', 'VENDORS')}`;
 
   // Buyable-now floor for the promoted price (> 0, never a phantom $0).
   const priced = listings.filter(
@@ -126,9 +131,19 @@ export async function CoralReference({ slug }: { slug: string }) {
     const firstSeenChunk = firstSeenAt
       ? `FIRST SEEN ${formatRelativeTime(firstSeenAt, now).toUpperCase()}`
       : 'JUST STARTED TRACKING';
+    // Count chunk renders only with >=1 in-stock vendor. All-OOS thin coral →
+    // the all-OOS state word (drop the count, same treatment as OOS-with-history
+    // below). Truly-not-listed thin coral → first-seen alone; printing the
+    // 0-count would read "0 VENDORS", the never-show-0 violation CTK-187 guards.
+    const thinChunks =
+      inStockVendorCount > 0
+        ? [vendorChunk, firstSeenChunk]
+        : isAllOOS
+          ? [firstSeenChunk, 'ALL OUT OF STOCK']
+          : [firstSeenChunk];
     return (
       <div className="mt-3.5">
-        <MarketChrome chunks={[`${vendorN} ${vendorLabel}`, firstSeenChunk]} />
+        <MarketChrome chunks={thinChunks} />
         <p className="text-base leading-relaxed text-ink">
           Not enough history yet to show a range. I&rsquo;ll plot it as this coral lists again.
         </p>
@@ -159,7 +174,7 @@ export async function CoralReference({ slug }: { slug: string }) {
     return (
       <div className="mt-3.5">
         <MarketChrome
-          chunks={[`${vendorN} ${vendorLabel}`, rangeChunk(rangeMin, rangeMax), 'NOT IN STOCK']}
+          chunks={[rangeChunk(rangeMin, rangeMax), 'ALL OUT OF STOCK']}
         />
         <p className="text-base leading-relaxed text-ink">
           No vendor has it listed right now
@@ -176,7 +191,7 @@ export async function CoralReference({ slug }: { slug: string }) {
     <div className="mt-3.5">
       <MarketChrome
         chunks={[
-          `${vendorN} ${vendorLabel}`,
+          vendorChunk,
           rangeChunk(rangeMin, rangeMax),
           `${WINDOW} DAYS`,
         ]}

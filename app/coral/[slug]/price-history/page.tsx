@@ -132,7 +132,14 @@ export default async function PriceHistoryPage({
   const availabilityVendors = new Set(listings.map((l) => l.vendorSlug)).size;
   const vendorN = tracks.length || availabilityVendors || inWindowVendorCount;
 
-  // Eyebrow. Normal: N VENDORS · 90 DAYS · UPDATED {last-seen freshness}.
+  // Eyebrow. Normal: N VENDORS · 90-DAY HISTORY · UPDATED {last-seen freshness}.
+  // The "-DAY HISTORY" cue (not bare "{W} DAYS") is load-bearing (CTK-187): this
+  // count is HISTORICAL — distinct vendors with >=1 in-window listing, INCLUDING
+  // now-OOS carriers (the chart draws their past lines), deliberately a different
+  // count from the current-availability count on /coral/[slug]. Bare "{W} DAYS"
+  // lets the count read as current and contradict the parent eyebrow's
+  // ALL OUT OF STOCK for the same coral; "-DAY HISTORY" pins it to the past. {W}
+  // derives from WINDOW_DAYS so window drift stays grep-able (never hardcode 90).
   // Freshness is last_seen_at (when the data was last CONFIRMED), NOT the last
   // price change — the latter reads "UPDATED 2 MONTHS AGO" beside a live row.
   // Thin: N VENDOR(S) · FIRST SEEN {earliest observed}.
@@ -143,7 +150,7 @@ export default async function PriceHistoryPage({
       ]
     : [
         `${vendorN} ${pluralize(vendorN, 'VENDOR', 'VENDORS')}`,
-        `${WINDOW_DAYS} DAYS`,
+        `${WINDOW_DAYS}-DAY HISTORY`,
         ...(lastSeenAt
           ? [`UPDATED ${formatRelativeTime(lastSeenAt, now).toUpperCase()}`]
           : []),
