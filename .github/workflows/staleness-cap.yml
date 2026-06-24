@@ -1,0 +1,74 @@
+name: staleness-cap
+
+on:
+  schedule:
+    # Fleet-wide staleness cap (CTK-189 build / CTK-190 schedule). Flips
+    # in_stock=false on cohort-frozen rows a vendor stopped serving but never
+    # OOS-flipped (DR #83 admitted-set / filtered_urls — "the filter doesn't
+    # self-clean"). The freeze RECURS as vendors rotate catalog (the first
+    # batch took ~6 weeks to reach 22 rows), so a one-shot manual run is
+    # cleanup, not prevention — this cron is the durable half.
+    #
+    # 2 13 * * 1 UTC = Mondays 13:02 UTC. Timing is load-bearing, NOT cosmetic
+    # ([[feedback_yaml_state_cron_window_risk]]): the tool reads + writes
+    # last_seen_at, and a concurrent scraper persist could re-touch
+    # last_seen_at mid-run and skew the cap window. So this slot is chosen to
+    # sit clear of every scrape window:
+    #   - Hourly scrapers persist across :07-:57; :02 sits ~5 min ahead of the
+    #     earliest (:07).
+    #   - Daily scrapers run hours 08/09/10 UTC (:23/:47/:31); health-digest at
+    #     17:11. Hour 13 is clear of all of them.
+    #   - TSA's */15 weekend bursts run Sat/Sun 15-23 + Sun/Mon 00-03 UTC.
+    #     Monday 13:02 is outside both.
+    # Weekly (not monthly): wrong-availability is a trust-floor class, so a
+    # short exposure window beats minimal cron noise — the run is idempotent
+    # and near-0 flips most weeks, so weekly costs ~nothing.
+    - cron: '2 13 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staleness-cap
+  cancel-in-progress: false
+
+jobs:
+  cap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Preflight NEON_DATABASE_URL
+        uses: ./.github/actions/preflight-neon-secret
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+      # Runs --apply directly (no eyeball on cron) — safe by construction:
+      # flips are reversible/self-healing (next scrape restocks a wrong flip
+      # via the diff UPSERT), and the tool's post-verify exits 1 on any
+      # residual, which the failure step below surfaces.
+      - name: Apply staleness cap
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python -m scrapers.tools.staleness_cap --apply
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"staleness-cap failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"
