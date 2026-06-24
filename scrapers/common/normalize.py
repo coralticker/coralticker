@@ -64,11 +64,25 @@ _WHITESPACE_RUN = re.compile(r"\s+")
 # echinata 33 lps vs 7 sps; bare plate = frag-plate risk; bare lepto =
 # leptoseris-lps vs leptastrea) were EXCLUDED at the probe — Caulastrea is caught
 # via the "candy cane" phrase, not bare "candy". Prefix anchors (`\bblasto`,
-# `\bmonti`, `\bacro`, `\bdigi`, `\bstylo`, `\bscoly`, `\bpectin`, `\bgoni`,
-# `\blobo`, `\banacro`) catch genus + its vendor abbreviation in one term
-# (`\bmonti` = montipora + "Monti"); the SPS abbreviations were the single
-# biggest uncaught bucket (Cornbred/BattleCorals "...Milli / ...Monti / ...Digi /
-# ...Acro / ...Stylo"). 0 named-coral collisions; CTK-189 reverse-guard intact.
+# `\bmonti`, `\bstylo`, `\bscoly`, `\bgoni`, `\blobo`, `\banacro`) catch genus +
+# its vendor abbreviation in one term (`\bmonti` = montipora + "Monti"); the SPS
+# abbreviations were the single biggest uncaught bucket (Cornbred/BattleCorals
+# "...Milli / ...Monti / ...Digi / ...Acro / ...Stylo").
+#
+# /code-review fold (CTK-194 close): the abbreviations whose prefix collides with
+# a common English / equipment word are WHOLE-WORD anchored, not open-prefixed —
+# the same substring trap CTK-186 fixed (`\bpump`->"Pumpkin"). `\bdigi\b` (not
+# `\bdigi` -> "digital"), `\bmilli\b`/`\bmillie` (not `\bmilli` -> "milliliter/
+# millimeter"; `\bmillie` keeps the "Millie" Millepora diminutive, which is not a
+# milliliter prefix), `\bacro\b` (not `\bacro` -> "across/acrobat"), and
+# `\bpectinia\b|\bpectina\b` (not `\bpectin` -> the food additive). sps is checked
+# before equipment, so an open prefix would have tagged "Digital Controller" sps
+# -> a coral category that slips the CTK-186 equipment feed-exclusion. The full
+# genus each abbreviation implied is now explicit (`\bdigitata\b`, `\bmillepora\b`;
+# `\bacropora\b` was already present). Real Acro-/Millie-prefix coral trade names
+# (Acroiris, Acroberry, "Pink Millie") stay sps via their product_type/tags, so
+# the whole-word title anchors cost ~0 real rows (confirmed in the close DRY
+# reconcile). 0 named-coral collisions; CTK-189 reverse-guard intact.
 _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("chalice",  re.compile(r"\bchalices?\b|\bechinophyllia\b|\bmycedium\b|\boxypora\b", re.I)),
     ("anemone",  re.compile(r"\banemones?\b|\bbta\b|\brbta\b|\bcondy\b", re.I)),
@@ -76,8 +90,8 @@ _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("mushroom", re.compile(r"\bmushrooms?\b|\brhodactis\b|\bdiscosoma\b|\bricordea\b", re.I)),
     ("zoa",      re.compile(r"\bzoa(?:nthid)?s?\b|\bpaly", re.I)),
     ("softie",   re.compile(r"\bsofties?\b|\bsofty\b|\bleather\b|\btoadstool\b|\bkenya\b|\bsinularia\b|\bsarcophyton\b|\bcloves?\b|\bgorgonian|\bxenia\b|\bcespitularia\b|\bstar\s+polyps?\b", re.I)),
-    ("sps",      re.compile(r"\bsps\b|\bacropora\b|\bmontipora\b|\bstylophora\b|\bseriatopora\b|\bpocillopora\b|\bmonti|\bacro|\bmilli|\bdigi|\bstylo|\banacro|\bpsammocora\b|\bbirds?\s*nest\b", re.I)),
-    ("lps",      re.compile(r"\blps\b|\beuphyllia\b|\btorch\b|\bhammer\b|\bfrogspawn\b|\bacanthophyllia\b|\btrachyphyllias?\b|\bcynarina\b|\bsymphyllia\b|\bfavia\b|\bfavites\b|\bmicromussa\b|\bacan\b|\bacantho|\bblasto|\bduncan|\blobo|\bscoly|\bpectin|\bfungia|\bbowerbanki\b|\bgoni|\balveopora\b|\bgalaxea\b|\belegance\b|\baustralomussa\b|\bleptoseris\b|\bleptastrea\b|\bcyphastrea\b|\bcaulastrea\b|\bcandy\s+cane\b", re.I)),
+    ("sps",      re.compile(r"\bsps\b|\bacropora\b|\bmontipora\b|\bstylophora\b|\bseriatopora\b|\bpocillopora\b|\bmonti|\bacro\b|\bmilli\b|\bmillie|\bmillepora\b|\bdigi\b|\bdigitata\b|\bstylo|\banacro|\bpsammocora\b|\bbirds?\s*nest\b", re.I)),
+    ("lps",      re.compile(r"\blps\b|\beuphyllia\b|\btorch\b|\bhammer\b|\bfrogspawn\b|\bacanthophyllia\b|\btrachyphyllias?\b|\bcynarina\b|\bsymphyllia\b|\bfavia\b|\bfavites\b|\bmicromussa\b|\bacan\b|\bacantho|\bblasto|\bduncan|\blobo|\bscoly|\bpectinia\b|\bpectina\b|\bfungia|\bbowerbanki\b|\bgoni|\balveopora\b|\bgalaxea\b|\belegance\b|\baustralomussa\b|\bleptoseris\b|\bleptastrea\b|\bcyphastrea\b|\bcaulastrea\b|\bcandy\s+cane\b", re.I)),
     ("fish",     re.compile(r"\bfish\b|\bwrasse\b|\btang\b|\bgoby\b|\bclownfish\b|\bblenny\b", re.I)),
     ("invert",   re.compile(r"\bsnails?\b|\bshrimp\b|\bcrabs?\b|\burchin\b|\bstarfish\b|\bcucumber\b", re.I)),
     ("equipment",re.compile(r"\bpumps?\b|\bskimmers?\b|\breactors?\b|\bheaters?\b|\bcontrollers?\b|\bfilters?\b", re.I)),
