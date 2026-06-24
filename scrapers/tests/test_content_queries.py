@@ -336,7 +336,13 @@ class _FakeConn:
 
     def _dispatch(self, sql, params):
         if "get_listing_lead_event" in sql:
-            return self._rows
+            # Honor the event_filter (3rd positional arg) like the real RPC: a caller
+            # scoped to ['just-listed'] (count_new_arrivals) must NOT see restock rows
+            # from a mixed fixture, else the count-up N silently over-counts.
+            event_filter = params[2] if params and len(params) > 2 else None
+            if event_filter is None:
+                return self._rows
+            return [r for r in self._rows if r.get("event") in event_filter]
         if "scraper_runs" in sql:
             ids = (params[0] if params else []) or []
             return [
@@ -472,8 +478,11 @@ def test_f7_dedupes_on_coral_and_spreads_vendors():
 
 # ---------------------------------------------------------------------------
 # CTK-191 — F7 arrivals honest-count guard (cold-start + bulk-relist exclusion).
-# Each test fails if its guard mechanism is removed (non-tautological): the
-# asserted count differs from the unguarded population count.
+# The two EXCLUSION tests (cold-start, bulk-relist) are removal-detectors: the
+# asserted count differs from the unguarded population, so deleting the mechanism
+# fails the test (non-tautological). The other two are the complementary guards —
+# genuine-low proves NO over-correction (the guard must not trim real arrivals),
+# restock proves the guard's SCOPE (it touches the just-listed arm only).
 # ---------------------------------------------------------------------------
 
 
@@ -542,6 +551,40 @@ def test_f7_restock_arm_passes_through_guard():
     assert true_count == 90                       # all restocks survive
     assert composition == "all-restocks"
     assert len(items) == 9                         # sample capped, population intact
+
+
+def test_count_new_arrivals_excludes_restocks_via_event_filter():
+    # count_new_arrivals queries event_filter=['just-listed']; the fake honors it (as
+    # the real RPC does), so a MIXED fixture yields the arrival count only — restocks
+    # are a different card and must not inflate the count-up N. select_f7_arrivals
+    # (both arms) counts all three. Removing the event_filter honoring -> N == 3.
+    rows = [
+        _le_row("just-listed", id=1, coral_id=1, vendor_id=10),
+        _le_row("just-listed", id=2, coral_id=2, vendor_id=10),
+        _le_row("back-in-stock", id=3, coral_id=3, vendor_id=10),
+    ]
+    conn = _FakeConn(rows)
+    assert count_new_arrivals(conn) == 2          # restock not counted
+    assert select_f7_arrivals(conn)[0] == 3        # both arms in the cover population
+
+
+def test_f7_cohort_buckets_on_first_seen_at_not_event_at():
+    # Production rows carry BOTH first_seen_at and event_at; _arrival_day prefers
+    # first_seen_at (the appearance day). 90 rows share ONE first_seen_at day but have
+    # event_at scattered across 9 days. Bucketed on first_seen_at they are a single
+    # 90-cohort (> ABS_FLOOR -> excluded); bucketed on event_at they would split into
+    # 9 cohorts of 10 (each under floor -> all survive). true_count == 0 proves the
+    # cohort key is first_seen_at, exercising the production-primary _arrival_day path.
+    one_day = datetime(2026, 6, 21, 10, 0, tzinfo=timezone.utc)
+    rows = []
+    for i in range(90):
+        r = _le_row("just-listed", id=4000 + i, coral_id=4000 + i, vendor_id=40,
+                    at=f"2026-06-{1 + (i % 9):02d}T00:00:00Z")   # event_at across 9 days
+        r["first_seen_at"] = one_day                              # ... but one first_seen day
+        rows.append(r)
+    conn = _FakeConn(rows, daily={40: [1] * 15})
+    true_count, _, _ = select_f7_arrivals(conn)
+    assert true_count == 0                          # single first_seen_at cohort excluded
 
 
 def test_f9_single_vendor_returns_none():

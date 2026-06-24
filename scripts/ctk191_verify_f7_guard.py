@@ -78,7 +78,7 @@ def main() -> int:
                 print(f"  {slugs.get(vid, vid):<22} {str(day):<12} {len(group):>5}   {_verdict(key, group)}")
 
             # The guarded outcome (the production path both call-sites take).
-            report = cq._guard_arrivals(conn, raw)
+            report = cq._guard_arrivals(conn, raw, WINDOW_H)
             guarded_arr = sum(1 for r in report.kept if r["event"] == _ARM)
             true_count, composition, items = cq.select_f7_arrivals(conn)
             count_n = cq.count_new_arrivals(conn)

@@ -1,13 +1,20 @@
-"""CTK-169 — point-in-time C2 reconciliation EVIDENCE (not a regression guard).
+"""CTK-169 — point-in-time /new-week vs F7-cover EVIDENCE (not a regression guard).
 
-Captured 2026-06-17 to prove /new?window=week reconciles to the F7 IG cover
-count at close: rendered week count == F7 true_count (936==936), matched +
-unmatched both present, uncapped. This script RECONSTRUCTS the week-branch SQL
-(get_listing_lead_event(NULL, 168, ['just-listed','back-in-stock'], NULL),
-uncapped) — it does NOT import or exercise getRecentArrivals, so it will not
-catch a future drift in the TS query wrapper. It is evidence, not a test; the
-durable record lives in CTK-169 results.md + the index row. Counts move with the
-live catalog, so re-runs return today's numbers, not the captured 936.
+Captured 2026-06-17 to prove /new?window=week reconciled to the F7 IG cover count
+at close (rendered week count == F7 true_count, 936==936, matched + unmatched both
+present, uncapped). This script RECONSTRUCTS the week-branch SQL — it does NOT
+import getRecentArrivals, so it never guarded the TS wrapper. It is evidence, not a
+test; the durable record lives in CTK-169 results.md.
+
+CTK-191 INTENTIONALLY RETIRED the feed==cover invariant (2026-06-24). The F7 cover
+true_count is now the GUARDED honest count (cold-start backfill + bulk-relist
+re-index excluded); the /new?window=week feed still serves the UNGUARDED population.
+So the two counts now diverge BY DESIGN, and the gap equals the CTK-191 exclusion
+total. This script is rewritten to REPORT that divergence (not fail on it) and to
+sanity-check the one direction that must still hold: guarded cover <= unguarded feed.
+The cross-surface reconciliation (whether the site week-feed should hide backfill
+too, and the now-stale comment at lib/queries/listings.ts:905-907) is the routed
+website-week-feed follow-up (/lead-frontend).
 
 Run: PYTHONPATH=. .venv/bin/python scripts/ctk169_verify.py
 """
@@ -18,13 +25,12 @@ from scrapers.tools import content_queries as cq
 
 def main() -> None:
     with db.get_conn() as conn:
-        # The F7 cover's honest count — len of the UNCAPPED arrivals+restocks
-        # population over 168h (content_queries.select_f7_arrivals).
+        # The F7 cover's GUARDED honest count (CTK-191) — uncapped arrivals+restocks
+        # over 168h, minus cold-start + bulk-relist artifacts.
         f7_true_count, composition, items = cq.select_f7_arrivals(conn)
 
-        # The exact SQL getRecentArrivals('newest', null, 'week') issues through
-        # orderedEventRows' bare branch (newest + no category): same RPC args as
-        # F7, ladder-ordered, UNCAPPED (cap=undefined -> LIMIT NULL).
+        # The exact SQL getRecentArrivals('newest', null, 'week') issues — same RPC
+        # args as the F7 population but UNGUARDED (no CTK-191 exclusion), uncapped.
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -47,30 +53,35 @@ def main() -> None:
     feed_count = len(week_rows)
     matched = sum(1 for r in week_rows if r["named_coral_id"] is not None)
     unmatched = feed_count - matched
+    excluded = feed_count - f7_true_count
 
-    print(f"F7 cover true_count (168h, uncapped):   {f7_true_count}")
-    print(f"/new?window=week rendered row count:    {feed_count}")
+    print(f"F7 cover true_count (168h, GUARDED):    {f7_true_count}")
+    print(f"/new?window=week rendered row count:    {feed_count}  (UNGUARDED)")
+    print(f"  CTK-191 cover-vs-feed gap (excluded): {excluded}  (cold-start + bulk-relist)")
     print(f"  composition: {composition}  |  F7 sample items (capped<=9): {len(items)}")
     print(f"  matched (named_coral): {matched}   unmatched: {unmatched}")
     print(f"day-feed population (24h, all events):  {day_pop}  (contrast — not week)")
 
     ok = True
-    if feed_count != f7_true_count:
-        print(f"FAIL: feed count {feed_count} != F7 true_count {f7_true_count}")
+    # The retired invariant was feed == cover. The surviving sanity check: the
+    # guarded cover can only ever be a SUBSET of the unguarded feed, never larger.
+    if f7_true_count > feed_count:
+        print(f"FAIL: guarded cover {f7_true_count} > unguarded feed {feed_count} — impossible.")
         ok = False
     if matched == 0 or unmatched == 0:
         print(
-            f"FAIL: expected matched AND unmatched present "
+            f"FAIL: expected matched AND unmatched present in the feed "
             f"(matched={matched}, unmatched={unmatched})"
         )
         ok = False
-    if feed_count <= 9:
+    if excluded > 0:
         print(
-            "WARN: feed count <= F7 sample_cap (9) — reconciliation holds but the "
-            "uncapped-vs-sample distinction is untested at this volume."
+            "NOTE: cover < feed by the exclusion total — the intended CTK-191 "
+            "divergence. Cross-surface reconciliation is the routed /lead-frontend "
+            "website-week-feed follow-up."
         )
 
-    print("PASS — week feed reconciles to F7 cover, uncapped, both classes present."
+    print("PASS — guarded cover is a subset of the feed; CTK-191 divergence reported."
           if ok else "VERIFY FAILED — see above.")
     raise SystemExit(0 if ok else 1)
 

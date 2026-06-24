@@ -32,6 +32,8 @@ fetch_* wrappers are the I/O shell (read-only; never close the caller's conn).
 from __future__ import annotations
 
 import logging
+import math
+import statistics
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -796,17 +798,12 @@ def fetch_trailing_daily_arrivals(conn, trailing_days: int = BULK_SPIKE_TRAILING
 
 
 def _median(values: list[int]) -> float:
-    """Median of a value list; empty -> 0.0. Pure (the bulk-spike baseline stat).
-    Median over mean so a single re-index day in the trailing window can't drag the
-    baseline up and mask itself."""
-    if not values:
-        return 0.0
-    s = sorted(values)
-    n = len(s)
-    mid = n // 2
-    if n % 2:
-        return float(s[mid])
-    return (s[mid - 1] + s[mid]) / 2.0
+    """Median of a value list; empty -> 0.0 (statistics.median raises on empty — the
+    only reason this wraps it rather than calling it inline, mirroring
+    health_digest.py's `statistics.median(...) if ... else 0`). Median over mean so a
+    single re-index day in the trailing window can't drag the baseline up and mask
+    itself."""
+    return float(statistics.median(values)) if values else 0.0
 
 
 def _arrival_day(row: dict):
@@ -855,14 +852,18 @@ class ArrivalGuardReport:
     bulk_excluded: dict
 
 
-def _guard_arrivals(conn, rows: list[dict]) -> ArrivalGuardReport:
+def _guard_arrivals(conn, rows: list[dict], window_hours: int = 168) -> ArrivalGuardReport:
     """Apply the CTK-191 honest-count guard to an F7 lead-event population. Splits
     the just-listed arm (guarded) from every other arm (restocks — passed through
     untouched), runs the cold-start exclusion then the bulk-spike exclusion over the
     just-listed rows, and returns the filtered population + a drop report. The SINGLE
     filter both count call-sites route through (select_f7_arrivals' true_count and
     count_new_arrivals' N), so the cover count, the count-up N, the composition, and
-    the items sample all derive from ONE coherent filtered set."""
+    the items sample all derive from ONE coherent filtered set.
+
+    window_hours is the caller's lead-event window; it CLAMPS the trailing baseline so
+    the baseline always covers at least the cohort span (see below). Default 168h (the
+    F7 week) keeps the 30-day base unchanged."""
     just_listed = [r for r in rows if r.get("event") == _F7_ARRIVAL_EVENT]
     passthrough = [r for r in rows if r.get("event") != _F7_ARRIVAL_EVENT]
 
@@ -872,10 +873,15 @@ def _guard_arrivals(conn, rows: list[dict]) -> ArrivalGuardReport:
     for r in just_listed:
         (cold_start if anchors.get(r["id"]) is None else warm).append(r)
 
-    # Mechanism 2 — bulk re-index exclusion over the warm cohort.
+    # Mechanism 2 — bulk re-index exclusion over the warm cohort. Clamp the trailing
+    # baseline to cover the cohort window: a cohort day older than the baseline's reach
+    # would be tested against a baseline that doesn't include its era, so a genuine
+    # busy day could read as a re-index — the one way the guard could UNDER-count real
+    # arrivals. trailing >= ceil(window_hours/24) closes that; default 168h -> 30d.
     excluded: dict = {}
     if warm:
-        medians = {v: _median(c) for v, c in fetch_trailing_daily_arrivals(conn).items()}
+        trailing_days = max(BULK_SPIKE_TRAILING_DAYS, math.ceil(window_hours / 24))
+        medians = {v: _median(c) for v, c in fetch_trailing_daily_arrivals(conn, trailing_days).items()}
         excluded = _bulk_spike_excluded_cohorts(warm, medians)
     surviving = [r for r in warm if (r["vendor_id"], _arrival_day(r)) not in excluded]
 
@@ -923,7 +929,7 @@ def count_new_arrivals(conn, window_hours: int = 168) -> int:
             (None, window_hours, [_F7_ARRIVAL_EVENT], None),
         )
         rows = cur.fetchall()
-    return len(_guard_arrivals(conn, rows).kept)
+    return len(_guard_arrivals(conn, rows, window_hours).kept)
 
 
 def select_f7_arrivals(conn, window_hours: int = 168, sample_cap: int = 9):
@@ -954,7 +960,7 @@ def select_f7_arrivals(conn, window_hours: int = 168, sample_cap: int = 9):
             (None, window_hours, [_F7_ARRIVAL_EVENT, _F7_RESTOCK_EVENT], None),
         )
         rows = cur.fetchall()
-    rows = _guard_arrivals(conn, rows).kept   # CTK-191 honest-count guard (cold-start + bulk-relist)
+    rows = _guard_arrivals(conn, rows, window_hours).kept   # CTK-191 honest-count guard (cold-start + bulk-relist)
     true_count = len(rows)
     composition = _f7_composition(rows)
     eligible = [r for r in rows if is_surface_b_card_eligible(r)]
