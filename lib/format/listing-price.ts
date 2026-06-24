@@ -14,9 +14,12 @@ import type { DataRowFieldValue } from '@/components/ui/data-row';
 import type { Listing } from '@/lib/queries/listings';
 
 // Auction rows carry currentPrice === null (parse-side null-out) →
-// "price on request".
+// "price on request". Exported as the single token so other surfaces (the
+// /guides market line's price-on-request state, CTK-187) reuse it rather than
+// re-minting the string.
+export const PRICE_ON_REQUEST = 'price on request';
 function formatPrice(value: number | null): string {
-  if (value === null) return 'price on request';
+  if (value === null) return PRICE_ON_REQUEST;
   return `$${value.toFixed(2)}`;
 }
 

@@ -159,30 +159,25 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
   // rendered-row count, so the toggled-on view of an all-OOS set also reads
   // "Currently out of stock."
   //
-  // oosVendorCount is now a STATE-FORK signal only — isAllOOS forks on it (an
-  // all-OOS set with in-window carriers vs. a truly-not-listed coral). It is no
-  // longer rendered: post-CTK-187 the all-OOS eyebrow is the bare state word,
-  // not "{N} VENDORS · ALL OUT OF STOCK" (the carrier count read as present-tense
-  // availability beside an empty default buy-view — Tier-1B). The fork still
-  // needs "are there in-window OOS carriers at all?": rendered rows when toggled
-  // on, the stock-unfiltered count query when the default view excludes them
-  // (separate cheap signal, do NOT widen the default availability query). The
-  // count fires unconditionally in the Promise.all above; its value is consumed
-  // only on the innermost leaf (no in-stock row AND zero rendered rows).
-  const hasInStockRow = listings.some((l) => l.inStock);
-  const oosVendorCount = hasInStockRow
-    ? 0
-    : hasListings
-      ? new Set(listings.map((l) => l.vendorSlug)).size
-      : inWindowVendorCount;
-  const isAllOOS = !hasInStockRow && oosVendorCount > 0;
-
   // Populated-arm count = distinct IN-STOCK vendors (CTK-187), not the listing-
   // row count: three in-stock frags from one shop read "1 VENDOR". The inStock
   // filter is load-bearing on the toggled-on view, where listings carries OOS
-  // rows the count must exclude. Shared helper so #1 (here) and #2 (the
-  // /guides market line) cannot drift on the in-stock rule.
+  // rows the count must exclude. Shared helper so #1 (here) and #2 (the /guides
+  // market line) cannot drift on the in-stock rule. hasInStockRow derives from
+  // this single predicate so an in-stock-rule edit can't diverge the eyebrow
+  // count from the sectionHeader fork (/code-review #3).
   const inStockVendorCount = distinctInStockVendorCount(listings);
+  const hasInStockRow = inStockVendorCount > 0;
+
+  // all-OOS fork: no in-stock vendor, but in-window carriers exist (a state-fork
+  // boolean, no longer a rendered count — post-CTK-187 the all-OOS eyebrow is the
+  // bare state word, not "{N} VENDORS · ALL OUT OF STOCK"). "Carriers exist" =
+  // rendered OOS rows on the ?include-oos=1 view (hasListings while !hasInStockRow
+  // ⟺ a toggled-on all-OOS set) OR the stock-unfiltered in-window count on the
+  // default view (separate cheap signal — do NOT widen the default availability
+  // query). The old oosVendorCount integer was consumed only as > 0, so it
+  // collapsed to this boolean (/code-review #4).
+  const isAllOOS = !hasInStockRow && (hasListings || inWindowVendorCount > 0);
 
   const sectionHeader = hasInStockRow
     ? 'Currently available.'
