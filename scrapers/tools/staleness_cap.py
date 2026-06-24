@@ -61,6 +61,29 @@ from scrapers.common import db
 
 DEFAULT_DAYS = 21
 
+
+def _positive_int(raw: str) -> int:
+    """argparse type for --days: reject non-positive input.
+
+    A zero or negative N inverts make_interval(days => N), so the cap
+    predicate's `last_seen_at < now() - interval` flips to matching present /
+    future rows and mass-flips in_stock=false fleet-wide. Harmless under the
+    dry-run default, but load-bearing once this runs --apply UNATTENDED on cron
+    (CTK-190) — that is exactly where a fat-fingered or env-injected --days
+    bites with no eyeball to catch it. argparse turns the ArgumentTypeError
+    into a parser.error() exit(2) during parse_args(), before any DB
+    connection opens, so a bad value can never reach the UPDATE.
+    """
+    try:
+        n = int(raw)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"--days must be an integer, got {raw!r}")
+    if n < 1:
+        raise argparse.ArgumentTypeError(
+            f"--days must be a positive integer (>= 1), got {n}"
+        )
+    return n
+
 # The cap predicate, shared verbatim between the candidate SELECT and the
 # UPDATE so the dry-run preview can never diverge from what --apply flips.
 _PREDICATE = (
@@ -78,8 +101,9 @@ def main() -> int:
     )
     ap.add_argument("--apply", action="store_true",
                     help="perform the flip (default: dry run, no writes)")
-    ap.add_argument("--days", type=int, default=DEFAULT_DAYS,
-                    help=f"staleness threshold in days (default: {DEFAULT_DAYS})")
+    ap.add_argument("--days", type=_positive_int, default=DEFAULT_DAYS,
+                    help=f"staleness threshold in days, positive int "
+                         f"(default: {DEFAULT_DAYS})")
     args = ap.parse_args()
 
     mode = "APPLY" if args.apply else "DRY RUN"
