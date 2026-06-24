@@ -301,13 +301,15 @@ def test_category_inference(products):
     enum: ('sps','lps','softie','zoa','mushroom','anemone','clam','chalice',
     'fish','invert','equipment','other'). First-hit wins; more specific
     before generic. JF's product_type carries the heavy signal ('SPS', 'LPS'
-    match \\bsps\\b / \\blps\\b directly); WYSIWYG-bucketed titles like 'ACRO'
-    abbreviation don't match the full-word patterns ('acropora') so they fall
-    through to None — accurate parse-layer reflection of current shape."""
+    match \\bsps\\b / \\blps\\b directly). CTK-194: WYSIWYG-bucketed titles whose
+    only signal is a JF abbreviation ('ACRO') now MATCH — the coverage-add gave
+    sps the `\\bacro` prefix anchor. Genera still absent from the patterns
+    ('Porites') legitimately stay None — the residual tail the matcher §3 +
+    named-coral seed-load resolve at Phase 3."""
     sps_coral = _by_title(products, "JF BLOODY SUNRISE MONTIPORA")  # product_type=SPS
     lps_coral = _by_title(products, "JASON FOX FIREWATER HYDNOPHORA")  # product_type=LPS
-    wysiwyg_acro = _by_title(products, "JF AUTUMN BLAZE ACRO")  # product_type=WYSIWYG; title abbrev 'ACRO' misses
-    bare_porites = _by_title(products, "SPECIAL PORITES")  # WYSIWYG; 'Porites' not in patterns
+    wysiwyg_acro = _by_title(products, "JF AUTUMN BLAZE ACRO")  # WYSIWYG; CTK-194 \bacro now matches
+    bare_porites = _by_title(products, "SPECIAL PORITES")  # WYSIWYG; 'Porites' still not in patterns
 
     assert _normalize(sps_coral)["category"] == "sps", (
         f"SPS product_type should match sps; got {_normalize(sps_coral)['category']!r}"
@@ -315,13 +317,14 @@ def test_category_inference(products):
     assert _normalize(lps_coral)["category"] == "lps", (
         f"LPS product_type should match lps; got {_normalize(lps_coral)['category']!r}"
     )
-    # WYSIWYG bucket + JF abbreviation titles = no category match — honest
-    # reflection of current parse layer; matcher §3 + named-coral seed-load
-    # are the real category-resolution path at Phase 3.
-    assert _normalize(wysiwyg_acro)["category"] is None, (
-        f"WYSIWYG product_type + 'ACRO' abbrev title should miss patterns; "
+    # CTK-194: the 'ACRO' abbreviation title now resolves to sps via \bacro —
+    # this was the exact POTO/Cornbred/JF coverage gap the ticket closed. Fails
+    # if \bacro is removed from the sps pattern.
+    assert _normalize(wysiwyg_acro)["category"] == "sps", (
+        f"CTK-194: WYSIWYG product_type + 'ACRO' abbrev should now match sps; "
         f"got {_normalize(wysiwyg_acro)['category']!r}"
     )
+    # 'Porites' is not in the patterns — the legitimate residual NULL tail.
     assert _normalize(bare_porites)["category"] is None, (
         f"WYSIWYG product_type + 'Porites' (not in patterns) should miss; "
         f"got {_normalize(bare_porites)['category']!r}"
