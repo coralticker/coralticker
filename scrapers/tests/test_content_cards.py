@@ -15,6 +15,7 @@ Pure: no DB, no browser. Runnable as:
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -24,10 +25,30 @@ from scrapers.tools import content_cards as cc
 
 # --- a canned-row conn, mirroring test_content_queries._FakeConn ------------
 
+# A warm anchor sentinel — any non-None prior_run_finished_at means "we watched it
+# appear" (not cold-start). The CTK-191 F7 guard only checks None vs not-None.
+_WARM_ANCHOR = datetime(2000, 1, 1, tzinfo=timezone.utc)
+
+
+def _guard_dispatch(sql, params):
+    """No-op response for the CTK-191 F7 guard's two side queries, so a canned-row
+    conn answers select_f7_arrivals' FULL query set (lead-event + cold-start anchor
+    + trailing baseline): every just-listed row reads warm (not cold-start) and
+    there is no trailing baseline (threshold falls to the ABS_FLOOR), making the
+    guard a no-op over these orchestration fixtures. Returns None when `sql` is not
+    a guard query — the caller falls back to its own canned rows."""
+    if "scraper_runs" in sql:                        # fetch_arrival_anchors
+        ids = (params[0] if params else []) or []
+        return [{"id": i, "prior_run_finished_at": _WARM_ANCHOR} for i in ids]
+    if "first_seen_at" in sql:                        # fetch_trailing_daily_arrivals
+        return []
+    return None
+
 
 class _FakeCursor:
     def __init__(self, rows):
         self._rows = rows
+        self._result = rows
 
     def __enter__(self):
         return self
@@ -36,10 +57,14 @@ class _FakeCursor:
         return False
 
     def execute(self, sql, params=None):
-        self._sql = sql
+        guard = _guard_dispatch(sql, params)
+        self._result = self._rows if guard is None else guard
 
     def fetchall(self):
-        return self._rows
+        return self._result
+
+    def fetchone(self):
+        return self._result[0] if self._result else None
 
 
 class _FakeConn:
@@ -72,6 +97,10 @@ class _DispatchCursor:
         return False
 
     def execute(self, sql, params=None):
+        guard = _guard_dispatch(sql, params)          # CTK-191 anchor / trailing no-op
+        if guard is not None:
+            self._rows = guard
+            return
         for fn, fmt in _SQL_KEY.items():
             if fn in sql:
                 self._rows = self._by_format.get(fmt, [])
@@ -80,6 +109,9 @@ class _DispatchCursor:
 
     def fetchall(self):
         return self._rows
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
 
 
 class _MultiConn:
