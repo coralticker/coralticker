@@ -106,6 +106,29 @@ def test_acantho_does_not_catch_tang_fish():
     assert infer_category(_p("Acanthurus Tang", product_type="Fish")) == "fish"
 
 
+def test_abbreviation_prefixes_are_whole_word_anchored():
+    # /code-review fold: the abbreviations whose prefix collides with a common
+    # English / equipment word are whole-word anchored (the CTK-186 \bpump ->
+    # "Pumpkin" trap). sps is checked before equipment, so an open prefix would
+    # tag an equipment item a coral category and slip the feed exclusion.
+    # Equipment items must NOT become sps:
+    assert infer_category(_p("Neptune Apex Digital Controller")) == "equipment"  # \bdigi\b not \bdigi
+    assert infer_category(_p("Digital Refractometer")) is None                   # 'digital' alone -> not sps
+    assert infer_category(_p("5 milliliter Coral Dose Cup")) is None             # \bmilli\b not \bmilli
+    assert infer_category(_p("100 millimeter Acrylic Tube")) is None             # 'millimeter' -> not sps
+    assert infer_category(_p("Frags Across the Board Sale")) is None             # \bacro\b not \bacro
+    assert infer_category(_p("Apple Pectin Powder")) is None                     # 'pectin' additive -> not lps
+    # ...but the real abbreviations + full genera still classify:
+    assert infer_category(_p("Cornbred's Blue Digi")) == "sps"        # \bdigi\b (standalone abbrev)
+    assert infer_category(_p("Green Digitata Colony")) == "sps"       # \bdigitata\b
+    assert infer_category(_p("Cornbred's Creamsicle Milli")) == "sps"  # \bmilli\b
+    assert infer_category(_p("POTO Pink Millie")) == "sps"           # \bmillie (Millepora diminutive)
+    assert infer_category(_p("Red Millepora")) == "sps"              # \bmillepora\b
+    assert infer_category(_p("Cornbred's Green Slimer Acro")) == "sps"  # \bacro\b
+    assert infer_category(_p("Space Invader Pectina")) == "lps"        # \bpectina\b
+    assert infer_category(_p("Rose Gold Pectinia")) == "lps"           # \bpectinia\b
+
+
 def test_reverse_guard_survives_coverage_add():
     # CTK-189 reverse-guard must still fire after the CTK-194 adds: a coral-word
     # title carrying a non-coral marker reroutes to equipment.
