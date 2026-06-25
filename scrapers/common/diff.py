@@ -14,6 +14,7 @@ from typing import Iterable, Literal
 
 import psycopg
 
+from scrapers.common import bulk_cluster
 from scrapers.common import images as image_pipeline
 from scrapers.common.matcher import MatchResult
 
@@ -545,6 +546,43 @@ def persist_phase_a(
                         "VALUES (%s, %s, %s, %s)",
                         history_rows,
                     )
+
+    # CTK-198 — bulk_cluster write-time hook. AFTER the persist transaction
+    # (autocommit), best-effort: recompute this vendor's (vendor_id,
+    # first_seen_at) cohorts and flip bulk_cluster false->true for any that
+    # crossed BULK_CLUSTER_MIN this run. Vendor-scoped (only this run's vendor
+    # can have gained rows) + monotonic false->true (the cohort key is immutable,
+    # mirroring the is_auction discipline at L357-368). bulk_cluster is
+    # deliberately OUT of _UPSERT_ALLOWED_COLS and the unchanged-row touch path —
+    # it is a post-UPSERT derived flag, not a parser field.
+    #
+    # Best-effort by design: a missed flip self-heals at the nightly full-catalog
+    # audit (scrapers/tools/bulk_cluster_audit.py), so a failure here must NOT
+    # fail the scrape (Phase A already defined success when the transaction
+    # committed above). Errors if the bulk_cluster column is absent — deploy this
+    # only after migration 0056 is applied (CTK-198 apply-order).
+    #
+    # Runs ONLY when this scrape persisted NEW listings: a (vendor_id,
+    # first_seen_at) cohort can only grow when new rows land (first_seen_at is
+    # immutable, so price_changed/restocked/oos/unchanged decisions never change
+    # cohort membership). Gating on a new decision also preserves the
+    # "empty decisions = zero writes" contract (test_canary_gates_persist.py
+    # test_persist_phase_a_empty_decisions_no_writes).
+    if any(d.decision == "new" for d in decisions):
+        try:
+            flipped = bulk_cluster.flip_new_bulk_clusters(conn, vendor_id)
+            if flipped:
+                log.info(
+                    "CTK-198 bulk_cluster: flipped %d row(s) for vendor_id=%s "
+                    "(cohort crossed %d) — single-timestamp dump tagged.",
+                    flipped, vendor_id, bulk_cluster.BULK_CLUSTER_MIN,
+                )
+        except Exception as exc:  # noqa: BLE001 — best-effort; nightly audit self-heals
+            log.warning(
+                "CTK-198 bulk_cluster write-time hook failed for vendor_id=%s "
+                "(%s: %s) — nightly audit will reconcile.",
+                vendor_id, type(exc).__name__, exc,
+            )
 
     log.info(
         "Phase A complete: %d upserts + %d touches + %d cohort-oos + %d history rows; %d Phase B mirrors queued",

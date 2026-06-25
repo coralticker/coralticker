@@ -34,6 +34,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from scrapers.common.bulk_cluster import BULK_CLUSTER_MIN  # CTK-198 — single-source N
+
 _LOG = logging.getLogger(__name__)
 
 # Mirrored-image host — the single LIGHT source for the IG image gate, shared by
@@ -720,6 +722,7 @@ class ArrivalGuardReport:
     kept: list
     cold_start_dropped: list
     bulk_excluded: dict
+    bulk_cluster_dropped: list  # CTK-198 — persisted single-timestamp-dump rows
 
 
 def _guard_arrivals(conn, window_hours: int = 168, event_filter: list[str] | None = None) -> ArrivalGuardReport:
@@ -748,6 +751,10 @@ def _guard_arrivals(conn, window_hours: int = 168, event_filter: list[str] | Non
     # the selector + _card_item read by named key, so the extra columns are ignored.
     kept = [r for r in rows if r["guard_disposition"] == "kept"]
     cold_start = [r for r in rows if r["guard_disposition"] == "cold_start"]
+    # CTK-198 — the persisted bulk_cluster disposition (single-timestamp batch
+    # dumps the median-relative bulk_relist arm misses). Orthogonal to bulk_excluded
+    # (which reconstructs the median-relative bulk_relist cohort map below).
+    bulk_cluster = [r for r in rows if r["guard_disposition"] == "bulk_cluster"]
 
     # Reconstruct the bulk-relist cohort map ({(vendor_id, day): {count, threshold,
     # median}}) from the per-row tags — the function stamps bulk_threshold/bulk_median
@@ -764,24 +771,36 @@ def _guard_arrivals(conn, window_hours: int = 168, event_filter: list[str] | Non
         )
         info["count"] += 1
 
-    _log_arrival_drops(cold_start, bulk_excluded)
+    _log_arrival_drops(cold_start, bulk_excluded, bulk_cluster)
     return ArrivalGuardReport(
         kept=kept,
         cold_start_dropped=cold_start,
         bulk_excluded=bulk_excluded,
+        bulk_cluster_dropped=bulk_cluster,
     )
 
 
-def _log_arrival_drops(cold_start: list[dict], excluded: dict) -> None:
+def _log_arrival_drops(cold_start: list[dict], excluded: dict,
+                       bulk_cluster: list[dict] | None = None) -> None:
     """Emit one loud line per re-index cohort dropped + one summary line for the
-    cold-start backfill — what the guard removed and why, so an operator reading the
-    content-build log sees the corrected count's provenance (CTK-191)."""
+    cold-start backfill + one for the persisted bulk_cluster dumps — what the guard
+    removed and why, so an operator reading the content-build log sees the corrected
+    count's provenance (CTK-191 + CTK-198)."""
     for key, info in sorted(excluded.items(), key=lambda kv: (-kv[1]["count"], str(kv[0]))):
         vendor_id, day = key
         _LOG.info(
             "CTK-191 bulk-relist guard: excluded vendor_id=%s day=%s cohort=%d "
             "(threshold=%.0f, median=%.1f) — re-index dump, not organic arrivals.",
             vendor_id, day, info["count"], info["threshold"], info["median"],
+        )
+    if bulk_cluster:
+        by_vendor: dict = {}
+        for r in bulk_cluster:
+            by_vendor[r["vendor_id"]] = by_vendor.get(r["vendor_id"], 0) + 1
+        _LOG.info(
+            "CTK-198 bulk_cluster guard: excluded %d just-listed row(s) %s — "
+            "single-timestamp batch dump (cohort >= %d), persisted flag.",
+            len(bulk_cluster), dict(sorted(by_vendor.items())), BULK_CLUSTER_MIN,
         )
     if cold_start:
         by_vendor: dict = {}

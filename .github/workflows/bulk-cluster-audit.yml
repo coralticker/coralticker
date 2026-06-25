@@ -1,0 +1,73 @@
+name: bulk-cluster-audit
+
+on:
+  schedule:
+    # Nightly full-catalog reconcile of vendor_listings.bulk_cluster (CTK-198).
+    # Reconciles every row against its (vendor_id, first_seen_at) cohort size —
+    # the durable half of the self-healing contract (the diff.py write-time hook
+    # owns fresh cohorts at scrape time; this catches anything it missed + is the
+    # only true->false corrector).
+    #
+    # 2 14 * * * UTC = daily 14:02 UTC. Timing is load-bearing, NOT cosmetic
+    # ([[feedback_yaml_state_cron_window_risk]]): a concurrent scraper persist
+    # could write new rows mid-reconcile. The race is benign (the write-time hook
+    # covers fresh cohorts; the next nightly run reconciles any straggler), but
+    # the slot sits clear of every scrape window regardless:
+    #   - Hourly scrapers persist across :07-:57; :02 sits ~5 min ahead of :07.
+    #   - Daily scrapers run hours 08/09/10 UTC; health-digest at 17:11. Hour 14
+    #     is clear. (Sits one hour after the staleness-cap Monday 13:02 slot.)
+    #   - TSA's */15 weekend bursts run Sat/Sun 15-23 + Sun/Mon 00-03 UTC; 14:02
+    #     is outside both.
+    # Daily (not weekly): bulk_cluster gates the honest "new this week" count on a
+    # live surface, so a short reconcile lag beats minimal cron noise — the run is
+    # idempotent and near-0 flips most nights (the write-time hook does the work),
+    # so daily costs ~nothing.
+    - cron: '2 14 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bulk-cluster-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Preflight NEON_DATABASE_URL
+        uses: ./.github/actions/preflight-neon-secret
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+      # Runs --apply directly (no eyeball on cron) — safe by construction:
+      # bulk_cluster is derived (never authoritative), the reconcile is
+      # idempotent + reversible, and the tool's post-verify exits 1 on any
+      # residual, which the failure step below surfaces.
+      - name: Reconcile bulk_cluster
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python -m scrapers.tools.bulk_cluster_audit --apply
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"bulk-cluster-audit failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"
