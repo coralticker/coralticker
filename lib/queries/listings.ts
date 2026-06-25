@@ -398,9 +398,11 @@ export async function getCoralInWindowVendorCount(
 // The id tiebreak is load-bearing: a bulk cohort shares one first_seen_at (up to
 // 175 rows), so without it order within the cohort is planner-dependent and could
 // reshuffle page-to-page, double-serving / skipping rows across the OFFSET
-// boundary. price-asc / price-desc are untouched (they answer "cheapest," not
-// "newest" — a dump's recency is irrelevant there). price-asc / price-desc
-// use NULLS LAST in both directions so "price on request" auction rows
+// boundary. price-asc / price-desc do NOT de-rank (they answer "cheapest," not
+// "newest" — a dump's recency is irrelevant there) but DO carry the same vl.id
+// tail (fold of /code-review #1): a same-price subset of a bulk cohort straddling
+// a PAGE_SIZE OFFSET boundary would double-serve / skip without it. price-asc /
+// price-desc use NULLS LAST in both directions so "price on request" auction rows
 // (current_price IS NULL) sink below priced rows regardless of direction.
 // Category = exact-match against the schema enum — NULL silent in unfiltered
 // state. In-stock default RESTRICTS to in_stock=true; includeOOS=true drops the
@@ -483,7 +485,7 @@ export async function getVendorInventory(
               AND (${includeOOSParam}::boolean OR vl.in_stock = true)
               AND vl.is_auction = false
               AND vl.category IS DISTINCT FROM 'equipment'
-            ORDER BY vl.current_price ASC NULLS LAST, vl.first_seen_at DESC
+            ORDER BY vl.current_price ASC NULLS LAST, vl.first_seen_at DESC, vl.id
             LIMIT ${PAGE_SIZE} OFFSET ${offset}
           `;
         }
@@ -506,7 +508,7 @@ export async function getVendorInventory(
               AND (${includeOOSParam}::boolean OR vl.in_stock = true)
               AND vl.is_auction = false
               AND vl.category IS DISTINCT FROM 'equipment'
-            ORDER BY vl.current_price DESC NULLS LAST, vl.first_seen_at DESC
+            ORDER BY vl.current_price DESC NULLS LAST, vl.first_seen_at DESC, vl.id
             LIMIT ${PAGE_SIZE} OFFSET ${offset}
           `;
         }
@@ -558,7 +560,11 @@ export async function getVendorInventory(
       // so without the bump a vendor's bulk dumps keep rendering above organic rows
       // for up to 300s post-deploy. Order-only bump → getVendorInventoryTotal does
       // NOT bump (count is order-invariant; the served row set is identical).
-      'getVendorInventoryV8',
+      // V9 (CTK-198 fold of /code-review #1): the price-asc/price-desc ladders gain
+      // a vl.id tail — order shifts within same-price ties, so cached arrays carry
+      // the old within-tie order; bump forces a clean re-query. Still order-only
+      // (row set identical) → getVendorInventoryTotal stays unbumped.
+      'getVendorInventoryV9',
       String(vendorId),
       String(page),
       sort,
