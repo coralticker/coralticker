@@ -903,10 +903,16 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
 //     events incl. price-dropped), capped at ARRIVALS_PAGE_CAP.
 //   - 'week' (?window=week): 168h, event-filter scoped to just-listed +
 //     back-in-stock, UNCAPPED (cap omitted → LIMIT NULL). Reads the GUARDED
-//     source get_f7_arrivals_guarded (CTK-195) — the same shared SQL function the
-//     F7 IG cover counts through (migration 0052; cold-start backfill + bulk-relist
-//     re-index excluded). Both surfaces route through one guarded population, so
-//     the feed's row count reconciles to the cover's uncapped true_count.
+//     source get_f7_arrivals_guarded (CTK-195) — the same shared SQL population the
+//     F7 IG cover counts through (migrations 0052/0054). The guard excludes
+//     cold-start backfill + bulk-relist re-index AND category='equipment' at its
+//     base CTE (CTK-186 denylist predicate, migration 0054), so the IG cover and
+//     this feed count ONE coral-only population — the feed reconciles to the
+//     cover's uncapped true_count BY CONSTRUCTION, not coincidence.
+//     NOTE: orderedEventRows still applies its own equipment exclusion (CTK-186) to
+//     both branches; for the week branch that's now redundant-but-harmless (the
+//     guard already excluded equipment). Leave it — the DAY branch reads
+//     get_listing_lead_event (not the guard), so it still needs that filter.
 // Both fnCall strings stay constants-only (WINDOW.*.hours values are module
 // constants, the event-filter is a string literal) per the sql.unsafe invariant
 // — `window` never reaches fnCall as a bind.
