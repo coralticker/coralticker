@@ -178,6 +178,7 @@ def _le_row(event, *, coral_id=1, coral="WWC Sunkist Bounce", vendor="WWC",
         "guard_disposition": "kept",
         "bulk_threshold": None,
         "bulk_median": None,
+        "arr_day": None,
     }
 
 

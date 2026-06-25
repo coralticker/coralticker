@@ -9,16 +9,20 @@ intended loud signal that the function already exists.
 Uses scrapers.common.db.get_conn per the CTK-061 single-statement path. Mirrors
 apply_migration_0046.py shape.
 
-Verification (the load-bearing gate before the Python swap lands):
+Verification:
   - both functions present in pg_proc after apply
   - get_f7_arrivals_guarded(168, ['just-listed','back-in-stock']) count vs the
     ratified 788
-  - FAITHFUL-PORT gate: SQL guarded count == the in-Python _guard_arrivals count
-    (cq.select_f7_arrivals true_count, still on the in-Python path at apply time).
-    Equality proves the SQL port reproduces the Python guard; a mismatch is a port
-    bug in mechanism 1, mechanism 2, the clamp, or the median subject. (The bare
-    788 can drift with live data between ratification and apply; SQL==Python is the
-    invariant that does not.)
+  - CONSISTENCY SMOKE (crash + agreement): SQL guarded count == cq.select_f7_arrivals
+    true_count. NOTE: this was a true faithful-port gate ONLY at the original apply,
+    when select_f7_arrivals still computed the guard in Python — equality then proved
+    the SQL port reproduced the Python computation. Post-swap select_f7_arrivals
+    consumes the SQL function, so re-running this is SQL-vs-SQL (tautological): it
+    catches a crash / a broken call site, not a port-fidelity regression. The
+    one-time port-fidelity proof was the transient pre-swap differential
+    (count_new_arrivals 718 == sql 718; select_f7_arrivals 749 == sql 749), recorded
+    in CTK-195/results.md — not reproducible from this script post-merge. (The bare
+    788 also drifts with live data; neither is a frozen number.)
   - disposition spot-check: Cornbred (cold-start onboarding backfill) tags
     cold_start; POTO (2026-06-21 re-index) tags bulk_relist.
 """
@@ -83,16 +87,20 @@ def main() -> int:
         flag = "" if sql_count == RATIFIED_788 else f"  (ratified {RATIFIED_788}; live data moved)"
         print(f"  get_f7_arrivals_guarded(168, [just-listed,back-in-stock]) = {sql_count}{flag}")
 
-        # FAITHFUL-PORT gate — SQL guarded count == in-Python guard count. Both read
-        # live data at the same instant, so this is the invariant the bare 788 isn't.
+        # CONSISTENCY SMOKE — SQL guarded count == cq.select_f7_arrivals true_count.
+        # This was a faithful-port gate at the ORIGINAL apply (select_f7_arrivals still
+        # computed the guard in Python then); post-swap it consumes the SQL function, so
+        # this is SQL-vs-SQL — it catches a crash / broken call site, NOT a port-fidelity
+        # regression. The one-time port proof was the transient pre-swap differential
+        # (718==718, 749==749), recorded in CTK-195/results.md.
         py_count = cq.select_f7_arrivals(conn)[0]
         if sql_count != py_count:
             print(
-                f"  VERIFY FAILED: SQL guarded count {sql_count} != in-Python guard "
-                f"count {py_count} — port bug (mechanism 1/2, clamp, or median subject)."
+                f"  VERIFY FAILED: SQL guarded count {sql_count} != select_f7_arrivals "
+                f"count {py_count} — crash or broken call site."
             )
             return 1
-        print(f"  faithful-port gate: SQL {sql_count} == in-Python {py_count}")
+        print(f"  consistency smoke: SQL {sql_count} == select_f7_arrivals {py_count}")
 
         # Disposition spot-check — Cornbred cold_start, POTO bulk_relist.
         with conn.cursor() as cur:

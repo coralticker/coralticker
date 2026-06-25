@@ -52,7 +52,7 @@ def main() -> int:
         slugs = {r["vendor_id"]: r["vendor_slug"] for r in rows}
         cohorts: dict = {}
         for r in arr:
-            cohorts.setdefault((r["vendor_id"], cq._arrival_day(r)), []).append(r)
+            cohorts.setdefault((r["vendor_id"], r["arr_day"]), []).append(r)
 
         def _verdict(group):
             tags = {r["guard_disposition"] for r in group}
@@ -71,7 +71,7 @@ def main() -> int:
         # Bulk cohorts (the function's bulk_relist tags), grouped for the operator view.
         bulk_cohorts: dict = {}
         for r in bulk:
-            k = (r["vendor_id"], cq._arrival_day(r))
+            k = (r["vendor_id"], r["arr_day"])
             bulk_cohorts.setdefault(k, 0)
             bulk_cohorts[k] += 1
         cold_by_vendor: dict = {}

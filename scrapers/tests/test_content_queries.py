@@ -27,7 +27,7 @@ Coverage:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from scrapers.tools import content_queries as cq
@@ -340,12 +340,13 @@ class _FakeConn:
 
 def _le_row(event, *, coral_id=1, coral="WWC Sunkist Bounce", vendor="WWC",
             vendor_id=10, price=Decimal("250"), at="2026-06-16T12:00:00Z", id=1,
-            guard_disposition="kept", bulk_threshold=None, bulk_median=None):
+            guard_disposition="kept", bulk_threshold=None, bulk_median=None, arr_day=None):
     """An f7_arrivals_dispositioned-shaped row (only the fields the F7 wrapper +
     selector use). guard_disposition defaults 'kept' (the guard is a no-op over a
     plain fixture); the guard tests pass 'cold_start' / 'bulk_relist' to drive the
-    wrapper's drop partition. first_seen_at mirrors event_at (the just-listed arm's
-    event_at == first_seen_at) — the cohort-day key _arrival_day buckets bulk drops on."""
+    wrapper's drop partition. arr_day is the function's projected UTC cohort day — the
+    wrapper keys its bulk drop-log map on it (CTK-195 fold #3); only bulk_relist rows
+    use it, so it defaults None for the no-op fixtures."""
     return {
         "id": id,
         "event": event,
@@ -359,6 +360,7 @@ def _le_row(event, *, coral_id=1, coral="WWC Sunkist Bounce", vendor="WWC",
         "guard_disposition": guard_disposition,
         "bulk_threshold": bulk_threshold,
         "bulk_median": bulk_median,
+        "arr_day": arr_day,
     }
 
 
@@ -559,28 +561,25 @@ def test_count_new_arrivals_excludes_restocks_via_event_filter():
     assert select_f7_arrivals(conn)[0] == 3        # both arms in the cover population
 
 
-def test_guard_wrapper_reconstructs_bulk_cohort_on_first_seen_day():
+def test_guard_wrapper_reconstructs_bulk_cohort_on_projected_arr_day():
     # The wrapper reconstructs the bulk_excluded cohort map from per-row tags for the
-    # operator drop-log (_log_arrival_drops provenance). 90 bulk_relist rows share ONE
-    # first_seen_at day but scatter event_at across 9 days; _arrival_day buckets on
-    # first_seen_at, so they reconstruct as ONE cohort (count 90), not 9 — pinning the
-    # wrapper's diagnostic grouping + its first_seen_at preference. (The SQL owns the
-    # trip decision; this is the Python that survives.)
-    one_day = datetime(2026, 6, 21, 10, 0, tzinfo=timezone.utc)
-    rows = []
-    for i in range(90):
-        r = _le_row("just-listed", id=4000 + i, coral_id=4000 + i, vendor_id=40,
+    # operator drop-log (_log_arrival_drops provenance), keying on the function's
+    # PROJECTED arr_day (CTK-195 fold #3 — one source of truth, no re-derivation). 90
+    # bulk_relist rows share ONE arr_day but scatter event_at across 9 days; keyed on
+    # arr_day they reconstruct as ONE cohort (count 90), not 9. (The SQL owns the trip
+    # decision + the arr_day value; this pins the Python that survives.)
+    one_day = date(2026, 6, 21)
+    rows = [_le_row("just-listed", id=4000 + i, coral_id=4000 + i, vendor_id=40,
                     at=f"2026-06-{1 + (i % 9):02d}T00:00:00Z",   # event_at across 9 days
                     guard_disposition="bulk_relist", bulk_threshold=Decimal("80"),
-                    bulk_median=Decimal("1"))
-        r["first_seen_at"] = one_day                              # ... but one first_seen day
-        rows.append(r)
+                    bulk_median=Decimal("1"), arr_day=one_day)   # ... but one projected arr_day
+            for i in range(90)]
     report = cq._guard_arrivals(_FakeConn(rows), 168, ["just-listed"])
     assert report.kept == []                            # whole cohort dropped from kept
     assert report.cold_start_dropped == []              # none tagged cold_start
-    assert len(report.bulk_excluded) == 1               # ONE cohort, bucketed on first_seen_at
+    assert len(report.bulk_excluded) == 1               # ONE cohort, keyed on arr_day
     (key, info), = report.bulk_excluded.items()
-    assert key == (40, one_day.date())
+    assert key == (40, one_day)
     assert info["count"] == 90 and info["threshold"] == Decimal("80")
 
 

@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 _LOG = logging.getLogger(__name__)
 
@@ -710,22 +709,6 @@ def _card_item(row: dict, *, event_phrase: str | None = None) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _arrival_day(row: dict):
-    """The UTC calendar-day bucket for a just-listed row — first_seen_at (its
-    appearance day), falling back to event_at (== first_seen_at for the just-listed
-    arm). Accepts a datetime or an ISO string (the build_card_fields listed_at
-    convention). Matches fetch_trailing_daily_arrivals' (first_seen_at AT TIME ZONE
-    'UTC')::date so a cohort and its baseline bucket identically."""
-    ts = row.get("first_seen_at") or row.get("event_at")
-    if ts is None:
-        return None
-    if isinstance(ts, str):
-        ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    if ts.tzinfo is not None:
-        ts = ts.astimezone(timezone.utc)
-    return ts.date()
-
-
 @dataclass(frozen=True)
 class ArrivalGuardReport:
     """The honest-count guard's output: `kept` is the filtered population (every
@@ -760,18 +743,22 @@ def _guard_arrivals(conn, window_hours: int = 168, event_filter: list[str] | Non
         )
         rows = cur.fetchall()
 
+    # kept rows carry the guard-only diagnostic fields (guard_disposition,
+    # bulk_threshold, bulk_median, arr_day) into the card-build population — harmless:
+    # the selector + _card_item read by named key, so the extra columns are ignored.
     kept = [r for r in rows if r["guard_disposition"] == "kept"]
     cold_start = [r for r in rows if r["guard_disposition"] == "cold_start"]
 
     # Reconstruct the bulk-relist cohort map ({(vendor_id, day): {count, threshold,
     # median}}) from the per-row tags — the function stamps bulk_threshold/bulk_median
     # on every bulk_relist row, identical within a cohort, so first-row-wins is exact.
-    # _arrival_day buckets on first_seen_at (the cohort key the function grouped on).
+    # Key on the function's projected arr_day (the EXACT UTC day it grouped the cohort
+    # on), not a re-derivation — one source of truth for the cohort day (CTK-195 fold #3).
     bulk_excluded: dict = {}
     for r in rows:
         if r["guard_disposition"] != "bulk_relist":
             continue
-        key = (r["vendor_id"], _arrival_day(r))
+        key = (r["vendor_id"], r["arr_day"])
         info = bulk_excluded.setdefault(
             key, {"count": 0, "threshold": r["bulk_threshold"], "median": r["bulk_median"]}
         )
@@ -819,7 +806,8 @@ def count_new_arrivals(conn, window_hours: int = 168) -> int:
     return len(_guard_arrivals(conn, window_hours, [_F7_ARRIVAL_EVENT]).kept)
 
 
-def select_f7_arrivals(conn, window_hours: int = 168, sample_cap: int = 9):
+def select_f7_arrivals(conn, window_hours: int = 168, sample_cap: int = 9,
+                       exclude_vendors: set[str] | None = None):
     """F7 arrivals/back-in-stock carousel selector. Returns
     (true_count, composition, items):
       - true_count  — the FULL count of arrival + restock lead-events over the
@@ -846,7 +834,13 @@ def select_f7_arrivals(conn, window_hours: int = 168, sample_cap: int = 9):
     rows = _guard_arrivals(conn, window_hours, [_F7_ARRIVAL_EVENT, _F7_RESTOCK_EVENT]).kept
     true_count = len(rows)
     composition = _f7_composition(rows)
-    eligible = [r for r in rows if is_surface_b_card_eligible(r)]
+    # exclude_vendors (vendor_slug set) curates the DISPLAYED SAMPLE only — e.g. an
+    # over-featured shop dropped from the slides so the reel doesn't repeat one vendor's
+    # @mention week-to-week. true_count + composition are NOT touched: the cover still
+    # names the honest full-population count across every vendor (the honest-count canon);
+    # only which corals get a card changes.
+    eligible = [r for r in rows if is_surface_b_card_eligible(r)
+                and (not exclude_vendors or r["vendor_slug"] not in exclude_vendors)]
     # Deterministic recency order: get_listing_lead_event orders event_at DESC with no
     # final tiebreak, so equal-event_at rows could flip run-to-run (the CTK-161 retro #2
     # shape). (event_at, id) DESC is a total order — pins the per-coral pick + the order.
