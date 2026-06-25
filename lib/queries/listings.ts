@@ -199,6 +199,12 @@ export async function mergeDropContext(
 // the LIMIT semantics). The first_seen_at > now() - 7d bound keeps the strip's
 // just-listed lead-verb hardcode from rendering stale restocks as "just listed
 // at $vendor"; 7d matches CORAL_RECENCY_DAYS.
+// CTK-198: bulk_cluster = false EXCLUDES (not de-ranks) persisted single-timestamp
+// bulk dumps. The strip is first_seen_at-gated, so every row IS a fresh just-listed
+// — there are no back-in-stock rows here to diverge on (contrast the vendor
+// newest-sort, which de-ranks because it carries real standing inventory). This
+// function is uncached (no unstable_cache wrapper), so no key bump — the
+// page-level cache covers staleness.
 export async function getRecentDrops(limit = 10): Promise<Listing[]> {
   const sql = getNeonSql();
   const overFetch = limit * 3;
@@ -226,6 +232,7 @@ export async function getRecentDrops(limit = 10): Promise<Listing[]> {
     WHERE vl.in_stock = true
       AND vl.first_seen_at > ${sevenDaysAgo}
       AND vl.category IS DISTINCT FROM 'equipment'
+      AND vl.bulk_cluster = false
     ORDER BY vl.first_seen_at DESC
     LIMIT ${overFetch}
   `) as unknown as VendorListingRow[];
@@ -385,7 +392,14 @@ export async function getCoralInWindowVendorCount(
 // inside the cached fn — drifts up to 5 min within TTL window (mathematically
 // acceptable on a 14-day window).
 //
-// Default sort 'newest' is ORDER BY first_seen_at DESC. price-asc / price-desc
+// Default sort 'newest' is ORDER BY bulk_cluster ASC, first_seen_at DESC, id —
+// CTK-198 de-ranks (does NOT exclude) persisted single-timestamp bulk dumps so a
+// vendor's real inventory still shows under newest, just below the organic rows.
+// The id tiebreak is load-bearing: a bulk cohort shares one first_seen_at (up to
+// 175 rows), so without it order within the cohort is planner-dependent and could
+// reshuffle page-to-page, double-serving / skipping rows across the OFFSET
+// boundary. price-asc / price-desc are untouched (they answer "cheapest," not
+// "newest" — a dump's recency is irrelevant there). price-asc / price-desc
 // use NULLS LAST in both directions so "price on request" auction rows
 // (current_price IS NULL) sink below priced rows regardless of direction.
 // Category = exact-match against the schema enum — NULL silent in unfiltered
@@ -515,7 +529,7 @@ export async function getVendorInventory(
             AND (${includeOOSParam}::boolean OR vl.in_stock = true)
             AND vl.is_auction = false
             AND vl.category IS DISTINCT FROM 'equipment'
-          ORDER BY vl.first_seen_at DESC
+          ORDER BY vl.bulk_cluster ASC, vl.first_seen_at DESC, vl.id
           LIMIT ${PAGE_SIZE} OFFSET ${offset}
         `;
       })()) as unknown as VendorListingRow[];
@@ -539,7 +553,12 @@ export async function getVendorInventory(
       // V7 (CTK-186 step 2): set narrows again — category='equipment' rows gated
       // out. Same deploy-not-revalidate rationale: without the bump, stale entries
       // serve the reclassified equipment for up to 300s.
-      'getVendorInventoryV7',
+      // V8 (CTK-198): the newest-sort ORDER changes (bulk_cluster de-rank) — the
+      // row SET is unchanged (no exclusion), but cached arrays carry the OLD order,
+      // so without the bump a vendor's bulk dumps keep rendering above organic rows
+      // for up to 300s post-deploy. Order-only bump → getVendorInventoryTotal does
+      // NOT bump (count is order-invariant; the served row set is identical).
+      'getVendorInventoryV8',
       String(vendorId),
       String(page),
       sort,
@@ -695,9 +714,11 @@ function rpcRowToPriceDrop(row: RpcPriceDropRow): PriceDropListing {
 //
 // sql.unsafe() embeds ONLY module-level constants: `fnCall` is one of the two
 // literal RPC invocations below (window values are exported constants, never
-// user input), and the ORDER BY tail comes from the allowlisted-sort ladder map.
-// Category and cap stay real binds; sort is validated at the view layer before
-// it reaches here. Never pass user input through `fnCall`.
+// user input), the ORDER BY tail comes from the allowlisted-sort ladder map, and
+// `bulkClusterClause` is one of two compile-time string literals selected by the
+// boolean param (never user input). Category and cap stay real binds; sort is
+// validated at the view layer before it reaches here. Never pass user input
+// through `fnCall`.
 //
 // Every ladder tail ends in the unique e.id tiebreak — event_at is massively
 // non-unique (the cold-start backfill stamped thousands of onsets with one
@@ -714,11 +735,25 @@ const EVENT_ORDER_LADDER: Record<ListingSort, string> = {
 // `cap`: view-layer row ceiling, applied as SQL LIMIT AFTER the ladder ORDER BY
 // so truncation happens on the filtered/sorted set. Omitted cap binds LIMIT NULL
 // ≡ no limit (same SQL-side constant-folding pattern as the category predicate).
+// `suppressBulkClusterJustListed` (CTK-198): when true, drop rows that are BOTH a
+// persisted single-timestamp bulk dump (vl.bulk_cluster) AND surfaced via the
+// just-listed lead event — i.e. the batch-inflation rows, while KEEPING a genuine
+// back-in-stock of a once-dumped coral. Scoped, NOT blanket: only getRecentArrivals'
+// day branch passes true. The /deals callers (getRecentPriceDrops,
+// getLatestPriceDropAt) leave it false so bulk-clustered price-drops stay on /deals
+// (out of CTK-198 scope), and the week branch leaves it false because
+// get_f7_arrivals_guarded already drops bulk_cluster on its just-listed arm
+// (migration 0057). The clause is conditionally APPENDED (not constant-folded)
+// because `e.event` exists only on get_listing_lead_event rows — folding it into the
+// get_recent_price_drops SQL would fail at parse time (that RPC has no `event`
+// column). So the e.event reference only ever reaches SQL when the day branch asks
+// for it. Default false keeps every existing caller byte-identical.
 async function orderedEventRows(
   fnCall: string,
   sort: ListingSort,
   category: ListingCategory | null,
   cap?: number,
+  suppressBulkClusterJustListed: boolean = false,
 ): Promise<Record<string, unknown>[]> {
   if (cap !== undefined && cap < 1) {
     // cap=0 would bind LIMIT 0 (empty feed served silently) — a caller bug, not a
@@ -728,6 +763,12 @@ async function orderedEventRows(
   const sql = getNeonSql();
   const categoryParam = category ?? null;
   const capParam = cap ?? null;
+  // Compile-time literal (empty or the suppress predicate) — embedded via
+  // sql.unsafe per the constants-only invariant above. Empty string injects
+  // nothing, so the e.event reference never reaches the price-drops SQL.
+  const bulkClusterClause = suppressBulkClusterJustListed
+    ? "AND NOT (vl.bulk_cluster AND e.event = 'just-listed')"
+    : '';
   if (sort === 'newest' && categoryParam === null) {
     // Bare branch (default /new + /deals). The category-filter JOIN is skipped,
     // but the equipment exclusion (CTK-186 step 2) needs the same vendor_listings
@@ -741,6 +782,7 @@ async function orderedEventRows(
       FROM ${sql.unsafe(fnCall)} e
       JOIN vendor_listings vl ON vl.id = e.id
       WHERE vl.category IS DISTINCT FROM 'equipment'
+        ${sql.unsafe(bulkClusterClause)}
       ORDER BY ${sql.unsafe(EVENT_ORDER_LADDER.newest)}
       LIMIT ${capParam}
     `;
@@ -756,6 +798,7 @@ async function orderedEventRows(
     JOIN vendor_listings vl ON vl.id = e.id
     WHERE (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
       AND vl.category IS DISTINCT FROM 'equipment'
+      ${sql.unsafe(bulkClusterClause)}
     ORDER BY ${sql.unsafe(EVENT_ORDER_LADDER[sort])}
     LIMIT ${capParam}
   `;
@@ -930,6 +973,13 @@ export async function getRecentArrivals(
       ? `get_f7_arrivals_guarded(${WINDOW.week.hours}, ARRAY['just-listed','back-in-stock']::text[])`
       : `get_listing_lead_event(NULL, ${WINDOW.day.hours}, NULL, NULL)`;
   const cap = window === 'week' ? undefined : ARRIVALS_PAGE_CAP;
+  // CTK-198: the day branch reads the UNGUARDED get_listing_lead_event, so it
+  // still surfaces single-timestamp bulk dumps as just-listed — suppress those
+  // (keeping back-in-stock of once-dumped corals). The week branch reads
+  // get_f7_arrivals_guarded, which already drops bulk_cluster on its just-listed
+  // arm (migration 0057), so it leaves the flag false. Event-aware (just-listed
+  // only) so day and week agree on back-in-stock.
+  const suppressBulkClusterJustListed = window === 'day';
 
   return unstable_cache(
     async () => {
@@ -938,6 +988,7 @@ export async function getRecentArrivals(
         sort,
         category,
         cap,
+        suppressBulkClusterJustListed,
       )) as unknown as RpcArrivalRow[];
 
       return rows.map(rpcRowToArrival);
@@ -955,7 +1006,12 @@ export async function getRecentArrivals(
       // Data Cache persists across deploys, so the key MUST bump or the week feed
       // serves the stale unguarded entry. Day branch shares the key (unaffected,
       // but the bump is correct for both).
-      'getRecentArrivalsV5',
+      // V6 (CTK-198): the DAY branch served set narrows — bulk_cluster rows
+      // surfaced as just-listed are now suppressed (back-in-stock kept). Stale
+      // entries would keep serving the padded just-listed dumps for up to 300s
+      // post-deploy, so the key MUST bump. Week branch shares the key (already
+      // guarded at the SQL layer, but the bump is correct for both).
+      'getRecentArrivalsV6',
       window,
       sort,
       category ?? '_',
