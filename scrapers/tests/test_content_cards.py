@@ -15,7 +15,6 @@ Pure: no DB, no browser. Runnable as:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -25,24 +24,10 @@ from scrapers.tools import content_cards as cc
 
 # --- a canned-row conn, mirroring test_content_queries._FakeConn ------------
 
-# A warm anchor sentinel — any non-None prior_run_finished_at means "we watched it
-# appear" (not cold-start). The CTK-191 F7 guard only checks None vs not-None.
-_WARM_ANCHOR = datetime(2000, 1, 1, tzinfo=timezone.utc)
-
-
-def _guard_dispatch(sql, params):
-    """No-op response for the CTK-191 F7 guard's two side queries, so a canned-row
-    conn answers select_f7_arrivals' FULL query set (lead-event + cold-start anchor
-    + trailing baseline): every just-listed row reads warm (not cold-start) and
-    there is no trailing baseline (threshold falls to the ABS_FLOOR), making the
-    guard a no-op over these orchestration fixtures. Returns None when `sql` is not
-    a guard query — the caller falls back to its own canned rows."""
-    if "scraper_runs" in sql:                        # fetch_arrival_anchors
-        ids = (params[0] if params else []) or []
-        return [{"id": i, "prior_run_finished_at": _WARM_ANCHOR} for i in ids]
-    if "first_seen_at" in sql:                        # fetch_trailing_daily_arrivals
-        return []
-    return None
+# The F7 guard COMPUTATION is SQL now (CTK-195, migration 0052); select_f7_arrivals
+# issues ONE query over f7_arrivals_dispositioned and reads the disposition tags. The
+# f7 fixtures here default guard_disposition='kept' (_le_row), so the guard is a no-op
+# over these orchestration fixtures — every row survives to the renderer.
 
 
 class _FakeCursor:
@@ -57,8 +42,7 @@ class _FakeCursor:
         return False
 
     def execute(self, sql, params=None):
-        guard = _guard_dispatch(sql, params)
-        self._result = self._rows if guard is None else guard
+        self._result = self._rows
 
     def fetchall(self):
         return self._result
@@ -79,7 +63,7 @@ class _FakeConn:
 # selectors over one conn) gets the right row shape per format — get_recent_price_
 # drops returns drop rows, get_cross_vendor_carriers returns carriers, etc.
 _SQL_KEY = {
-    "get_listing_lead_event": "f7",
+    "f7_arrivals_dispositioned": "f7",   # CTK-195: select_f7_arrivals' single guarded query
     "get_recent_price_drops": "f8",
     "get_cross_vendor_carriers": "f9",
 }
@@ -97,10 +81,6 @@ class _DispatchCursor:
         return False
 
     def execute(self, sql, params=None):
-        guard = _guard_dispatch(sql, params)          # CTK-191 anchor / trailing no-op
-        if guard is not None:
-            self._rows = guard
-            return
         for fn, fmt in _SQL_KEY.items():
             if fn in sql:
                 self._rows = self._by_format.get(fmt, [])
@@ -183,6 +163,8 @@ def _drop_row(**kw):
 
 def _le_row(event, *, coral_id=1, coral="WWC Sunkist Bounce", vendor="WWC",
             vendor_id=10, price=Decimal("250"), at="2026-06-16T12:00:00Z", id=1):
+    # f7_arrivals_dispositioned-shaped (CTK-195): guard_disposition='kept' so these
+    # orchestration fixtures survive the guard to the renderer.
     return {
         "id": id,
         "event": event,
@@ -192,6 +174,11 @@ def _le_row(event, *, coral_id=1, coral="WWC Sunkist Bounce", vendor="WWC",
         "vendor_display_name": vendor,
         "current_price": price,
         "event_at": at,
+        "first_seen_at": at,
+        "guard_disposition": "kept",
+        "bulk_threshold": None,
+        "bulk_median": None,
+        "arr_day": None,
     }
 
 

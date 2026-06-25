@@ -902,9 +902,17 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
 //   - 'day'  (bare /new, unchanged): 24h, NULL event-filter (all three lead
 //     events incl. price-dropped), capped at ARRIVALS_PAGE_CAP.
 //   - 'week' (?window=week): 168h, event-filter scoped to just-listed +
-//     back-in-stock, UNCAPPED (cap omitted → LIMIT NULL). Mirrors the F7 IG
-//     cover selector (content_queries.py:select_f7_arrivals) so the feed's row
-//     count reconciles to the cover's uncapped true_count.
+//     back-in-stock, UNCAPPED (cap omitted → LIMIT NULL). Reads the GUARDED
+//     source get_f7_arrivals_guarded (CTK-195) — the same shared SQL population the
+//     F7 IG cover counts through (migrations 0052/0054). The guard excludes
+//     cold-start backfill + bulk-relist re-index AND category='equipment' at its
+//     base CTE (CTK-186 denylist predicate, migration 0054), so the IG cover and
+//     this feed count ONE coral-only population — the feed reconciles to the
+//     cover's uncapped true_count BY CONSTRUCTION, not coincidence.
+//     NOTE: orderedEventRows still applies its own equipment exclusion (CTK-186) to
+//     both branches; for the week branch that's now redundant-but-harmless (the
+//     guard already excluded equipment). Leave it — the DAY branch reads
+//     get_listing_lead_event (not the guard), so it still needs that filter.
 // Both fnCall strings stay constants-only (WINDOW.*.hours values are module
 // constants, the event-filter is a string literal) per the sql.unsafe invariant
 // — `window` never reaches fnCall as a bind.
@@ -919,7 +927,7 @@ export async function getRecentArrivals(
   // page cap, week stays fully uncapped.
   const fnCall =
     window === 'week'
-      ? `get_listing_lead_event(NULL, ${WINDOW.week.hours}, ARRAY['just-listed','back-in-stock']::text[], NULL)`
+      ? `get_f7_arrivals_guarded(${WINDOW.week.hours}, ARRAY['just-listed','back-in-stock']::text[])`
       : `get_listing_lead_event(NULL, ${WINDOW.day.hours}, NULL, NULL)`;
   const cap = window === 'week' ? undefined : ARRIVALS_PAGE_CAP;
 
@@ -941,7 +949,13 @@ export async function getRecentArrivals(
       // feed serves the day-shape cached entry.
       // V4 (CTK-186 step 2): served set narrows — orderedEventRows now excludes
       // category='equipment' on both branches (covers default /new + filtered).
-      'getRecentArrivalsV4',
+      // V5 (CTK-195): the week branch served set narrows again (~2050 → ~788) —
+      // it now reads get_f7_arrivals_guarded (cold-start backfill + bulk-relist
+      // re-index excluded) instead of the unguarded get_listing_lead_event. The
+      // Data Cache persists across deploys, so the key MUST bump or the week feed
+      // serves the stale unguarded entry. Day branch shares the key (unaffected,
+      // but the bump is correct for both).
+      'getRecentArrivalsV5',
       window,
       sort,
       category ?? '_',
