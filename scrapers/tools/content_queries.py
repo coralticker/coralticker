@@ -32,8 +32,6 @@ fetch_* wrappers are the I/O shell (read-only; never close the caller's conn).
 from __future__ import annotations
 
 import logging
-import math
-import statistics
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -688,122 +686,28 @@ def _card_item(row: dict, *, event_phrase: str | None = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# F7 arrivals honest-count guard (CTK-191) — cold-start + bulk-relist exclusion.
+# F7 arrivals honest-count guard (CTK-191 shape, CTK-195 substrate).
 #
 # The F7 cover count (select_f7_arrivals true_count) and the count-up card N
 # (count_new_arrivals) both name a "{N} drops this week" headline off the
 # just-listed lead-event population. Two FALSE-arrival classes inflate that
-# population and are excluded BEFORE the count is taken. This is the honest-count
-# guard, not curation: it removes only arrivals that were never genuine new
-# appearances — it never trims, samples, or under-counts real ones (an honest low
-# still reports low).
+# population and are excluded BEFORE the count is taken: COLD-START backfill (a
+# newly-onboarded vendor's whole catalog first-seen on its onboarding day, never
+# observed appearing) and BULK RE-INDEX (a vendor with prior runs dumping hundreds
+# of first_seen on one calendar-day). It is the honest-count guard, not curation —
+# it removes only arrivals that were never genuine new appearances, never trims a
+# real one (an honest low still reports low).
 #
-#   1. COLD-START backfill — a newly-onboarded vendor's whole existing catalog
-#      registers as "just-listed" on its first scrape (Cornbred's 546, all
-#      first_seen on its onboarding day). We never WATCHED those pieces appear:
-#      no successful scrape finished before their first_seen, so they are not
-#      observed arrivals. Mirrors the velocity selector's cold-start gate exactly
-#      (migration 0046:183-190 — prior_run_finished_at IS NULL => excluded),
-#      surfaced here per-listing via fetch_arrival_anchors rather than by forking
-#      get_velocity_listings. Just-listed arm ONLY — a back-in-stock event is
-#      inherently cross-scrape (it needs a prior in-stock-then-OOS observation),
-#      so a restock can never be cold-start.
-#
-#   2. BULK RE-INDEX / RE-LIST — a vendor WITH prior runs (so it passes the
-#      cold-start gate) dumps hundreds of first_seen on one calendar-day, a
-#      catalog re-index reading as a surge of fresh drops (POTO's 1257, all on
-#      2026-06-21). Caught per (vendor, calendar-day) just-listed cohort: a cohort
-#      whose size exceeds max(BULK_SPIKE_ABS_FLOOR, BULK_SPIKE_K x the vendor's
-#      trailing-median daily arrivals) is flagged a re-index and excluded WHOLE
-#      (a re-index is an all-or-nothing artifact, never sampled). Median (not mean)
-#      so a spike day inside the trailing window can't inflate its own threshold.
-#
-# Both thresholds are PROVISIONAL + tunable (named constants below, not magic
-# numbers) — Jon rules the shape against the live (vendor x day) matrix.
+# CTK-195: the guard COMPUTATION now lives in SQL — migration 0052's
+# f7_arrivals_dispositioned (the disposition-tagged base) + get_f7_arrivals_guarded
+# (kept-only). The DB is the single substrate the IG-cover Python path AND the TS
+# week-feed both route through, so there is exactly one guard, not two copies. This
+# module no longer COMPUTES the exclusions; _guard_arrivals reads the disposition
+# tags and reconstructs the operator drop-log provenance. The mechanism detail
+# (cold-start predicate = migration 0046:183-190; bulk threshold
+# max(ABS_FLOOR=80, K=4.0 x trailing-median); the raw-first_seen superset skew;
+# percentile_cont(0.5) median; the trailing-days clamp) is the migration 0052 body.
 # ---------------------------------------------------------------------------
-
-# A (vendor, calendar-day) just-listed cohort is a re-index dump when its size
-# exceeds max(ABS_FLOOR, K x trailing-median daily arrivals for that vendor):
-#   - ABS_FLOOR — a sparse vendor's median is ~0, so without a floor any modest
-#     day would trip; the floor is the "this is a real dump, not a busy day" bar.
-#   - K x median — a high-cadence vendor's normal day already clears the floor, so
-#     it needs a multiple of its OWN baseline to read as anomalous.
-# count > max(floor, K*median) == (count > floor AND count > K*median).
-BULK_SPIKE_ABS_FLOOR = 80          # cohorts at/below this never trip (floor)
-BULK_SPIKE_K = 4.0                 # ... and must exceed 4x the vendor's normal daily rate
-BULK_SPIKE_TRAILING_DAYS = 30      # trailing window for the per-vendor daily-arrival median
-
-
-def fetch_arrival_anchors(conn, listing_ids: list[int]) -> dict[int, object]:
-    """Per just-listed listing id, the cold-start anchor: the finish time of the
-    last SUCCESSFUL scrape that COMPLETED before the listing's first_seen_at, or
-    None when no such run exists (its appearance was never observed between scrapes
-    = cold-start backfill). The anchor subquery is migration 0046:183-190 verbatim
-    (the velocity selector's prior_run_finished_at) — the SAME cold-start predicate,
-    surfaced per-listing here so this guard does NOT fork get_velocity_listings.
-    Empty input -> empty dict (no query)."""
-    if not listing_ids:
-        return {}
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT vl.id,
-              (SELECT MAX(sr.finished_at)
-               FROM scraper_runs sr
-               WHERE sr.vendor_id = vl.vendor_id
-                 AND sr.status = 'success'
-                 AND sr.finished_at IS NOT NULL
-                 AND sr.finished_at < vl.first_seen_at) AS prior_run_finished_at
-            FROM vendor_listings vl
-            WHERE vl.id = ANY(%s)
-            """,
-            (list(listing_ids),),
-        )
-        return {r["id"]: r["prior_run_finished_at"] for r in cur.fetchall()}
-
-
-def fetch_trailing_daily_arrivals(conn, trailing_days: int = BULK_SPIKE_TRAILING_DAYS) -> dict[int, list[int]]:
-    """Per vendor, the list of daily just-listed counts over the trailing window —
-    the baseline the bulk-spike guard takes a median over. Daily count = number of
-    vendor_listings first-seen on that UTC calendar-day; ACTIVE days only (a
-    zero-arrival day yields no row), so the median is the vendor's typical daily
-    rate on the days it actually listed. The current partial day is excluded (its
-    cohort is what's under test — it must not seed its own baseline). The UTC date
-    bucket matches _arrival_day so cohort and baseline share one day definition.
-
-    KNOWN LIMITATION (provisional, tunable): the baseline counts RAW first_seen rows,
-    while the cohort under test is the lead-event-filtered just-listed arm (in-stock,
-    auction-gated). The baseline is thus a superset metric — it can include a vendor's
-    own prior backfill/re-index days, inflating its median and RAISING the threshold.
-    The skew is one-directional (under-exclude only: it never flags a genuine arrival
-    day, only risks letting a borderline re-index slip), and the median dampens single
-    outlier days. Tightening the baseline to the same in-stock/auction predicate would
-    lower thresholds (and shift the ratified count), so it's deferred to a
-    threshold-tuning pass, not changed under the cold-start fix."""
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT vendor_id, count(*) AS cnt
-            FROM vendor_listings
-            WHERE first_seen_at >= now() - make_interval(days => %s)
-              AND (first_seen_at AT TIME ZONE 'UTC')::date < (now() AT TIME ZONE 'UTC')::date
-            GROUP BY vendor_id, (first_seen_at AT TIME ZONE 'UTC')::date
-            """,
-            (trailing_days,),
-        )
-        out: dict[int, list[int]] = {}
-        for r in cur.fetchall():
-            out.setdefault(r["vendor_id"], []).append(int(r["cnt"]))
-        return out
-
-
-def _median(values: list[int]) -> float:
-    """Median of a value list; empty -> 0.0 (statistics.median raises on empty — the
-    only reason this wraps it rather than calling it inline, mirroring
-    health_digest.py's `statistics.median(...) if ... else 0`). Median over mean so a
-    single re-index day in the trailing window can't drag the baseline up and mask
-    itself."""
-    return float(statistics.median(values)) if values else 0.0
 
 
 def _arrival_day(row: dict):
@@ -822,74 +726,62 @@ def _arrival_day(row: dict):
     return ts.date()
 
 
-def _bulk_spike_excluded_cohorts(just_listed: list[dict], medians: dict[int, float]) -> dict:
-    """Pure: from the warm (post-cold-start) just-listed rows + per-vendor trailing
-    median daily arrivals, return the (vendor_id, day) cohorts that are re-index
-    dumps -> {(vendor_id, day): {"count", "threshold", "median"}}. A cohort trips
-    when its size > max(ABS_FLOOR, K x median). Whole cohorts only."""
-    cohorts: dict = {}
-    for r in just_listed:
-        cohorts.setdefault((r["vendor_id"], _arrival_day(r)), []).append(r)
-    excluded: dict = {}
-    for key, group in cohorts.items():
-        vendor_id, _day = key
-        median = medians.get(vendor_id, 0.0)
-        threshold = max(float(BULK_SPIKE_ABS_FLOOR), BULK_SPIKE_K * median)
-        if len(group) > threshold:
-            excluded[key] = {"count": len(group), "threshold": threshold, "median": median}
-    return excluded
-
-
 @dataclass(frozen=True)
 class ArrivalGuardReport:
-    """The CTK-191 honest-count guard's output: `kept` is the filtered population
-    (every pass-through arm + the surviving just-listed rows), the basis every
-    downstream count/composition/sample derives from. The drop fields are
-    diagnostics for the verify script + log line — the cold-start rows excluded and
-    the re-index cohorts ({(vendor_id, day): {count, threshold, median}})."""
+    """The honest-count guard's output: `kept` is the filtered population (every
+    pass-through arm + the surviving just-listed rows), the basis every downstream
+    count/composition/sample derives from. The drop fields are diagnostics for the
+    verify script + log line — the cold-start rows excluded and the re-index cohorts
+    ({(vendor_id, day): {count, threshold, median}}). Unchanged interface across the
+    CTK-195 SQL cutover so the call sites' report-consumers stay untouched."""
     kept: list
     cold_start_dropped: list
     bulk_excluded: dict
 
 
-def _guard_arrivals(conn, rows: list[dict], window_hours: int = 168) -> ArrivalGuardReport:
-    """Apply the CTK-191 honest-count guard to an F7 lead-event population. Splits
-    the just-listed arm (guarded) from every other arm (restocks — passed through
-    untouched), runs the cold-start exclusion then the bulk-spike exclusion over the
-    just-listed rows, and returns the filtered population + a drop report. The SINGLE
-    filter both count call-sites route through (select_f7_arrivals' true_count and
-    count_new_arrivals' N), so the cover count, the count-up N, the composition, and
-    the items sample all derive from ONE coherent filtered set.
+def _guard_arrivals(conn, window_hours: int = 168, event_filter: list[str] | None = None) -> ArrivalGuardReport:
+    """Thin diagnostic wrapper over migration 0052's f7_arrivals_dispositioned — the
+    CTK-195 single guarded source. The guard COMPUTATION (cold-start + bulk-relist
+    exclusion) lives in SQL now; this reads the disposition-tagged rows, partitions
+    kept from the cold_start/bulk_relist drops, and reconstructs the cold_start_dropped
+    list + bulk_excluded cohort map so the _log_arrival_drops operator provenance
+    survives the cutover. No parallel Python computation — there is one guard.
 
-    window_hours is the caller's lead-event window; it CLAMPS the trailing baseline so
-    the baseline always covers at least the cohort span (see below). Default 168h (the
-    F7 week) keeps the 30-day base unchanged."""
-    just_listed = [r for r in rows if r.get("event") == _F7_ARRIVAL_EVENT]
-    passthrough = [r for r in rows if r.get("event") != _F7_ARRIVAL_EVENT]
+    event_filter is threaded VERBATIM to the function — the two call sites pass
+    different filters (count_new_arrivals just-listed only; select_f7_arrivals both
+    arms), so it must NOT be hardcoded (a hardcoded two-event array would break the
+    count-up N). window_hours is threaded too (it drives the trailing-baseline clamp
+    inside the function). kept is the basis both count call-sites + composition +
+    sample derive from, so they stay coherent over ONE filtered set."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM f7_arrivals_dispositioned(%s, %s)",
+            (window_hours, event_filter),
+        )
+        rows = cur.fetchall()
 
-    # Mechanism 1 — cold-start exclusion (just-listed arm only).
-    anchors = fetch_arrival_anchors(conn, [r["id"] for r in just_listed])
-    warm, cold_start = [], []
-    for r in just_listed:
-        (cold_start if anchors.get(r["id"]) is None else warm).append(r)
+    kept = [r for r in rows if r["guard_disposition"] == "kept"]
+    cold_start = [r for r in rows if r["guard_disposition"] == "cold_start"]
 
-    # Mechanism 2 — bulk re-index exclusion over the warm cohort. Clamp the trailing
-    # baseline to cover the cohort window: a cohort day older than the baseline's reach
-    # would be tested against a baseline that doesn't include its era, so a genuine
-    # busy day could read as a re-index — the one way the guard could UNDER-count real
-    # arrivals. trailing >= ceil(window_hours/24) closes that; default 168h -> 30d.
-    excluded: dict = {}
-    if warm:
-        trailing_days = max(BULK_SPIKE_TRAILING_DAYS, math.ceil(window_hours / 24))
-        medians = {v: _median(c) for v, c in fetch_trailing_daily_arrivals(conn, trailing_days).items()}
-        excluded = _bulk_spike_excluded_cohorts(warm, medians)
-    surviving = [r for r in warm if (r["vendor_id"], _arrival_day(r)) not in excluded]
+    # Reconstruct the bulk-relist cohort map ({(vendor_id, day): {count, threshold,
+    # median}}) from the per-row tags — the function stamps bulk_threshold/bulk_median
+    # on every bulk_relist row, identical within a cohort, so first-row-wins is exact.
+    # _arrival_day buckets on first_seen_at (the cohort key the function grouped on).
+    bulk_excluded: dict = {}
+    for r in rows:
+        if r["guard_disposition"] != "bulk_relist":
+            continue
+        key = (r["vendor_id"], _arrival_day(r))
+        info = bulk_excluded.setdefault(
+            key, {"count": 0, "threshold": r["bulk_threshold"], "median": r["bulk_median"]}
+        )
+        info["count"] += 1
 
-    _log_arrival_drops(cold_start, excluded)
+    _log_arrival_drops(cold_start, bulk_excluded)
     return ArrivalGuardReport(
-        kept=passthrough + surviving,
+        kept=kept,
         cold_start_dropped=cold_start,
-        bulk_excluded=excluded,
+        bulk_excluded=bulk_excluded,
     )
 
 
@@ -918,29 +810,24 @@ def _log_arrival_drops(cold_start: list[dict], excluded: dict) -> None:
 def count_new_arrivals(conn, window_hours: int = 168) -> int:
     """Live count of just-listed arrivals over the window (default a week) — the
     count-up card's headline N (CTK-164 PB-2; branding-guide §"IG data-card motion"
-    + the F7-cover "{count} new arrivals this week." copy). The FULL uncapped
-    lead-event population (row_limit NULL, so a busy week is never truncated),
-    just-listed only, then the CTK-191 honest-count guard (cold-start + bulk-relist
-    exclusion) — the SAME guard and basis select_f7_arrivals' true_count routes the
-    arrival arm through, so the count-up N and the cover count agree on what counts."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT * FROM get_listing_lead_event(%s, %s, %s, %s)",
-            (None, window_hours, [_F7_ARRIVAL_EVENT], None),
-        )
-        rows = cur.fetchall()
-    return len(_guard_arrivals(conn, rows, window_hours).kept)
+    + the F7-cover "{count} new arrivals this week." copy). The honest-count guard
+    over the just-listed arm via the shared SQL source (CTK-195) — the SAME guard and
+    basis select_f7_arrivals' true_count routes its arrival arm through, so the
+    count-up N and the cover count agree on what counts. event_filter is just-listed
+    ONLY here (the count-up N excludes restocks); it MUST be threaded, not hardcoded
+    downstream."""
+    return len(_guard_arrivals(conn, window_hours, [_F7_ARRIVAL_EVENT]).kept)
 
 
 def select_f7_arrivals(conn, window_hours: int = 168, sample_cap: int = 9):
     """F7 arrivals/back-in-stock carousel selector. Returns
     (true_count, composition, items):
       - true_count  — the FULL count of arrival + restock lead-events over the
-        window (len of the UNCAPPED get_listing_lead_event population — row_limit
-        NULL, so a busy week is never silently truncated at the default 100), AFTER
-        the CTK-191 honest-count guard removes cold-start backfill + bulk-relist
-        re-index artifacts from the just-listed arm (restocks pass through). This is
-        the honest cover count, NOT len(items).
+        window AFTER the honest-count guard removes cold-start backfill + bulk-relist
+        re-index artifacts from the just-listed arm (restocks pass through). Sourced
+        from the shared SQL guard (CTK-195, get_f7_arrivals_guarded via
+        _guard_arrivals) — uncapped, so a busy week is never silently truncated. This
+        is the honest cover count, NOT len(items).
       - composition — all-arrivals / all-restocks / mixed, over that GUARDED
         population (drives the cover copy variant).
       - items       — <= sample_cap is_surface_b_card_eligible inners, ONE per coral
@@ -954,13 +841,9 @@ def select_f7_arrivals(conn, window_hours: int = 168, sample_cap: int = 9):
     The window is a lead-event-precedence query (one row per listing, its lead
     event), event_filter-scoped to just-listed + back-in-stock — auctions are
     already gated out across all arms (CTK-042, migration 0039)."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT * FROM get_listing_lead_event(%s, %s, %s, %s)",
-            (None, window_hours, [_F7_ARRIVAL_EVENT, _F7_RESTOCK_EVENT], None),
-        )
-        rows = cur.fetchall()
-    rows = _guard_arrivals(conn, rows, window_hours).kept   # CTK-191 honest-count guard (cold-start + bulk-relist)
+    # CTK-195 honest-count guard via the shared SQL source — both arms threaded as
+    # the event_filter (NOT hardcoded inside the wrapper), kept-only population.
+    rows = _guard_arrivals(conn, window_hours, [_F7_ARRIVAL_EVENT, _F7_RESTOCK_EVENT]).kept
     true_count = len(rows)
     composition = _f7_composition(rows)
     eligible = [r for r in rows if is_surface_b_card_eligible(r)]

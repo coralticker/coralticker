@@ -7,10 +7,14 @@ raw (unguarded) population to a named cause:
   - BULK RE-INDEX — a vendor WITH prior runs dumping a single-day cohort over
     max(ABS_FLOOR, K x trailing-median). Catches POTO.
 
-Prints the (vendor x calendar-day) just-listed matrix with each cohort tagged
-COLD-START / RE-INDEX / ok, then the guarded true_count + count-up N vs the raw
-2080 the cover rendered 2026-06-24. The corrected count is the figure Jon eyeballs
-before any reel re-render/push.
+CTK-195: the guard is the shared SQL source now (migration 0052). This script reads
+f7_arrivals_dispositioned — every row carries its guard_disposition tag
+('kept'|'cold_start'|'bulk_relist') + the bulk threshold/median — so the matrix and
+the corrected count come straight off the function, no parallel Python computation.
+Prints the (vendor x calendar-day) just-listed matrix with each cohort's tag, then the
+guarded true_count + count-up N vs the raw population. The corrected count is the
+figure Jon eyeballs before any reel re-render/push (the live count rolls with the 168h
+window; 788 on 2026-06-24 -> drifts since — the shape, not the absolute, is the read).
 
 Run:  python scripts/ctk191_verify_f7_guard.py
 """
@@ -25,76 +29,71 @@ _RESTOCK = cq._F7_RESTOCK_EVENT   # "back-in-stock"
 WINDOW_H = 168
 
 
-def _rows(cur, sql, params=None):
-    cur.execute(sql, params or ())
-    return cur.fetchall()
-
-
 def main() -> int:
     with get_conn() as conn:
         with conn.cursor() as cur:
-            # Raw (unguarded) lead-event population — the basis the cover counted.
-            raw = _rows(
-                cur,
-                "SELECT * FROM get_listing_lead_event(%s, %s, %s, %s)",
-                (None, WINDOW_H, [_ARM, _RESTOCK], None),
+            # The disposition-tagged base — the single guarded source (migration 0052).
+            cur.execute(
+                "SELECT * FROM f7_arrivals_dispositioned(%s, %s)",
+                (WINDOW_H, [_ARM, _RESTOCK]),
             )
-            raw_arr = [r for r in raw if r["event"] == _ARM]
-            raw_res = [r for r in raw if r["event"] == _RESTOCK]
-            print(f"=== RAW {WINDOW_H}h lead-event population (unguarded) ===")
-            print(f"  total={len(raw)}  just-listed={len(raw_arr)}  back-in-stock={len(raw_res)}")
+            rows = cur.fetchall()
 
-            # Per (vendor, day) just-listed matrix, with the guard's verdict per cohort.
-            anchors = cq.fetch_arrival_anchors(conn, [r["id"] for r in raw_arr])
-            warm = [r for r in raw_arr if anchors.get(r["id"]) is not None]
-            cold = [r for r in raw_arr if anchors.get(r["id"]) is None]
-            medians = {v: cq._median(c) for v, c in cq.fetch_trailing_daily_arrivals(conn).items()}
-            excluded = cq._bulk_spike_excluded_cohorts(warm, medians)
+        arr = [r for r in rows if r["event"] == _ARM]
+        res = [r for r in rows if r["event"] == _RESTOCK]
+        kept = [r for r in rows if r["guard_disposition"] == "kept"]
+        cold = [r for r in arr if r["guard_disposition"] == "cold_start"]
+        bulk = [r for r in arr if r["guard_disposition"] == "bulk_relist"]
 
-            # Vendor slug lookup for legible output.
-            slugs = {r["vendor_id"]: r["vendor_slug"] for r in raw}
-            cold_by_vendor: dict = {}
-            for r in cold:
-                cold_by_vendor[r["vendor_id"]] = cold_by_vendor.get(r["vendor_id"], 0) + 1
+        print(f"=== RAW {WINDOW_H}h lead-event population (pre-guard) ===")
+        print(f"  total={len(rows)}  just-listed={len(arr)}  back-in-stock={len(res)}")
 
-            # Full cohort matrix (warm cohorts by size + the cold-start vendors).
-            cohorts: dict = {}
-            for r in raw_arr:
-                cohorts.setdefault((r["vendor_id"], cq._arrival_day(r)), []).append(r)
+        # Per (vendor, day) just-listed matrix, tagged by the function's disposition.
+        slugs = {r["vendor_id"]: r["vendor_slug"] for r in rows}
+        cohorts: dict = {}
+        for r in arr:
+            cohorts.setdefault((r["vendor_id"], cq._arrival_day(r)), []).append(r)
 
-            def _verdict(key, group):
-                vid, _day = key
-                n_cold = sum(1 for r in group if anchors.get(r["id"]) is None)
-                if n_cold == len(group):
-                    return "COLD-START"
-                if key in excluded:
-                    info = excluded[key]
-                    return f"RE-INDEX (>{info['threshold']:.0f}, med={info['median']:.1f})"
-                return "ok"
+        def _verdict(group):
+            tags = {r["guard_disposition"] for r in group}
+            if tags == {"cold_start"}:
+                return "COLD-START"
+            if "bulk_relist" in tags:
+                ex = next(r for r in group if r["guard_disposition"] == "bulk_relist")
+                return f"RE-INDEX (>{ex['bulk_threshold']:.0f}, med={ex['bulk_median']:.1f})"
+            return "ok"
 
-            print(f"\n=== just-listed (vendor x calendar-day) matrix — {len(cohorts)} cohorts ===")
-            for key, group in sorted(cohorts.items(), key=lambda kv: -len(kv[1])):
-                vid, day = key
-                print(f"  {slugs.get(vid, vid):<22} {str(day):<12} {len(group):>5}   {_verdict(key, group)}")
+        print(f"\n=== just-listed (vendor x calendar-day) matrix — {len(cohorts)} cohorts ===")
+        for key, group in sorted(cohorts.items(), key=lambda kv: -len(kv[1])):
+            vid, day = key
+            print(f"  {slugs.get(vid, vid):<22} {str(day):<12} {len(group):>5}   {_verdict(group)}")
 
-            # The guarded outcome (the production path both call-sites take).
-            report = cq._guard_arrivals(conn, raw, WINDOW_H)
-            guarded_arr = sum(1 for r in report.kept if r["event"] == _ARM)
-            true_count, composition, items = cq.select_f7_arrivals(conn)
-            count_n = cq.count_new_arrivals(conn)
+        # Bulk cohorts (the function's bulk_relist tags), grouped for the operator view.
+        bulk_cohorts: dict = {}
+        for r in bulk:
+            k = (r["vendor_id"], cq._arrival_day(r))
+            bulk_cohorts.setdefault(k, 0)
+            bulk_cohorts[k] += 1
+        cold_by_vendor: dict = {}
+        for r in cold:
+            cold_by_vendor[r["vendor_id"]] = cold_by_vendor.get(r["vendor_id"], 0) + 1
 
-            print("\n=== GUARD OUTCOME ===")
-            print(f"  cold-start dropped : {len(cold)}  {dict(sorted(cold_by_vendor.items()))}")
-            print(f"  re-index cohorts   : {len(excluded)}")
-            for key, info in sorted(excluded.items(), key=lambda kv: -kv[1]["count"]):
-                vid, day = key
-                print(f"    - {slugs.get(vid, vid):<20} {str(day):<12} {info['count']} dropped")
-            print(f"\n  RAW cover count (the live 2080 shape) : {len(raw)}")
-            print(f"  GUARDED true_count (cover headline)   : {true_count}   composition={composition}")
-            print(f"  GUARDED count_new_arrivals (count-up N): {count_n}")
-            print(f"  surviving just-listed                 : {guarded_arr}   (raw just-listed {len(raw_arr)})")
-            print(f"  surviving back-in-stock (passthrough) : {len(raw_res)}")
-            print(f"  sample items rendered                 : {len(items)} (cap 9)")
+        # The guarded outcome (the production path both call-sites take).
+        true_count, composition, items = cq.select_f7_arrivals(conn)
+        count_n = cq.count_new_arrivals(conn)
+
+        print("\n=== GUARD OUTCOME ===")
+        print(f"  cold-start dropped : {len(cold)}  {dict(sorted(cold_by_vendor.items()))}")
+        print(f"  re-index cohorts   : {len(bulk_cohorts)}")
+        for key, n in sorted(bulk_cohorts.items(), key=lambda kv: -kv[1]):
+            vid, day = key
+            print(f"    - {slugs.get(vid, vid):<20} {str(day):<12} {n} dropped")
+        print(f"\n  RAW population (pre-guard)            : {len(rows)}")
+        print(f"  GUARDED true_count (cover headline)   : {true_count}   composition={composition}")
+        print(f"  GUARDED count_new_arrivals (count-up N): {count_n}")
+        print(f"  surviving just-listed                 : {sum(1 for r in kept if r['event'] == _ARM)}   (raw just-listed {len(arr)})")
+        print(f"  surviving back-in-stock (passthrough) : {len(res)}")
+        print(f"  sample items rendered                 : {len(items)} (cap 9)")
 
     return 0
 
