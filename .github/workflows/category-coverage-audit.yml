@@ -27,13 +27,11 @@ on:
         required: false
         default: '1.5'
 
-  # ── schedule DISABLED until the CTK-200 pre-enable gate clears. ──────────────
-  # Do NOT uncomment until a local dry-run confirms steady-state would-apply < 100
-  # (else the breaker trips on the first scheduled run and Slacks a false alarm),
-  # AND a real workflow_dispatch manifest-proof run is green (a local script run
-  # does NOT load this YAML / the composite action — feedback_composite_action_
-  # manifest_local_proof_gap). Enable in a one-line follow-up commit. See the
-  # CTK-200 results.md runbook.
+  # schedule ENABLED 2026-06-26 — the CTK-200 pre-enable gate cleared: a local
+  # dry-run measured 0 changes (< 100, so the breaker won't false-trip week 1), a
+  # real workflow_dispatch manifest-proof run was green (the YAML + composite
+  # action load), and a throwaway fire-drill confirmed the safety-stop Slack
+  # actually posts on an exit-2 (the one seam unit tests can't reach).
   #
   # Slot rationale (load-bearing, not cosmetic — feedback_yaml_state_cron_window_risk):
   # '12 4 * * 1' = Mon 04:12 UTC. Sun->Mon overnight, lowest-traffic, and clear of
@@ -44,8 +42,8 @@ on:
   # deterministic, so a backfill/scrape race on category converges; off-window is
   # insurance, not a correctness gate. Own file (not a job in staleness-cap.yml):
   # different cadence, and a single workflow fires ALL its jobs on ANY matched cron.
-  # schedule:
-  #   - cron: '12 4 * * 1'
+  schedule:
+    - cron: '12 4 * * 1'
 
 permissions:
   contents: read
