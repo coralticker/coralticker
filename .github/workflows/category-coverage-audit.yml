@@ -10,7 +10,7 @@ name: category-coverage-audit
 #
 # The engine (scrapers/tools/ctk199_category_coverage_backfill.py) runs a two-pass
 # gated --apply: it computes the COMPLETE fleet change-set first, then a
-# circuit-breaker aborts the write (exit 2, ZERO writes) if the run would change
+# circuit-breaker aborts the write (exit 3, ZERO writes) if the run would change
 # more than --max-changes OR --max-change-pct of the in-stock fleet. A large weekly
 # drift is an anomaly signal (parser regression / a committed pattern-widening
 # propagating), not normal rotation — surfaced for a human eyeball, not written.
@@ -76,10 +76,11 @@ jobs:
       # Runs --apply with the circuit-breaker (defaults 100 / 1.5%, overridable via
       # dispatch inputs). The breaker makes unattended --apply safe: it aborts the
       # write on an anomalous drift instead of writing it. Exit code drives the
-      # Slack message below: 0 clean, 1 run failure (incomplete pull), 2 breaker
-      # tripped. Capture the code + would-apply count BEFORE propagating, so the
-      # discriminated Slack steps can read them even though a non-zero exit fails
-      # the step.
+      # Slack message below: 0 clean, 1 couldn't-finish (incomplete pull), 3 safety
+      # stop (breaker), 4 partial write; anything else (incl. argparse's 2, or an
+      # empty code from a timeout/cancel) -> unexpected. Capture the code + count
+      # BEFORE propagating, so the Slack steps can read them even though a non-zero
+      # exit fails the step.
       - name: Run category coverage audit
         id: audit
         env:
