@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { MDXRemote } from 'next-mdx-remote/rsc';
+import remarkGfm from 'remark-gfm';
 import {
   getAllGuideSlugs,
   getGuideBySlug,
@@ -81,7 +82,15 @@ export default async function GuidePage({
       />
       <PageEyebrow chunks={[kind, ...(updated ? [`UPDATED ${updatedMonthYear(updated)}`] : [])]} />
       <PageH1 className="mb-6">{title}</PageH1>
-      <MDXRemote source={guide.body} components={mdxComponents} />
+      <MDXRemote
+        source={guide.body}
+        components={mdxComponents}
+        // remark-gfm parses GFM pipe tables (the Part-A channel table) + the
+        // rest of GFM. Without it MDXRemote leaves `| … |` rows as literal text.
+        // Scoped to this /guides/[slug] render only — the email digest MDX path
+        // doesn't share this call.
+        options={{ mdxOptions: { remarkPlugins: [remarkGfm] } }}
+      />
     </PageShell>
   );
 }

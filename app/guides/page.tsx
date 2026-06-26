@@ -19,6 +19,8 @@ import { SITE_URL } from '@/lib/seo/site-url';
 const GUIDE_BLURBS: Record<string, string> = {
   'most-hunted-acros-2026':
     "The Acropora names that sell out in the first minute — and what they're going for right now.",
+  'how-to-buy-rare-corals':
+    "The insider moves for catching a rare coral before it's gone — winning the live sale, spotting a fake, and not getting burned once it's home.",
 };
 
 export const metadata: Metadata = {
