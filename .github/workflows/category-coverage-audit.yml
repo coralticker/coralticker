@@ -107,7 +107,7 @@ jobs:
           COUNT: ${{ steps.audit.outputs.count }}
         run: |
           curl -sS -X POST -H 'Content-Type: application/json' \
-            --data "{\"text\": \"category-coverage-audit BREAKER TRIPPED: ${COUNT} changes exceed the ceiling — ZERO writes. Review the diff and land manually (dispatch with a raised max_changes) if intended: ${RUN_URL}\"}" \
+            --data "{\"text\": \"Weekly category check paused itself as a safety stop: it was about to change ${COUNT} listing categories — more than usual — so it changed nothing. Take a look, and if that's expected, run it again with a higher limit: ${RUN_URL}\"}" \
             "${SLACK_WEBHOOK_URL}"
 
       - name: Slack alert — run failure (incomplete fleet pull)
@@ -117,7 +117,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           curl -sS -X POST -H 'Content-Type: application/json' \
-            --data "{\"text\": \"category-coverage-audit RUN CRASHED (a vendor live-pull failed — incomplete fleet, zero writes): ${RUN_URL}\"}" \
+            --data "{\"text\": \"Weekly category check couldn't finish — one of the shops didn't load, so it changed nothing and will try again next week. Take a look if it keeps happening: ${RUN_URL}\"}" \
             "${SLACK_WEBHOOK_URL}"
 
       - name: Slack alert — unexpected failure
@@ -127,5 +127,5 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           curl -sS -X POST -H 'Content-Type: application/json' \
-            --data "{\"text\": \"category-coverage-audit RUN CRASHED (unexpected — step died before reporting): ${RUN_URL}\"}" \
+            --data "{\"text\": \"Weekly category check failed unexpectedly and changed nothing. Take a look: ${RUN_URL}\"}" \
             "${SLACK_WEBHOOK_URL}"
