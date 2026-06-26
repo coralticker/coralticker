@@ -142,22 +142,34 @@ def main() -> int:
     drift_rows: list[str] = []
     vendor_errors: list[str] = []
 
+    # Vendor list — short connection, opened and closed immediately.
     with db.get_conn() as conn:
         with conn.cursor() as cur:
             vendors = _vendor_slugs(cur)
 
-        for v in vendors:
-            slug, platform = v["slug"], v["platform"]
-            try:
+    # Per vendor, the DB connection is held ONLY for the quick read + write, never
+    # across the slow live HTTP pull. A single connection spanning all 12 pulls
+    # sits idle for minutes and Neon drops it mid-run (the 2026-06-26 partial-apply
+    # incident died on pacific_east's pull). Fresh short-lived connections per
+    # vendor sidestep the idle-timeout entirely; with autocommit each vendor's
+    # writes commit independently, and the tool is idempotent, so a mid-fleet
+    # failure just re-runs to completion.
+    for v in vendors:
+        slug, platform = v["slug"], v["platform"]
+        # 1. config + live pull — no DB connection open during the HTTP fetch.
+        try:
+            with db.get_conn() as conn:
                 vendor_row = db.fetch_vendor(conn, slug)
-                config = {**vendor_row, **_load_yaml(slug)}
-                fresh = _live_categories(config, platform)
-            except Exception as e:  # noqa: BLE001 — loud per-vendor, continue the fleet
-                msg = f"{slug}: live-pull FAILED ({type(e).__name__}: {e})"
-                print(f"  {msg}\n")
-                vendor_errors.append(msg)
-                continue
+            config = {**vendor_row, **_load_yaml(slug)}
+            fresh = _live_categories(config, platform)
+        except Exception as e:  # noqa: BLE001 — loud per-vendor, continue the fleet
+            msg = f"{slug}: live-pull FAILED ({type(e).__name__}: {e})"
+            print(f"  {msg}\n", flush=True)
+            vendor_errors.append(msg)
+            continue
 
+        # 2. read stored + (optionally) write — fresh short-lived connection.
+        with db.get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT id, product_url, raw_title, category FROM vendor_listings "
@@ -181,7 +193,8 @@ def main() -> int:
             v_fills = sum(1 for c in changes if c[4] == "fill")
             v_corr = sum(1 for c in changes if c[4] == "corr")
             print(f"--- {slug} ({platform}): {len(stored)} stored, {len(fresh)} live, "
-                  f"{len(changes)} change ({v_fills} fill, {v_corr} correction, {len(excluded)} drift-excluded) ---")
+                  f"{len(changes)} change ({v_fills} fill, {v_corr} correction, {len(excluded)} drift-excluded) ---",
+                  flush=True)
             for vid, title, old, new, disp in applied:
                 kind = "FILL " if disp == "fill" else "CORR "
                 print(f"  {kind} id={vid:>7}  {str(old):<10} -> {str(new):<10}  {title[:56]!r}")
@@ -190,7 +203,7 @@ def main() -> int:
             for vid, title, old, new, disp in excluded:
                 print(f"  DRIFT id={vid:>7}  {str(old):<10} -> {str(new):<10}  {title[:56]!r}  <-- excluded (vendor drift)")
                 drift_rows.append(f"{slug} id={vid} {str(old)}->{str(new)} {title[:50]!r}")
-            print()
+            print(flush=True)
 
             if args.apply and applied:
                 with conn.cursor() as cur:
@@ -198,10 +211,10 @@ def main() -> int:
                         "UPDATE vendor_listings SET category = %s WHERE id = %s",
                         [(new, vid) for vid, _t, _o, new, _d in applied],
                     )
-            total_changes += len(changes)
-            fills += v_fills
-            corrections += v_corr
-            drift += len(excluded)
+        total_changes += len(changes)
+        fills += v_fills
+        corrections += v_corr
+        drift += len(excluded)
 
     applied_total = fills + corrections
     print("=== summary ===")
