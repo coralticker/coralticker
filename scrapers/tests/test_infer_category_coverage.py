@@ -134,3 +134,46 @@ def test_reverse_guard_survives_coverage_add():
     # title carrying a non-coral marker reroutes to equipment.
     assert infer_category(_p("Goniopora Coral Food Pellets")) == "equipment"
     assert infer_category(_p("Monti Cap Frag Plug Sticker")) == "equipment"
+
+
+# ─── CTK-199 round-2 coverage: the genus/common-name anchors CTK-194 left on the
+# residual in_stock NULL population (titles drawn from the 2026-06-25 audit). Each
+# positive assert FAILS if its term is removed from _CATEGORY_PATTERNS.
+
+def test_ctk199_sps_round2():
+    assert infer_category(_p("ATL Blue Clover Stag")) == "sps"              # \bstag
+    assert infer_category(_p("Blue Bottlebrush Staghorn")) == "sps"        # \bstaghorn
+    assert infer_category(_p("JF Psammacora")) == "sps"                     # psammacora spelling
+    assert infer_category(_p("Kelly Green Psammocora Coral")) == "sps"      # psammocora still works
+
+
+def test_ctk199_lps_round2():
+    assert infer_category(_p("TSA Sour Orange Lithophyllon Coral")) == "lps"  # \blithophyllon
+    assert infer_category(_p("JF Sly Devil Litho")) == "lps"                # \blitho (abbrev)
+    assert infer_category(_p("Berrylicious Indophyllia")) == "lps"          # \bindophyllia
+    assert infer_category(_p("JF Nuclear Trumpet")) == "lps"                # \btrumpet (Caulastrea)
+    assert infer_category(_p("WWC Diablo Diaseris")) == "lps"               # \bdiaseris
+    assert infer_category(_p("Neon Green Plate Coral")) == "lps"            # \bplate coral (phrase)
+    assert infer_category(_p("Rainbow Bubble Coral")) == "lps"              # \bbubble coral (phrase)
+    # hydnophora + astreopora: textbook SPS, but the fleet files them LPS
+    # (41:3 and 8:1) — vendor convention wins per the CTK-194 rule.
+    assert infer_category(_p("WWC Fuzzy Leprechaun Hydnophora")) == "lps"   # \bhydnophora
+    assert infer_category(_p("JF Blueberry Blast Hydno XXL Frag")) == "lps"  # \bhydno (abbrev)
+    assert infer_category(_p("JF Lime Time Astreopora")) == "lps"           # \bastreopora
+
+
+def test_ctk199_softie_round2():
+    assert infer_category(_p("Waving Hand Anthelia Coral")) == "softie"     # \banthelia
+    assert infer_category(_p("Daisy Polyps Coral")) == "softie"            # \bdaisy polyps (Clavularia)
+    assert infer_category(_p("Bicolor Pipe Organ")) == "softie"            # \bpipe organ
+    assert infer_category(_p("Tubipora Musica Colony")) == "softie"        # \btubipora (octocoral, NOT lps)
+
+
+def test_ctk199_trap_tokens_are_phrase_scoped():
+    # The common-word trap tokens must NEVER fire bare — only the phrase form.
+    # Bare "plate" already pinned None above (test_split_genus_words_excluded);
+    # these pin the round-2 traps the directive flagged (bubble / daisy / stag).
+    assert infer_category(_p("BC Bubblebath Unicorn")) is None     # bare "bubble" must not -> lps
+    assert infer_category(_p("Neon Green Bubble")) is None         # bubble w/o "coral" stays None
+    assert infer_category(_p("Lazy Daisy Stunner")) is None        # bare "daisy" must not -> softie
+    assert infer_category(_p("Main Stage Display Rack")) is None   # "stage" must not hit \bstag

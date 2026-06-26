@@ -83,15 +83,56 @@ _WHITESPACE_RUN = re.compile(r"\s+")
 # (Acroiris, Acroberry, "Pink Millie") stay sps via their product_type/tags, so
 # the whole-word title anchors cost ~0 real rows (confirmed in the close DRY
 # reconcile). 0 named-coral collisions; CTK-189 reverse-guard intact.
+#
+# CTK-199: a coverage-ADD round 2 (same sanctioned path as CTK-194 — explicitly
+# authorized new genera/common-names, FP-gated via the dry-run backfill diff +
+# the 0/248 matched-coral FP check). CTK-194 cut fleet in_stock NULL 718 -> 312;
+# ~89 of the residual still carry a genus/common-name anchor the pattern set
+# lacked. Each term below was evidence-driven (in_stock NULL audit 2026-06-25)
+# and FP-checked against the 248 matched corals (named_coral_id NOT NULL, the
+# CTK-189 0/237 method, now 0/248): 0 matched corals are mis-categorized by any
+# new token. Each category is the MAJORITY VOTE of the already-categorized fleet
+# rows carrying the term (the CTK-194 rule — vendor convention beats textbook),
+# verified against the live fleet at build (2026-06-25 majority-vote pull):
+#   sps   — stag/staghorn (Acropora common name, fleet 86:0); psammocora
+#           widened to the live vendor spelling psammacora via [oa] (fleet
+#           sps 98 : lps 30 — sps is the convention; the lps minority is the
+#           mis-tag this round corrects).
+#   lps   — lithophyllon + "litho" abbrev (fleet 59), indophyllia (45),
+#           trumpet (Caulastrea), diaseris (29), plate coral (133), bubble
+#           coral (31), AND hydnophora/hydno (fleet lps 41 : sps 3) +
+#           astreopora (lps 8 : sps 1). hydnophora + astreopora are textbook
+#           Merulinidae/Acroporidae "SPS", but the fleet overwhelmingly files
+#           them LPS — so lps, per the CTK-194 convention rule (the directive's
+#           sps guess lost to the live majority vote at the backfill dry run).
+#   softie — anthelia (fleet softie 2 : lps 1), daisy polyps (Clavularia),
+#           pipe organ + its genus tubipora. Tubipora musica is an OCTOCORAL
+#           (subclass Octocorallia) — softie, NOT the fleet's lps default (19
+#           rows): an octocoral-as-LPS is a stony-vs-soft category error, not an
+#           LPS/SPS tie the convention rule would settle, so taxonomy wins here
+#           and the CTK-199 backfill re-tags the 19 legacy lps pipe-organ rows.
+# TRAP TOKENS (common-word collision) are PHRASE/whole-word scoped, never bare,
+# per the directive + the CTK-186 substring lesson:
+#   - `\bplate\s+coral\b` ONLY (never bare `plate`: it hits frag mounting
+#     plates + "plate coral frag pack" bundles); the diaseris genus carries the
+#     rest of the Fungiidae plate population via `\bdiaseris\b`.
+#   - `\bbubble\s+coral\b` ONLY (never bare `bubble`: live NULL set has "bc
+#     bubblebath unicorn", a trade name, not a Plerogyra bubble coral; a bare
+#     token would also collide with bubble-tip anemones — though those hit the
+#     anemone pattern first).
+#   - `\bdaisy\s+polyps?\b` (never bare `daisy`: POTO/whimsical trade names).
+#   - `\bstag(?:horn)?\b`, `\btrumpet\b` whole-word (no "stagger"/"trumpetfish"
+#     substring bleed; fish is checked after lps but neither appears as a
+#     coral-vendor fish row in the fleet — confirmed in the dry-run diff).
 _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("chalice",  re.compile(r"\bchalices?\b|\bechinophyllia\b|\bmycedium\b|\boxypora\b", re.I)),
     ("anemone",  re.compile(r"\banemones?\b|\bbta\b|\brbta\b|\bcondy\b", re.I)),
     ("clam",     re.compile(r"\bclams?\b|\btridacna\b", re.I)),
     ("mushroom", re.compile(r"\bmushrooms?\b|\brhodactis\b|\bdiscosoma\b|\bricordea\b", re.I)),
     ("zoa",      re.compile(r"\bzoa(?:nthid)?s?\b|\bpaly", re.I)),
-    ("softie",   re.compile(r"\bsofties?\b|\bsofty\b|\bleather\b|\btoadstool\b|\bkenya\b|\bsinularia\b|\bsarcophyton\b|\bcloves?\b|\bgorgonian|\bxenia\b|\bcespitularia\b|\bstar\s+polyps?\b", re.I)),
-    ("sps",      re.compile(r"\bsps\b|\bacropora\b|\bmontipora\b|\bstylophora\b|\bseriatopora\b|\bpocillopora\b|\bmonti|\bacro\b|\bmilli\b|\bmillie|\bmillepora\b|\bdigi\b|\bdigitata\b|\bstylo|\banacro|\bpsammocora\b|\bbirds?\s*nest\b", re.I)),
-    ("lps",      re.compile(r"\blps\b|\beuphyllia\b|\btorch\b|\bhammer\b|\bfrogspawn\b|\bacanthophyllia\b|\btrachyphyllias?\b|\bcynarina\b|\bsymphyllia\b|\bfavia\b|\bfavites\b|\bmicromussa\b|\bacan\b|\bacantho|\bblasto|\bduncan|\blobo|\bscoly|\bpectinia\b|\bpectina\b|\bfungia|\bbowerbanki\b|\bgoni|\balveopora\b|\bgalaxea\b|\belegance\b|\baustralomussa\b|\bleptoseris\b|\bleptastrea\b|\bcyphastrea\b|\bcaulastrea\b|\bcandy\s+cane\b", re.I)),
+    ("softie",   re.compile(r"\bsofties?\b|\bsofty\b|\bleather\b|\btoadstool\b|\bkenya\b|\bsinularia\b|\bsarcophyton\b|\bcloves?\b|\bgorgonian|\bxenia\b|\bcespitularia\b|\bstar\s+polyps?\b|\banthelia\b|\bdaisy\s+polyps?\b|\bpipe\s+organ\b|\btubipora\b", re.I)),
+    ("sps",      re.compile(r"\bsps\b|\bacropora\b|\bmontipora\b|\bstylophora\b|\bseriatopora\b|\bpocillopora\b|\bmonti|\bacro\b|\bmilli\b|\bmillie|\bmillepora\b|\bdigi\b|\bdigitata\b|\bstylo|\banacro|\bpsamm[oa]cora\b|\bstag(?:horn)?\b|\bbirds?\s*nest\b", re.I)),
+    ("lps",      re.compile(r"\blps\b|\beuphyllia\b|\btorch\b|\bhammer\b|\bfrogspawn\b|\bacanthophyllia\b|\btrachyphyllias?\b|\bcynarina\b|\bsymphyllia\b|\bfavia\b|\bfavites\b|\bmicromussa\b|\bacan\b|\bacantho|\bblasto|\bduncan|\blobo|\bscoly|\bpectinia\b|\bpectina\b|\bfungia|\bbowerbanki\b|\bgoni|\balveopora\b|\bgalaxea\b|\belegance\b|\baustralomussa\b|\bleptoseris\b|\bleptastrea\b|\bcyphastrea\b|\bcaulastrea\b|\bcandy\s+cane\b|\blithophyllon\b|\blitho\b|\bindophyllia\b|\btrumpet\b|\bbubble\s+coral\b|\bdiaseris\b|\bplate\s+coral\b|\bhydnophora\b|\bhydno\b|\bastreopora\b", re.I)),
     ("fish",     re.compile(r"\bfish\b|\bwrasse\b|\btang\b|\bgoby\b|\bclownfish\b|\bblenny\b", re.I)),
     ("invert",   re.compile(r"\bsnails?\b|\bshrimp\b|\bcrabs?\b|\burchin\b|\bstarfish\b|\bcucumber\b", re.I)),
     ("equipment",re.compile(r"\bpumps?\b|\bskimmers?\b|\breactors?\b|\bheaters?\b|\bcontrollers?\b|\bfilters?\b", re.I)),
