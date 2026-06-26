@@ -124,15 +124,53 @@ _WHITESPACE_RUN = re.compile(r"\s+")
 #   - `\bstag(?:horn)?\b`, `\btrumpet\b` whole-word (no "stagger"/"trumpetfish"
 #     substring bleed; fish is checked after lps but neither appears as a
 #     coral-vendor fish row in the fleet — confirmed in the dry-run diff).
+#
+# CTK-199 ROUND 3: a third coverage-ADD pass on the same sanctioned, FP-gated
+# path. Round 2 cut the classifier-gap residual but a ~60-row obviously-typed
+# remainder still sat at category IS NULL. Each term below was evidence-driven
+# (in_stock NULL audit + full-fleet majority-vote pull 2026-06-26) and FP-checked
+# against the 248 matched corals (named_coral_id NOT NULL; 0 mis-categorized).
+# Category = MAJORITY VOTE of the already-categorized fleet rows carrying the
+# term (the CTK-194 convention rule — vendor convention beats textbook). Where
+# the live fleet contradicted the directive's taxonomic guess, the fleet won:
+#   lps   — lepto (Leptoseris/leptastrea abbrev; both genera already file lps,
+#           so the bare abbrev is unambiguous lps 8:1); galaxia (Galaxea spelling
+#           variant, sits with galaxea); platygyra (50:0) + heliofungia (9:0) +
+#           war coral (65:0) + maze brain (Platygyra/Leptoria, 37:1); scroll
+#           coral + turbinaria (the scroll-coral genus, lps 42:1, also corrects
+#           the round-2 Turbinaria mis-flip); AND echinata — the directive mapped
+#           it chalice (Echinophyllia echinata) but the live fleet files echinata
+#           lps 97 : sps 20 : chalice 0 (Acanthastrea echinata dominates the
+#           trade names), so lps per the convention rule; genuine Echinophyllia
+#           rows still hit the chalice pattern FIRST via \bechinophyllia\b.
+#   sps   — tenuis (Acropora tenuis, 269:0); mille (Acropora millepora abbrev,
+#           63:0, FP 0 — the FP-prone token cleared its dry-run gate; distinct
+#           from \bmilli\b/\bmillie/\bmillepora\b, none of which match bare "mille").
+#   softie — sympodium. Sympodium is an OCTOCORAL (Xeniidae); the fleet files it
+#           lps 6, but octocoral-as-LPS is a stony-vs-soft category ERROR, not an
+#           LPS/SPS tie the convention rule settles — taxonomy wins, exactly the
+#           round-2 Tubipora/pipe-organ call. The backfill re-tags the legacy rows.
+# SKIPPED this round (surfaced at the audit, deliberately NOT added):
+#   - pavona — fleet lps 30 : sps 26 is a near-tie (directive guessed sps); too
+#     close to file either way, left to the matcher.
+#   - grandis — the live signal is zoa 18 : lps 0 : sps 0 (Palythoa grandis trade
+#     names), already classified by the zoa pattern; not the lps/sps split the
+#     directive anticipated, so no add.
+#   - bubble loosening — bare \bbubble\b yields ONE NULL fill ("Neon Green
+#     Bubble") and carries latent equipment FP (Bubble Magus skimmers, bubble
+#     algae); not worth re-opening the round-2 bubble trap, stays phrase-scoped.
+# Plate loosening SHIPS as a NULL-only floor (see _LOOSE_PLATE below), not a
+# main-pattern term — 7 clean trade-name fills (Oil Spill Plate, Burning Shadow
+# Plate), 0 matched-coral FP, frag/mounting/bundle guarded.
 _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("chalice",  re.compile(r"\bchalices?\b|\bechinophyllia\b|\bmycedium\b|\boxypora\b", re.I)),
     ("anemone",  re.compile(r"\banemones?\b|\bbta\b|\brbta\b|\bcondy\b", re.I)),
     ("clam",     re.compile(r"\bclams?\b|\btridacna\b", re.I)),
     ("mushroom", re.compile(r"\bmushrooms?\b|\brhodactis\b|\bdiscosoma\b|\bricordea\b", re.I)),
     ("zoa",      re.compile(r"\bzoa(?:nthid)?s?\b|\bpaly", re.I)),
-    ("softie",   re.compile(r"\bsofties?\b|\bsofty\b|\bleather\b|\btoadstool\b|\bkenya\b|\bsinularia\b|\bsarcophyton\b|\bcloves?\b|\bgorgonian|\bxenia\b|\bcespitularia\b|\bstar\s+polyps?\b|\banthelia\b|\bdaisy\s+polyps?\b|\bpipe\s+organ\b|\btubipora\b", re.I)),
-    ("sps",      re.compile(r"\bsps\b|\bacropora\b|\bmontipora\b|\bstylophora\b|\bseriatopora\b|\bpocillopora\b|\bmonti|\bacro\b|\bmilli\b|\bmillie|\bmillepora\b|\bdigi\b|\bdigitata\b|\bstylo|\banacro|\bpsamm[oa]cora\b|\bstag(?:horn)?\b|\bbirds?\s*nest\b", re.I)),
-    ("lps",      re.compile(r"\blps\b|\beuphyllia\b|\btorch\b|\bhammer\b|\bfrogspawn\b|\bacanthophyllia\b|\btrachyphyllias?\b|\bcynarina\b|\bsymphyllia\b|\bfavia\b|\bfavites\b|\bmicromussa\b|\bacan\b|\bacantho|\bblasto|\bduncan|\blobo|\bscoly|\bpectinia\b|\bpectina\b|\bfungia|\bbowerbanki\b|\bgoni|\balveopora\b|\bgalaxea\b|\belegance\b|\baustralomussa\b|\bleptoseris\b|\bleptastrea\b|\bcyphastrea\b|\bcaulastrea\b|\bcandy\s+cane\b|\blithophyllon\b|\blitho\b|\bindophyllia\b|\btrumpet\b|\bbubble\s+coral\b|\bdiaseris\b|\bplate\s+coral\b|\bhydnophora\b|\bhydno\b|\bastreopora\b", re.I)),
+    ("softie",   re.compile(r"\bsofties?\b|\bsofty\b|\bleather\b|\btoadstool\b|\bkenya\b|\bsinularia\b|\bsarcophyton\b|\bcloves?\b|\bgorgonian|\bxenia\b|\bcespitularia\b|\bstar\s+polyps?\b|\banthelia\b|\bdaisy\s+polyps?\b|\bpipe\s+organ\b|\btubipora\b|\bsympodium\b", re.I)),
+    ("sps",      re.compile(r"\bsps\b|\bacropora\b|\bmontipora\b|\bstylophora\b|\bseriatopora\b|\bpocillopora\b|\bmonti|\bacro\b|\bmilli\b|\bmillie|\bmillepora\b|\bdigi\b|\bdigitata\b|\bstylo|\banacro|\bpsamm[oa]cora\b|\bstag(?:horn)?\b|\bbirds?\s*nest\b|\btenuis\b|\bmille\b", re.I)),
+    ("lps",      re.compile(r"\blps\b|\beuphyllia\b|\btorch\b|\bhammer\b|\bfrogspawn\b|\bacanthophyllia\b|\btrachyphyllias?\b|\bcynarina\b|\bsymphyllia\b|\bfavia\b|\bfavites\b|\bmicromussa\b|\bacan\b|\bacantho|\bblasto|\bduncan|\blobo|\bscoly|\bpectinia\b|\bpectina\b|\bfungia|\bbowerbanki\b|\bgoni|\balveopora\b|\bgalaxea\b|\belegance\b|\baustralomussa\b|\bleptoseris\b|\bleptastrea\b|\bcyphastrea\b|\bcaulastrea\b|\bcandy\s+cane\b|\blithophyllon\b|\blitho\b|\bindophyllia\b|\btrumpet\b|\bbubble\s+coral\b|\bdiaseris\b|\bplate\s+coral\b|\bhydnophora\b|\bhydno\b|\bastreopora\b|\blepto\b|\bechinata\b|\bgalaxia\b|\bplatygyra\b|\bheliofungia\b|\bscroll\s+coral\b|\bturbinaria\b|\bwar\s+coral\b|\bmaze\s+brain\b", re.I)),
     ("fish",     re.compile(r"\bfish\b|\bwrasse\b|\btang\b|\bgoby\b|\bclownfish\b|\bblenny\b", re.I)),
     ("invert",   re.compile(r"\bsnails?\b|\bshrimp\b|\bcrabs?\b|\burchin\b|\bstarfish\b|\bcucumber\b", re.I)),
     ("equipment",re.compile(r"\bpumps?\b|\bskimmers?\b|\breactors?\b|\bheaters?\b|\bcontrollers?\b|\bfilters?\b", re.I)),
@@ -176,6 +214,29 @@ _NONCORAL_TITLE_MARKERS = re.compile(
     r"\b(?:sticker|kit|probe|clipper|cartridge|earrings)s?\b"
     r"|pellets?\b"
     r"|\bcoral\s+foods?\b",
+    re.I,
+)
+
+
+# CTK-199 round 3 — loose-plate floor. A trailing bare "plate" trade name (Oil
+# Spill Plate, Burning Shadow Plate, POTO Tequila Sunrise Plate) is a Fungiidae
+# plate coral -> lps. Round 2 kept plate PHRASE-scoped (`\bplate\s+coral\b`) to
+# dodge frag-mounting plates + frag-pack bundles; the directive's named
+# trade-name forms drop bare "plate" with no "coral", falling to NULL. This floor
+# adds them WITHOUT re-opening the trap: it runs ONLY after the strict patterns
+# return None (so it can never re-flip an already-categorized row — its blast
+# radius is exactly the NULL rows), and a non-coral guard suppresses frag-mounting
+# plates (equipment) and frag-pack / box / bundle lots (multi-item). TITLE-scoped:
+# a real plate coral says "plate" in its title; a tag carrying "plate" must not
+# floor. FP audit 2026-06-26: 7 NULL in_stock fills, 0/248 matched corals touched,
+# the one bundle ("Plate Coral Frag Pack") already lps via the phrase term. Bubble
+# was evaluated for the same loosening and REJECTED (1 fill, latent Bubble-Magus /
+# bubble-algae equipment FP) — bubble stays phrase-scoped in the lps pattern.
+# "Purple Plating Sponge" (the WWC non-coral) is SAFE here: \bplate\b does not
+# match "plating", so the floor leaves it NULL (junk-exclusion is Lever B's lane).
+_LOOSE_PLATE = re.compile(r"\bplate\b", re.I)
+_PLATE_NONCORAL_GUARD = re.compile(
+    r"\bmounting\b|\bholder\b|\brack\b|frag\s+pack|\bbundle\b|\bbox\b|\bpack\b|\bmystery\b",
     re.I,
 )
 
@@ -321,6 +382,11 @@ def infer_category(product: dict) -> str | None:
             if label in _CORAL_CATEGORIES and _NONCORAL_TITLE_MARKERS.search(title):
                 return "equipment"
             return label
+    # CTK-199 round-3 loose-plate floor — NULL-only, runs after every strict
+    # pattern missed. A bare trailing "plate" trade name -> lps unless a
+    # frag-mounting / bundle marker says it is equipment or a multi-item lot.
+    if _LOOSE_PLATE.search(title) and not _PLATE_NONCORAL_GUARD.search(title):
+        return "lps"
     return None
 
 

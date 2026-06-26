@@ -91,12 +91,24 @@ def test_color_and_generic_words_excluded():
     assert infer_category(_p("Grafted Beauty")) is None
 
 
-def test_split_genus_words_excluded():
-    # Bare "plate" = frag-plate risk; bare "echinata" splits 33 lps vs 7 sps;
-    # bare "lepto" is leptoseris(lps) vs leptastrea. None is added as a bare
-    # term, so a title carrying ONLY the bare word stays None.
-    assert infer_category(_p("POTO Plate")) is None
-    assert infer_category(_p("Frag Plate Holder")) is None
+def test_plate_floor_is_guarded():
+    # CTK-199 round 3 supersedes the round-2 "bare plate stays None" rule with a
+    # NULL-only loose-plate FLOOR: a bare trailing "plate" trade name floors to
+    # lps, but the frag-mounting / bundle guard keeps equipment + multi-item lots
+    # out. (echinata + lepto, also formerly excluded as split-genus, now classify
+    # lps by the round-3 fleet vote — pinned in test_ctk199_lps_round3.)
+    assert infer_category(_p("POTO Plate")) == "lps"             # bare plate trade name -> floor
+    assert infer_category(_p("Oil Spill Plate")) == "lps"        # directive-named trade form
+    assert infer_category(_p("Burning Shadow Plate")) == "lps"
+    assert infer_category(_p("Frag Plate Holder")) is None       # holder -> equipment, guarded
+    assert infer_category(_p("Frag Mounting Plate")) is None     # mounting -> equipment, guarded
+    assert infer_category(_p("Coral Plate Mystery Box")) is None  # box/mystery lot, guarded
+    # "Plate Coral" (the phrase) still classifies via the main lps term, floor or
+    # not — so a frag-pack of plate corals stays lps (status quo; bundle-as-coral
+    # is Lever B's lane, parked).
+    assert infer_category(_p("Plate Coral Frag Pack")) == "lps"
+    # The WWC non-coral that must NOT floor: \bplate\b does not match "plating".
+    assert infer_category(_p("Purple Plating Sponge")) is None
 
 
 def test_acantho_does_not_catch_tang_fish():
@@ -171,9 +183,64 @@ def test_ctk199_softie_round2():
 
 def test_ctk199_trap_tokens_are_phrase_scoped():
     # The common-word trap tokens must NEVER fire bare — only the phrase form.
-    # Bare "plate" already pinned None above (test_split_genus_words_excluded);
-    # these pin the round-2 traps the directive flagged (bubble / daisy / stag).
+    # These pin the round-2 traps the directive flagged (bubble / daisy / stag).
     assert infer_category(_p("BC Bubblebath Unicorn")) is None     # bare "bubble" must not -> lps
     assert infer_category(_p("Neon Green Bubble")) is None         # bubble w/o "coral" stays None
     assert infer_category(_p("Lazy Daisy Stunner")) is None        # bare "daisy" must not -> softie
     assert infer_category(_p("Main Stage Display Rack")) is None   # "stage" must not hit \bstag
+
+
+# ─── CTK-199 round-3 coverage: the genus/common-name anchors round 2 left on the
+# ~60-row obviously-typed NULL remainder (titles from the 2026-06-26 audit). Each
+# positive assert FAILS if its term is removed from _CATEGORY_PATTERNS.
+
+def test_ctk199_lps_round3():
+    assert infer_category(_p("Cornbred's Lava Flow Lepto")) == "lps"      # \blepto (Leptoseris abbrev)
+    assert infer_category(_p("JF Lunar Lepto")) == "lps"
+    assert infer_category(_p("Golden Galaxia")) == "lps"                  # \bgalaxia (Galaxea variant)
+    assert infer_category(_p("Worms Platygyra Brain")) == "lps"          # \bplatygyra
+    assert infer_category(_p("Red Heliofungia")) == "lps"                # \bheliofungia (Fungiidae)
+    assert infer_category(_p("WWC Scroll Coral")) == "lps"               # \bscroll coral
+    assert infer_category(_p("Yellow Turbinaria")) == "lps"              # \bturbinaria (scroll genus)
+    assert infer_category(_p("Rainbow War Coral")) == "lps"              # \bwar coral (Favites/Cyphastrea)
+    assert infer_category(_p("Neon Maze Brain")) == "lps"                # \bmaze brain
+    # echinata: directive mapped chalice (Echinophyllia), but the fleet files it
+    # lps 97:20:0 (Acanthastrea echinata dominates) — convention rule -> lps.
+    assert infer_category(_p("Master Rainbow Echinata")) == "lps"        # \bechinata -> lps (fleet vote)
+    assert infer_category(_p("Mango Tango Echinata")) == "lps"
+    # ...but a genuine Echinophyllia still hits the chalice pattern FIRST.
+    assert infer_category(_p("Echinophyllia echinata Chalice")) == "chalice"
+
+
+def test_ctk199_sps_round3():
+    assert infer_category(_p("JF Homewrecker Tenuis")) == "sps"          # \btenuis (Acropora tenuis)
+    assert infer_category(_p("POTO Pink Mille")) == "sps"                # \bmille (Acropora millepora abbrev)
+    # \bmille\b is distinct from the round-2 \bmilli\b / \bmillie / \bmillepora\b.
+    assert infer_category(_p("Red Millepora")) == "sps"                  # round-2 term still classifies
+
+
+def test_ctk199_softie_round3():
+    # sympodium is an octocoral — softie, overriding the fleet's lps default
+    # (the round-2 Tubipora call applied again: octocoral-as-LPS is a category
+    # error, not an LPS/SPS tie).
+    assert infer_category(_p("Green Sympodium Coral")) == "softie"       # \bsympodium
+
+
+def test_ctk199_round3_skipped_tokens_stay_unclassified():
+    # pavona (fleet near-tie 30:26) and bare grandis (zoa trade-name signal) were
+    # deliberately NOT added this round — a title carrying ONLY the bare word, with
+    # no other coral term, must stay None so a future "just add pavona/grandis"
+    # edit trips a red test and re-checks the fleet vote.
+    assert infer_category(_p("Pavona Cactus")) is None                   # pavona not added
+    assert infer_category(_p("Cosmic Grandis")) is None                  # bare grandis not added
+    # ...but a real Palythoa Grandis still classifies zoa via the existing \bpaly.
+    assert infer_category(_p("Palythoa Grandis")) == "zoa"
+
+
+def test_ctk199_round3_bare_phrase_traps_stay_none():
+    # The round-3 phrase tokens (war coral / scroll coral / maze brain) must NEVER
+    # fire on the bare leading word — those are common English / trade words.
+    assert infer_category(_p("War Paint Zoa Stunner")) == "zoa"          # "war" must not bare-hit lps
+    assert infer_category(_p("Scroll Saw Frag Rack")) is None            # "scroll" alone -> None
+    assert infer_category(_p("Amazing Maze Runner")) is None             # "maze" alone -> None
+    assert infer_category(_p("Brain Freeze Stunner")) is None            # bare "brain" must not -> lps

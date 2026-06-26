@@ -1,10 +1,12 @@
-"""CTK-199 — fleet category coverage backfill, round 2 (live-pull recompute).
+"""CTK-199 — fleet category coverage backfill (live-pull recompute), rounds 2+3.
 
 Direct successor to ctk194_category_coverage_backfill (which this clones). The
-CTK-199 coverage ADD to normalize._CATEGORY_PATTERNS (round-2 genera +
-common-names: lithophyllon/litho, hydnophora/hydno, indophyllia, astreopora,
-anthelia, trumpet, stag/staghorn, bubble coral, daisy polyps, diaseris, pipe
-organ/tubipora; psammocora widened to the psammacora spelling) corrects stored
+CTK-199 coverage ADD to normalize._CATEGORY_PATTERNS — round 2 (lithophyllon/
+litho, hydnophora/hydno, indophyllia, astreopora, anthelia, trumpet, stag/
+staghorn, bubble coral, daisy polyps, diaseris, pipe organ/tubipora; psammocora
+widened to psammacora) PLUS round 3 (lepto, echinata->lps, tenuis, mille,
+galaxia, platygyra, heliofungia, sympodium->softie, scroll coral, turbinaria,
+war coral, maze brain, and the loose-plate NULL floor) — corrects stored
 `vendor_listings.category` going FORWARD only — rows already NULL keep NULL until
 their next scrape touches them, and `decision == 'unchanged'` rows skip the
 row-build entirely (feedback_capture_path_unchanged_blind_spot). This tool
@@ -53,34 +55,43 @@ from scrapers.common import db, parse_bigcommerce, parse_shopify
 from scrapers.common.run import _load_yaml
 from scrapers.vendors import tidal_gardens
 
-# The round-2 anchors this backfill is responsible for, with their FINAL
-# category (post majority-vote correction: hydnophora/hydno + astreopora -> lps,
-# NOT the directive's sps). A change is "CTK-199-driven" only if the row's title
-# carries one of these tokens AND it maps to the recomputed category. This scopes
-# --apply to THIS round's corrections and excludes incidental vendor metadata
-# drift the live re-pull also surfaces (e.g. a Turbinaria flipping lps->sps, a
-# BattleCorals row losing its category) — those are not CTK-199's to write, and
-# at least one (Turbinaria is LPS) would be wrong. Frozen here as the one-time
-# provenance record of the round-2 token set; mirrors normalize._CATEGORY_PATTERNS.
-_ROUND2_TOKENS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("sps",    re.compile(r"\bpsamm[oa]cora\b|\bstag(?:horn)?\b", re.I)),
+# The CTK-199 anchors (round 2 + round 3) this backfill is responsible for, with
+# their FINAL category (post majority-vote correction: hydnophora/hydno +
+# astreopora -> lps, NOT the directive's sps; echinata -> lps NOT chalice;
+# sympodium -> softie NOT the fleet's lps). A change is "CTK-199-driven" only if
+# the row's title carries one of these tokens AND it maps to the recomputed
+# category. This scopes --apply to THIS ticket's corrections and excludes
+# incidental vendor metadata drift the live re-pull also surfaces (e.g. a
+# BattleCorals row losing its category) — those are not CTK-199's to write.
+# Frozen here as the one-time provenance record of the anchor set; mirrors
+# normalize._CATEGORY_PATTERNS. NULL->category FILLS apply regardless of this set
+# (always safe), so the round-3 NULL-only adds (lepto, galaxia, platygyra,
+# heliofungia, war/scroll/maze, the loose-plate floor) need no entry here — they
+# only ever fill; the tokens below are the ones that also drive coral->coral
+# RE-TAGS (turbinaria fixing the round-2 lps->sps mis-flip; echinata sps->lps;
+# sympodium lps->softie; tenuis/mille consistency).
+_ANCHOR_TOKENS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("sps",    re.compile(r"\bpsamm[oa]cora\b|\bstag(?:horn)?\b|\btenuis\b|\bmille\b", re.I)),
     ("lps",    re.compile(r"\blithophyllon\b|\blitho\b|\bindophyllia\b|\btrumpet\b"
                           r"|\bbubble\s+coral\b|\bdiaseris\b|\bplate\s+coral\b"
-                          r"|\bhydnophora\b|\bhydno\b|\bastreopora\b", re.I)),
-    ("softie", re.compile(r"\banthelia\b|\bdaisy\s+polyps?\b|\bpipe\s+organ\b|\btubipora\b", re.I)),
+                          r"|\bhydnophora\b|\bhydno\b|\bastreopora\b"
+                          r"|\blepto\b|\bechinata\b|\bgalaxia\b|\bplatygyra\b"
+                          r"|\bheliofungia\b|\bscroll\s+coral\b|\bturbinaria\b"
+                          r"|\bwar\s+coral\b|\bmaze\s+brain\b", re.I)),
+    ("softie", re.compile(r"\banthelia\b|\bdaisy\s+polyps?\b|\bpipe\s+organ\b|\btubipora\b|\bsympodium\b", re.I)),
 )
 
 
-def _round2_explains_flip(raw_title: str, new_cat: str | None) -> bool:
-    """True iff a round-2 token in the title maps to the recomputed category.
-    Gates the coral->coral CORRECTIONS only — so a re-tag CTK-199 is responsible
-    for (psammacora lps->sps, pipe organ lps->softie) applies, while an
-    incidental live-pull flip with no round-2 token (a Turbinaria mis-tagged
-    lps->sps by vendor drift) does NOT."""
+def _anchor_explains_flip(raw_title: str, new_cat: str | None) -> bool:
+    """True iff a CTK-199 anchor token in the title maps to the recomputed
+    category. Gates the coral->coral CORRECTIONS only — so a re-tag CTK-199 is
+    responsible for (psammacora lps->sps, pipe organ lps->softie, echinata
+    sps->lps, sympodium lps->softie) applies, while an incidental live-pull flip
+    with no anchor token (vendor drift) does NOT."""
     if new_cat is None:
         return False
     title = raw_title or ""
-    for cat, pat in _ROUND2_TOKENS:
+    for cat, pat in _ANCHOR_TOKENS:
         if cat == new_cat and pat.search(title):
             return True
     return False
@@ -100,8 +111,8 @@ def _decide(old_cat: str | None, new_cat: str | None, raw_title: str) -> str:
         return "drift"                    # category-loss: tokens only ADD, never remove
     if old_cat is None:
         return "fill"                     # NULL -> category: always safe
-    if _round2_explains_flip(raw_title, new_cat):
-        return "corr"                     # round-2-driven correction
+    if _anchor_explains_flip(raw_title, new_cat):
+        return "corr"                     # CTK-199-anchor-driven correction
     return "drift"                        # unexplained coral->coral: vendor drift
 
 
