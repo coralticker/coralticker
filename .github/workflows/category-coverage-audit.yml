@@ -97,8 +97,13 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           exit "$code"
 
+      # Exit-code -> Slack. Codes are mutually exclusive: 3 breaker, 1 pull-fail,
+      # 4 partial-write. The catch-all fires for ANY other non-success — argparse's
+      # exit 2 (a bad dispatch arg), an empty code (timeout / cancelled step), or a
+      # failed earlier step — so a bad arg can't impersonate a breaker trip and a
+      # killed run can't go silent.
       - name: Slack alert — breaker tripped (anomaly, zero writes)
-        if: ${{ always() && steps.audit.outputs.exit_code == '2' }}
+        if: ${{ always() && steps.audit.outputs.exit_code == '3' }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -108,7 +113,7 @@ jobs:
             --data "{\"text\": \"Weekly category check paused itself as a safety stop: it was about to change ${COUNT} listing categories — more than usual — so it changed nothing. Take a look, and if that's expected, run it again with a higher limit: ${RUN_URL}\"}" \
             "${SLACK_WEBHOOK_URL}"
 
-      - name: Slack alert — run failure (incomplete fleet pull)
+      - name: Slack alert — couldn't finish (a shop didn't load)
         if: ${{ always() && steps.audit.outputs.exit_code == '1' }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -118,8 +123,18 @@ jobs:
             --data "{\"text\": \"Weekly category check couldn't finish — one of the shops didn't load, so it changed nothing and will try again next week. Take a look if it keeps happening: ${RUN_URL}\"}" \
             "${SLACK_WEBHOOK_URL}"
 
+      - name: Slack alert — partial write (some changes saved)
+        if: ${{ always() && steps.audit.outputs.exit_code == '4' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"Weekly category check only partly finished — some category updates were saved before a shop dropped out. Nothing's lost; the next run finishes the rest. Take a look: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"
+
       - name: Slack alert — unexpected failure
-        if: ${{ failure() && steps.audit.outputs.exit_code == '' }}
+        if: ${{ (failure() || cancelled()) && steps.audit.outputs.exit_code != '1' && steps.audit.outputs.exit_code != '3' && steps.audit.outputs.exit_code != '4' }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -52,14 +52,22 @@ Run via:
   python -m scrapers.tools.ctk199_category_coverage_backfill --apply  # commit
   python -m scrapers.tools.ctk199_category_coverage_backfill --apply --max-changes 100 --max-change-pct 1.5
 
-Exit codes (the workflow keys its Slack message off these):
+Exit codes (the workflow keys its Slack message off these; they deliberately
+AVOID 2, which argparse uses for a bad arg — a bad-arg dispatch must not
+impersonate a breaker trip):
   0 — clean (dry run, or apply within the breaker).
-  1 — run failure: any vendor live-pull failed, so the fleet total is
+  1 — pull failure: any vendor live-pull failed, so the fleet total is
       INCOMPLETE; the whole run aborts with ZERO writes and retries next week
       (an under-counted total could defeat the breaker — CTK-200 D3). This is a
       behavior change from the CTK-199 one-shot, which partial-applied survivors.
-  2 — breaker tripped: the would-apply count exceeds --max-changes or
+  3 — breaker tripped: the would-apply count exceeds --max-changes or
       --max-change-pct; the apply aborts with ZERO writes for a human eyeball.
+  4 — partial write: a pass-2 write failed mid-loop (e.g. a Neon idle drop) AFTER
+      earlier vendors committed under autocommit. Reports how many rows/vendors
+      landed; re-run to complete (idempotent). NOT exit 1 — claiming "zero writes"
+      here would be a false alert.
+  (2, or an empty code from a timeout/cancel — argparse bad arg or an
+   unexpected death — the workflow's catch-all reports as "unexpected failure".)
 """
 
 from __future__ import annotations
@@ -238,12 +246,18 @@ def main() -> int:
             vendor_errors.append(msg)
             continue
 
-        # 2. read stored — fresh short-lived connection, no write here (pass 2).
+        # 2. read stored IN-STOCK rows — fresh short-lived connection, no write
+        #    here (pass 2). in_stock-scoped so the breaker numerator (applied_total)
+        #    is over the same population as the in_stock fleet_total denominator
+        #    below (an OOS row in the numerator would inflate the pct and risk a
+        #    false trip). It also correctly scopes the audit to the in-stock
+        #    population the type-filter coverage cares about; OOS rows self-heal via
+        #    the scrape-time parser when they restock.
         with db.get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT id, product_url, raw_title, category FROM vendor_listings "
-                    "WHERE vendor_id = %s ORDER BY id",
+                    "WHERE vendor_id = %s AND in_stock ORDER BY id",
                     (vendor_row["id"],),
                 )
                 stored = cur.fetchall()
@@ -295,8 +309,9 @@ def main() -> int:
         return 1
 
     # ── Breaker %-ceiling denominator: in-stock fleet, test sentinels excluded ──
-    # (matches category_coverage_drift.py + _vendor_slugs scope, so the % is over
-    # the same population the audit touches).
+    # (matches category_coverage_drift.py + _vendor_slugs scope). Both halves of
+    # the ratio are now in_stock-scoped — the pass-1 read above is in_stock-only —
+    # so applied_total/fleet_total is a true fraction of the same population.
     with db.get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -326,7 +341,7 @@ def main() -> int:
             print(f"=== BREAKER TRIPPED — ABORT, zero writes ({breaker_line}) ===")
             print("  a large weekly drift is an anomaly signal, not normal rotation — review the diff "
                   "above and land manually (dispatch with a raised --max-changes) if intended.")
-            return 2
+            return 3   # distinct from argparse's exit 2 (a bad-arg dispatch must not impersonate a trip)
         print(f"=== BREAKER would-trip (dry run, no writes) — {breaker_line} ===")
     else:
         print(f"=== breaker OK — {breaker_line} ===")
@@ -338,14 +353,27 @@ def main() -> int:
     # scrape that re-touched category used the same patterns, so the value converges.
     if args.apply:
         written = 0
+        vendors_done = 0
         for slug, applied in pending:
-            with db.get_conn() as conn:
-                with conn.cursor() as cur:
-                    cur.executemany(
-                        "UPDATE vendor_listings SET category = %s WHERE id = %s",
-                        [(new, vid) for vid, _t, _o, new, _d in applied],
-                    )
+            try:
+                with db.get_conn() as conn:
+                    with conn.cursor() as cur:
+                        cur.executemany(
+                            "UPDATE vendor_listings SET category = %s WHERE id = %s",
+                            [(new, vid) for vid, _t, _o, new, _d in applied],
+                        )
+            except Exception as e:  # noqa: BLE001 — honest partial-write report
+                # A mid-loop DB drop (the Neon-idle class this tool was built around)
+                # leaves the EARLIER vendors committed under autocommit. Do NOT claim
+                # "zero writes" (exit 1, the pass-1 pull-failure path) — that would be
+                # a false alert. Report what landed and exit 4 so the Slack is honest.
+                # The data self-heals: re-running skips the already-written rows
+                # (idempotent — a written row is no longer a NULL/anchor-diff change).
+                print(f"=== PARTIAL WRITE — {written} row(s) across {vendors_done} vendor(s) landed "
+                      f"before {slug} failed ({type(e).__name__}: {e}); re-run to complete ===")
+                return 4
             written += len(applied)
+            vendors_done += 1
         print(f"=== wrote {written} row(s) across {len(pending)} vendor(s) ===")
 
     return 0
