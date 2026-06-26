@@ -1,0 +1,131 @@
+name: category-coverage-audit
+
+# CTK-200 — weekly self-healing category-coverage audit (durable-prevention half
+# of CTK-199; mirrors the CTK-189 -> CTK-190 build/schedule split). Re-pulls every
+# vendor's live catalog through the production parser, reclassifies via the frozen
+# Lever A patterns, and applies the drift-scoped fills + anchor-driven corrections
+# so genus-less NULL-category drift can't accumulate invisibly between manual runs.
+# There is NO 'other' fallback (CTK-199 Lever B dropped) — the anchorless tail is
+# accepted silent filter-fall-out.
+#
+# The engine (scrapers/tools/ctk199_category_coverage_backfill.py) runs a two-pass
+# gated --apply: it computes the COMPLETE fleet change-set first, then a
+# circuit-breaker aborts the write (exit 2, ZERO writes) if the run would change
+# more than --max-changes OR --max-change-pct of the in-stock fleet. A large weekly
+# drift is an anomaly signal (parser regression / a committed pattern-widening
+# propagating), not normal rotation — surfaced for a human eyeball, not written.
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_changes:
+        description: 'Absolute circuit-breaker ceiling: abort the apply (zero writes) if would-apply exceeds this. Raise to land a big INTENTIONAL propagation manually after an eyeball.'
+        required: false
+        default: '100'
+      max_change_pct:
+        description: 'Percent-of-in-stock-fleet circuit-breaker ceiling (float in (0, 100]).'
+        required: false
+        default: '1.5'
+
+  # ── schedule DISABLED until the CTK-200 pre-enable gate clears. ──────────────
+  # Do NOT uncomment until a local dry-run confirms steady-state would-apply < 100
+  # (else the breaker trips on the first scheduled run and Slacks a false alarm),
+  # AND a real workflow_dispatch manifest-proof run is green (a local script run
+  # does NOT load this YAML / the composite action — feedback_composite_action_
+  # manifest_local_proof_gap). Enable in a one-line follow-up commit. See the
+  # CTK-200 results.md runbook.
+  #
+  # Slot rationale (load-bearing, not cosmetic — feedback_yaml_state_cron_window_risk):
+  # '12 4 * * 1' = Mon 04:12 UTC. Sun->Mon overnight, lowest-traffic, and clear of
+  # the heavy windows: TSA's */15 weekend burst runs Sun/Mon 00-03 UTC (ends 03:59);
+  # the daily scrapers run hours 08-10 (battlecorals :23 / aquasd :47 / tidal :31);
+  # bulk-cluster-audit 14:02; staleness-cap Mon 13:02. The :12 start brushes the
+  # hourly persists (cohort-signal :11, vivid :19) — ACCEPTED: category recompute is
+  # deterministic, so a backfill/scrape race on category converges; off-window is
+  # insurance, not a correctness gate. Own file (not a job in staleness-cap.yml):
+  # different cadence, and a single workflow fires ALL its jobs on ANY matched cron.
+  # schedule:
+  #   - cron: '12 4 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: category-coverage-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15   # heavy live per-vendor re-pull (~7 min); more headroom than staleness-cap's pure-DB 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Preflight NEON_DATABASE_URL
+        uses: ./.github/actions/preflight-neon-secret
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+      # Runs --apply with the circuit-breaker (defaults 100 / 1.5%, overridable via
+      # dispatch inputs). The breaker makes unattended --apply safe: it aborts the
+      # write on an anomalous drift instead of writing it. Exit code drives the
+      # Slack message below: 0 clean, 1 run failure (incomplete pull), 2 breaker
+      # tripped. Capture the code + would-apply count BEFORE propagating, so the
+      # discriminated Slack steps can read them even though a non-zero exit fails
+      # the step.
+      - name: Run category coverage audit
+        id: audit
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          set +e
+          python -m scrapers.tools.ctk199_category_coverage_backfill --apply \
+            --max-changes "${{ inputs.max_changes || '100' }}" \
+            --max-change-pct "${{ inputs.max_change_pct || '1.5' }}" 2>&1 | tee audit.log
+          code=${PIPESTATUS[0]}
+          count=$(grep -oP 'would-apply \K[0-9]+' audit.log | tail -1)
+          {
+            echo "exit_code=$code"
+            echo "count=${count:-?}"
+          } >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      - name: Slack alert — breaker tripped (anomaly, zero writes)
+        if: ${{ always() && steps.audit.outputs.exit_code == '2' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COUNT: ${{ steps.audit.outputs.count }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"category-coverage-audit BREAKER TRIPPED: ${COUNT} changes exceed the ceiling — ZERO writes. Review the diff and land manually (dispatch with a raised max_changes) if intended: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"
+
+      - name: Slack alert — run failure (incomplete fleet pull)
+        if: ${{ always() && steps.audit.outputs.exit_code == '1' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"category-coverage-audit RUN CRASHED (a vendor live-pull failed — incomplete fleet, zero writes): ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"
+
+      - name: Slack alert — unexpected failure
+        if: ${{ failure() && steps.audit.outputs.exit_code == '' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"category-coverage-audit RUN CRASHED (unexpected — step died before reporting): ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"

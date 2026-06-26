@@ -1,4 +1,15 @@
-"""CTK-199 — fleet category coverage backfill (live-pull recompute), rounds 2+3.
+"""CTK-199/200 — fleet category coverage audit (live-pull recompute), rounds 2+3.
+
+CTK-200 productizes this CTK-199 one-shot backfill into the engine behind a
+scheduled weekly self-healing audit (`.github/workflows/category-coverage-audit.yml`).
+The CTK-200 additions: a two-pass gated `--apply` (compute the COMPLETE fleet
+change-set first, gate on a circuit-breaker, then write) and the `--max-changes`
+/ `--max-change-pct` breaker that aborts the apply (exit 2, zero writes) when a
+run would change more than expected — a large weekly drift is an anomaly signal
+(parser regression / a committed pattern-widening propagating), not normal
+rotation, so it surfaces for a human eyeball instead of writing unattended. The
+engine keeps its `ctk199_` name (the workflow YAML references it; rename deferred).
+
 
 Direct successor to ctk194_category_coverage_backfill (which this clones). The
 CTK-199 coverage ADD to normalize._CATEGORY_PATTERNS — round 2 (lithophyllon/
@@ -39,9 +50,16 @@ named corals; the collision count covers the rest of the fleet).
 Run via:
   python -m scrapers.tools.ctk199_category_coverage_backfill          # dry run
   python -m scrapers.tools.ctk199_category_coverage_backfill --apply  # commit
+  python -m scrapers.tools.ctk199_category_coverage_backfill --apply --max-changes 100 --max-change-pct 1.5
 
-Exit codes: 0 on success (dry run or apply), 1 on any vendor live-pull error
-(loud; other vendors still process).
+Exit codes (the workflow keys its Slack message off these):
+  0 — clean (dry run, or apply within the breaker).
+  1 — run failure: any vendor live-pull failed, so the fleet total is
+      INCOMPLETE; the whole run aborts with ZERO writes and retries next week
+      (an under-counted total could defeat the breaker — CTK-200 D3). This is a
+      behavior change from the CTK-199 one-shot, which partial-applied survivors.
+  2 — breaker tripped: the would-apply count exceeds --max-changes or
+      --max-change-pct; the apply aborts with ZERO writes for a human eyeball.
 """
 
 from __future__ import annotations
@@ -137,34 +155,75 @@ def _vendor_slugs(cur) -> list[dict]:
     return cur.fetchall()
 
 
+def _positive_int(value: str) -> int:
+    """argparse type: an int strictly > 0 (CTK-190 positive-param precedent —
+    load-bearing once the breaker runs unattended; a 0/negative ceiling would
+    abort or never-abort silently)."""
+    iv = int(value)
+    if iv <= 0:
+        raise argparse.ArgumentTypeError(f"must be an integer > 0, got {iv}")
+    return iv
+
+
+def _pct(value: str) -> float:
+    """argparse type: a float in (0, 100]. Reject <= 0 (meaningless ceiling) and
+    > 100 (a >100%-of-fleet threshold can never trip — a silent footgun)."""
+    fv = float(value)
+    if not (0 < fv <= 100):
+        raise argparse.ArgumentTypeError(f"must be a float in (0, 100], got {fv}")
+    return fv
+
+
+def _breaker_tripped(applied_total: int, fleet_total: int, max_changes: int, max_pct: float) -> bool:
+    """OR'd circuit-breaker: abort the apply if the would-write count exceeds the
+    absolute ceiling OR the %-of-in-stock-fleet ceiling. A large weekly drift is
+    an anomaly signal (parser regression / a committed pattern-widening
+    propagating), not normal rotation — surface it for a human eyeball instead of
+    writing unattended. Pure (no I/O) so it unit-tests without a live pull."""
+    if applied_total <= 0:
+        return False                       # nothing to write — never an anomaly
+    if applied_total > max_changes:
+        return True
+    if fleet_total <= 0:
+        return True                        # can't compute a ratio — fail safe (abort)
+    return (applied_total / fleet_total * 100.0) > max_pct
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description="CTK-199 fleet category coverage backfill (dry run unless --apply)")
+    ap = argparse.ArgumentParser(description="CTK-199/200 fleet category coverage audit (dry run unless --apply)")
     ap.add_argument("--apply", action="store_true", help="perform the UPDATEs (default: dry run, no writes)")
+    ap.add_argument("--max-changes", type=_positive_int, default=100,
+                    help="circuit-breaker: abort --apply (exit 2, zero writes) if the fleet-wide "
+                         "would-apply count exceeds this absolute ceiling (default 100)")
+    ap.add_argument("--max-change-pct", type=_pct, default=1.5,
+                    help="circuit-breaker: abort --apply (exit 2, zero writes) if would-apply exceeds "
+                         "this percent of the in-stock fleet (default 1.5)")
     args = ap.parse_args()
 
     mode = "APPLY" if args.apply else "DRY RUN"
-    print(f"=== CTK-199 category coverage backfill (round 2) — {mode} ===\n")
+    print(f"=== CTK-199/200 category coverage audit — {mode} ===\n")
 
-    total_changes = 0
     fills = 0            # NULL -> category (the intended fix)
-    corrections = 0      # coral -> coral, CTK-199-driven (Option B: re-tag to correct/consistent)
-    drift = 0            # change NOT explained by a round-2 token — excluded from --apply
+    corrections = 0      # coral -> coral, CTK-199-anchor-driven (re-tag to correct/consistent)
+    drift = 0            # change NOT explained by a CTK-199 token — excluded
     fill_by_cat: Counter = Counter()
     drift_rows: list[str] = []
     vendor_errors: list[str] = []
+    pending: list[tuple[str, list]] = []   # [(slug, applied-rows)] — held for pass 2
 
     # Vendor list — short connection, opened and closed immediately.
     with db.get_conn() as conn:
         with conn.cursor() as cur:
             vendors = _vendor_slugs(cur)
 
-    # Per vendor, the DB connection is held ONLY for the quick read + write, never
-    # across the slow live HTTP pull. A single connection spanning all 12 pulls
-    # sits idle for minutes and Neon drops it mid-run (the 2026-06-26 partial-apply
-    # incident died on pacific_east's pull). Fresh short-lived connections per
-    # vendor sidestep the idle-timeout entirely; with autocommit each vendor's
-    # writes commit independently, and the tool is idempotent, so a mid-fleet
-    # failure just re-runs to completion.
+    # ── PASS 1: pull every vendor live + compute the change-set. NO writes. ──────
+    # Holding the applied-rows in memory (tens-to-low-hundreds of rows) lets the
+    # circuit-breaker gate on the COMPLETE fleet-wide total before any write — the
+    # CTK-200 "abort instead of writing" contract; the CTK-199 inline per-vendor
+    # write couldn't, since the total wasn't known until vendors were already
+    # written. The DB connection is never held across the slow live HTTP pull (the
+    # CTK-199 round-2 idle-timeout fix: a single long-held connection sat idle for
+    # minutes and Neon dropped it mid-run). Fresh short-lived connections per step.
     for v in vendors:
         slug, platform = v["slug"], v["platform"]
         # 1. config + live pull — no DB connection open during the HTTP fetch.
@@ -173,13 +232,13 @@ def main() -> int:
                 vendor_row = db.fetch_vendor(conn, slug)
             config = {**vendor_row, **_load_yaml(slug)}
             fresh = _live_categories(config, platform)
-        except Exception as e:  # noqa: BLE001 — loud per-vendor, continue the fleet
+        except Exception as e:  # noqa: BLE001 — loud per-vendor; aborts the run below
             msg = f"{slug}: live-pull FAILED ({type(e).__name__}: {e})"
             print(f"  {msg}\n", flush=True)
             vendor_errors.append(msg)
             continue
 
-        # 2. read stored + (optionally) write — fresh short-lived connection.
+        # 2. read stored — fresh short-lived connection, no write here (pass 2).
         with db.get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -189,58 +248,106 @@ def main() -> int:
                 )
                 stored = cur.fetchall()
 
-            changes = []  # (id, raw_title, old, new, disposition)
-            for r in stored:
-                url = r["product_url"]
-                if url not in fresh:
-                    continue  # delisted / filtered-out — left untouched
-                new_cat = fresh[url]
-                if new_cat != r["category"]:
-                    disp = _decide(r["category"], new_cat, r["raw_title"])
-                    changes.append((r["id"], r["raw_title"], r["category"], new_cat, disp))
+        changes = []  # (id, raw_title, old, new, disposition)
+        for r in stored:
+            url = r["product_url"]
+            if url not in fresh:
+                continue  # delisted / filtered-out — left untouched
+            new_cat = fresh[url]
+            if new_cat != r["category"]:
+                disp = _decide(r["category"], new_cat, r["raw_title"])
+                changes.append((r["id"], r["raw_title"], r["category"], new_cat, disp))
 
-            applied = [c for c in changes if c[4] in ("fill", "corr")]
-            excluded = [c for c in changes if c[4] == "drift"]
-            v_fills = sum(1 for c in changes if c[4] == "fill")
-            v_corr = sum(1 for c in changes if c[4] == "corr")
-            print(f"--- {slug} ({platform}): {len(stored)} stored, {len(fresh)} live, "
-                  f"{len(changes)} change ({v_fills} fill, {v_corr} correction, {len(excluded)} drift-excluded) ---",
-                  flush=True)
-            for vid, title, old, new, disp in applied:
-                kind = "FILL " if disp == "fill" else "CORR "
-                print(f"  {kind} id={vid:>7}  {str(old):<10} -> {str(new):<10}  {title[:56]!r}")
-                if disp == "fill":
-                    fill_by_cat[new] += 1
-            for vid, title, old, new, disp in excluded:
-                print(f"  DRIFT id={vid:>7}  {str(old):<10} -> {str(new):<10}  {title[:56]!r}  <-- excluded (vendor drift)")
-                drift_rows.append(f"{slug} id={vid} {str(old)}->{str(new)} {title[:50]!r}")
-            print(flush=True)
+        applied = [c for c in changes if c[4] in ("fill", "corr")]
+        excluded = [c for c in changes if c[4] == "drift"]
+        v_fills = sum(1 for c in changes if c[4] == "fill")
+        v_corr = sum(1 for c in changes if c[4] == "corr")
+        print(f"--- {slug} ({platform}): {len(stored)} stored, {len(fresh)} live, "
+              f"{len(changes)} change ({v_fills} fill, {v_corr} correction, {len(excluded)} drift-excluded) ---",
+              flush=True)
+        for vid, title, old, new, disp in applied:
+            kind = "FILL " if disp == "fill" else "CORR "
+            print(f"  {kind} id={vid:>7}  {str(old):<10} -> {str(new):<10}  {title[:56]!r}")
+            if disp == "fill":
+                fill_by_cat[new] += 1
+        for vid, title, old, new, disp in excluded:
+            print(f"  DRIFT id={vid:>7}  {str(old):<10} -> {str(new):<10}  {title[:56]!r}  <-- excluded (vendor drift)")
+            drift_rows.append(f"{slug} id={vid} {str(old)}->{str(new)} {title[:50]!r}")
+        print(flush=True)
 
-            if args.apply and applied:
-                with conn.cursor() as cur:
-                    cur.executemany(
-                        "UPDATE vendor_listings SET category = %s WHERE id = %s",
-                        [(new, vid) for vid, _t, _o, new, _d in applied],
-                    )
-        total_changes += len(changes)
+        if applied:
+            pending.append((slug, applied))
         fills += v_fills
         corrections += v_corr
         drift += len(excluded)
 
     applied_total = fills + corrections
-    print("=== summary ===")
-    print(f"{mode}: CTK-199 {'applied' if args.apply else 'would apply'} {applied_total} row(s) "
-          f"across {len(vendors) - len(vendor_errors)} vendor(s)")
-    print(f"  fills (NULL -> category): {fills}   {dict(fill_by_cat)}")
-    print(f"  corrections (coral -> coral, round-2 driven): {corrections}")
-    print(f"  drift-EXCLUDED (not a round-2 token; left untouched): {drift}")
-    for d in drift_rows:
-        print(f"    - {d}")
+
+    # ── Pass-1 partial failure = whole-run abort (CTK-200 D3). ──────────────────
+    # An incomplete pull under-counts the fleet total, which could let a real
+    # anomaly slip under the breaker — so a single vendor failure aborts the whole
+    # run with ZERO writes (pass 2 never runs) and retries next week.
     if vendor_errors:
-        print(f"WARN: {len(vendor_errors)} vendor live-pull error(s):")
+        print("=== ABORT: incomplete fleet pull — zero writes ===")
+        print(f"{len(vendor_errors)} vendor live-pull error(s); not writing a partial-fleet total:")
         for m in vendor_errors:
             print(f"  - {m}")
         return 1
+
+    # ── Breaker %-ceiling denominator: in-stock fleet, test sentinels excluded ──
+    # (matches category_coverage_drift.py + _vendor_slugs scope, so the % is over
+    # the same population the audit touches).
+    with db.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) AS n FROM vendor_listings vl JOIN vendors v ON v.id = vl.vendor_id "
+                "WHERE vl.in_stock AND v.slug NOT LIKE '\\_%'"
+            )
+            fleet_total = cur.fetchone()["n"]
+
+    pct = (applied_total / fleet_total * 100.0) if fleet_total else 0.0
+    tripped = _breaker_tripped(applied_total, fleet_total, args.max_changes, args.max_change_pct)
+
+    print("=== summary ===")
+    print(f"{mode}: CTK-199/200 — {applied_total} row(s) to apply across {len(vendors)} vendor(s) "
+          f"({pct:.2f}% of {fleet_total} in-stock)")
+    print(f"  fills (NULL -> category): {fills}   {dict(fill_by_cat)}")
+    print(f"  corrections (coral -> coral, anchor-driven): {corrections}")
+    print(f"  drift-EXCLUDED (not a CTK-199 token; left untouched): {drift}")
+    for d in drift_rows:
+        print(f"    - {d}")
+
+    # ── Circuit-breaker gate. The "would-apply <N>" token is the stable line the
+    # workflow greps for the Slack BREAKER-TRIPPED count — keep the wording. ─────
+    breaker_line = (f"would-apply {applied_total} vs max-changes {args.max_changes}; "
+                    f"{pct:.2f}% vs max-change-pct {args.max_change_pct}%")
+    if tripped:
+        if args.apply:
+            print(f"=== BREAKER TRIPPED — ABORT, zero writes ({breaker_line}) ===")
+            print("  a large weekly drift is an anomaly signal, not normal rotation — review the diff "
+                  "above and land manually (dispatch with a raised --max-changes) if intended.")
+            return 2
+        print(f"=== BREAKER would-trip (dry run, no writes) — {breaker_line} ===")
+    else:
+        print(f"=== breaker OK — {breaker_line} ===")
+
+    # ── PASS 2: write. Only reached when the gate passes; dry run skips it. ──────
+    # Fresh short-lived connection per vendor (idle-fix preserved). Idempotent — a
+    # mid-pass-2 failure re-runs clean next week. TOCTOU pass1->pass2 is benign:
+    # id-scoped UPDATE; a row deleted between passes -> 0-row UPDATE; a concurrent
+    # scrape that re-touched category used the same patterns, so the value converges.
+    if args.apply:
+        written = 0
+        for slug, applied in pending:
+            with db.get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.executemany(
+                        "UPDATE vendor_listings SET category = %s WHERE id = %s",
+                        [(new, vid) for vid, _t, _o, new, _d in applied],
+                    )
+            written += len(applied)
+        print(f"=== wrote {written} row(s) across {len(pending)} vendor(s) ===")
+
     return 0
 
 
