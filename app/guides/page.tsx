@@ -21,6 +21,8 @@ const GUIDE_BLURBS: Record<string, string> = {
     "The Acropora names that sell out in the first minute — and what they're going for right now.",
   'how-to-buy-rare-corals':
     "The insider moves for catching a rare coral before it's gone — winning the live sale, spotting a fake, and not getting burned once it's home.",
+  'what-named-corals-cost':
+    'From polyp-priced zoas to four-figure bounces — the live cross-vendor price on each, and why one price tells you nothing.',
 };
 
 export const metadata: Metadata = {
