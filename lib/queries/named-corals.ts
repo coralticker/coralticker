@@ -37,14 +37,24 @@ export const getNamedCoralBySlug = cache(
         source_urls,
         requires_vendor_prefix,
         active,
-        -- has_ever_listed: the IDENTICAL predicate getIndexableCoralSlugs uses
-        -- for sitemap inclusion (one predicate, two surfaces — keep in lockstep,
-        -- no drift). Drives the page-level noindex for never-listed (lore-only,
-        -- thin) corals via coralPageRobots in generateMetadata.
+        -- has_ever_listed: the IDENTICAL EXISTS clause getIndexableCoralSlugs
+        -- uses for sitemap inclusion (one predicate, two surfaces — keep in
+        -- lockstep, no drift, or sitemap/robots desync). Drives the page-level
+        -- noindex for never-listed (lore-only, thin) corals via coralPageRobots
+        -- in generateMetadata. The sentinel-VENDOR exclusion (v.slug NOT LIKE,
+        -- ESCAPE '!' — backslash collapses in JS template cooking) mirrors the
+        -- /corals index lateral. Deliberately NO v.active guard: a coral whose
+        -- only listings belong to a RETIRED vendor still renders real historical
+        -- content via getCoralAvailability (no v.active filter, listings.ts), so
+        -- it is non-thin and stays indexable — v.active is browse-curation, not a
+        -- thin-content signal, and gating on it would break ever-listed
+        -- monotonicity on vendor retirement.
         EXISTS (
           SELECT 1
           FROM vendor_listings vl
+          JOIN vendors v ON v.id = vl.vendor_id
           WHERE vl.named_coral_id = nc.id
+            AND v.slug NOT LIKE '!_%' ESCAPE '!'
         ) AS has_ever_listed
       FROM named_corals nc
       WHERE nc.slug = ${slug}
@@ -84,19 +94,30 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // case. Those are handled by PAGE-level noindex (generateMetadata reads
 // has_ever_listed → coralPageRobots), NOT by sitemap omission alone — sitemap
 // presence and robots indexability are the SAME has_ever_listed predicate read
-// from two surfaces (getNamedCoralBySlug carries the identical EXISTS clause).
-// Keep them in lockstep. Excluding thin pages here still avoids the soft-404
-// signal to Google (CTK-162 scope d, PR #21 /code-review F1).
+// from two surfaces (getNamedCoralBySlug carries the IDENTICAL EXISTS clause).
+// Keep them in lockstep or sitemap/robots desync. Excluding thin pages here
+// still avoids the soft-404 signal to Google (CTK-162 scope d, PR #21
+// /code-review F1).
+//
+// Sentinel guards mirror the /corals index lateral: nc.slug + v.slug NOT LIKE
+// '!_%' ESCAPE '!' ('!' escape char — backslash collapses in JS template
+// cooking). Sentinel-vendor exclusion in the EXISTS means a coral whose only
+// listings belong to a sentinel vendor is correctly not-ever-listed. NO v.active
+// guard (see getNamedCoralBySlug's EXISTS comment): retired-vendor-only corals
+// keep real historical content via getCoralAvailability, so they stay indexable.
 export async function getIndexableCoralSlugs(): Promise<{ slug: string }[]> {
   const sql = getNeonSql();
   const rows = (await sql`
     SELECT nc.slug
     FROM named_corals nc
     WHERE nc.active = true
+      AND nc.slug NOT LIKE '!_%' ESCAPE '!'
       AND EXISTS (
         SELECT 1
         FROM vendor_listings vl
+        JOIN vendors v ON v.id = vl.vendor_id
         WHERE vl.named_coral_id = nc.id
+          AND v.slug NOT LIKE '!_%' ESCAPE '!'
       )
   `) as unknown as { slug: string }[];
   return rows;
