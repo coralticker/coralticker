@@ -72,8 +72,10 @@ export function buildCoralJsonLd(input: CoralJsonLdInput): object[] {
 
 // Serialize for the <script type="application/ld+json"> payload. Escapes `<` so
 // a </script> embedded in any field (canonical_name, description) can't break
-// out of the tag — the standard Next.js JSON-LD guard. Not reachable today
-// (canonical_name curated, description always null) but the surface is new.
+// out of the tag — the standard Next.js JSON-LD guard. Both fields are curated
+// today (canonical_name; description carries coral.lore per CTK-185(a)), so the
+// escape isn't strictly reachable — but it stays as defense in depth: the source
+// is curated text, not a hard guarantee, and the surface is new.
 export function serializeJsonLd(jsonLd: object[]): string {
   return JSON.stringify(jsonLd).replace(/</g, '\\u003c');
 }

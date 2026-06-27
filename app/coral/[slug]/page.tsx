@@ -224,7 +224,7 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
         </div>
       ) : null}
 
-      {coral.lore !== null ? (
+      {coral.lore ? (
         <p className="text-base leading-relaxed mb-8">{coral.lore}</p>
       ) : null}
 
