@@ -105,6 +105,10 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
 // listings belong to a sentinel vendor is correctly not-ever-listed. NO v.active
 // guard (see getNamedCoralBySlug's EXISTS comment): retired-vendor-only corals
 // keep real historical content via getCoralAvailability, so they stay indexable.
+// Lockstep is the EXISTS clause ONLY (pinned by coral-predicate-coupling.test.ts):
+// the outer `nc.slug NOT LIKE` here has no twin in getNamedCoralBySlug — that
+// query is already pinned by `nc.slug = ${slug}`, so the whole queries differ by
+// design even though the ever-listed EXISTS is byte-identical.
 export async function getIndexableCoralSlugs(): Promise<{ slug: string }[]> {
   const sql = getNeonSql();
   const rows = (await sql`

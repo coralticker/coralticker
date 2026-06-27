@@ -4,7 +4,7 @@
 // invariants live in SQL template literals and Next segment config, which
 // no type checker sees).
 //
-// Two invariant families:
+// Three invariant families:
 //   1. Cadence tandem (d): the /corals page revalidate literal must equal
 //      CORALS_INDEX_REVALIDATE_S — Next statically analyzes segment config,
 //      so the page side can't import the constant; this test is the
@@ -16,6 +16,10 @@
 //      is CTK-125, trigger-gated), toggle OR destination-side ONLY
 //      (Default-render parity rule). A shared SQL helper was rejected at
 //      CTK-128 (a) — it would hide exactly these asymmetries.
+//   3. has_ever_listed lockstep (CTK-185(b)): the page-noindex EXISTS clause
+//      (getNamedCoralBySlug) and the sitemap-inclusion EXISTS clause
+//      (getIndexableCoralSlugs) must be byte-identical, else robots and
+//      sitemap membership desync. Same anti-shared-helper rationale (CTK-128).
 //
 // Runs via Node's built-in test runner with native TypeScript type stripping:
 //   node --test --experimental-strip-types scripts/*.test.ts
@@ -105,5 +109,65 @@ test('asymmetry 2: the includeOOS toggle OR is destination-side ONLY', () => {
   assert.ok(
     !/::boolean OR/.test(namedCorals),
     'index lateral gained a toggle OR — parity is measured against the destination DEFAULT render, never the toggled view',
+  );
+});
+
+// CTK-185(b) — has_ever_listed lockstep (3rd invariant family). The page-noindex
+// predicate (getNamedCoralBySlug's `EXISTS (...) AS has_ever_listed`, read by
+// coralPageRobots in generateMetadata) and the sitemap-inclusion predicate
+// (getIndexableCoralSlugs' EXISTS) MUST carry the byte-identical ever-listed
+// EXISTS clause, or the page's robots flag and the sitemap membership set desync
+// (a coral page-noindexed yet listed in sitemap.xml, or vice versa). The in-file
+// comments declare this "lockstep"; per CTK-128 a shared SQL helper is rejected
+// (keeps asymmetries visible), so the clauses are deliberately duplicated — this
+// is the mechanical pin the prose alone can't give. Note: ONLY the EXISTS clause
+// is pinned identical; getIndexableCoralSlugs legitimately adds an outer
+// `nc.slug NOT LIKE` the page query omits (the page is already pinned by
+// `nc.slug = ${slug}`), so the whole queries are NOT identical by design.
+function sliceFn(decl: string): string {
+  const start = namedCorals.indexOf(decl);
+  assert.notEqual(start, -1, `${decl} not found in named-corals.ts`);
+  const end = namedCorals.indexOf('\nexport ', start + decl.length);
+  return namedCorals.slice(start, end === -1 ? undefined : end);
+}
+
+function everListedExists(fnBody: string, where: string): string {
+  const inner = fnBody.match(/EXISTS \(([\s\S]*?ESCAPE '!'[\s\S]*?)\)/)?.[1];
+  assert.ok(inner, `ever-listed EXISTS clause not found in ${where}`);
+  return inner.replace(/\s+/g, ' ').trim();
+}
+
+test('has_ever_listed lockstep: page query + sitemap query carry the identical ever-listed EXISTS clause', () => {
+  const pageExists = everListedExists(
+    sliceFn('export const getNamedCoralBySlug'),
+    'getNamedCoralBySlug',
+  );
+  const sitemapExists = everListedExists(
+    sliceFn('export async function getIndexableCoralSlugs'),
+    'getIndexableCoralSlugs',
+  );
+  assert.equal(
+    pageExists,
+    sitemapExists,
+    'getNamedCoralBySlug.has_ever_listed EXISTS drifted from getIndexableCoralSlugs — page robots noindex and sitemap inclusion will desync; keep the EXISTS clause identical (CTK-185(b) lockstep)',
+  );
+});
+
+test('has_ever_listed lockstep: neither ever-listed EXISTS carries a v.active guard (CTK-185(b): retired-vendor-only corals stay indexable)', () => {
+  const pageExists = everListedExists(
+    sliceFn('export const getNamedCoralBySlug'),
+    'getNamedCoralBySlug',
+  );
+  const sitemapExists = everListedExists(
+    sliceFn('export async function getIndexableCoralSlugs'),
+    'getIndexableCoralSlugs',
+  );
+  assert.ok(
+    !/v\.active/.test(pageExists),
+    'getNamedCoralBySlug.has_ever_listed gained a v.active guard — would noindex content-bearing retired-vendor corals and break ever-listed monotonicity (CTK-185(b))',
+  );
+  assert.ok(
+    !/v\.active/.test(sitemapExists),
+    'getIndexableCoralSlugs ever-listed EXISTS gained a v.active guard — see the CTK-185(b) decision',
   );
 });
