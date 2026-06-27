@@ -21,6 +21,7 @@ function coral(overrides: Partial<NamedCoral>): NamedCoral {
     source_urls: null,
     requires_vendor_prefix: false,
     active: true,
+    has_ever_listed: true,
     ...overrides,
   };
 }

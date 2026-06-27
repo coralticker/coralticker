@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 import {
-  getSitemapCoralSlugs,
+  getIndexableCoralSlugs,
   getPriceHistorySitemapSlugs,
 } from '@/lib/queries/named-corals';
 import { getAllActiveVendorSlugs } from '@/lib/queries/vendors';
@@ -10,14 +10,17 @@ import { SITE_URL } from '@/lib/seo/site-url';
 // CTK-162 scope (d): the sitemap lives here (CTK-017's parallel-bundle routing
 // is dead — CTK-017 was never scaffolded; Jon ratified building it in CTK-162
 // on 2026-06-20). Enumerates the static content/landing routes + the
-// data-driven /vendor/[slug] detail pages, the in-window-gated /coral/[slug]
-// set, the non-thin-gated /coral/[slug]/price-history child set, and the
-// /guides/[slug] editorial pages (every authored .mdx, no stock gate).
+// data-driven /vendor/[slug] detail pages, the monotonic ever-listed
+// /coral/[slug] set, the non-thin-gated /coral/[slug]/price-history child set,
+// and the /guides/[slug] editorial pages (every authored .mdx, no stock gate).
 //
 // Two DIFFERENT coral gates, by design:
-//   * /coral/[slug] — getSitemapCoralSlugs: in-window-coupled to
-//     CORAL_RECENCY_DAYS; never-/stale-listed seed corals render thin pages and
-//     are excluded to avoid a soft-404 signal (PR #21 /code-review F1).
+//   * /coral/[slug] — getIndexableCoralSlugs: every active coral that has EVER
+//     had a vendor listing (monotonic ever-listed gate, CTK-185(b)). CTK-185(a)'s
+//     lore render makes an ever-listed page non-thin even when OOS today; the
+//     genuinely-thin never-listed (lore-only) corals are excluded here AND
+//     page-noindexed (the SAME has_ever_listed predicate, two surfaces) to avoid
+//     a soft-404 signal (PR #21 /code-review F1).
 //   * /coral/[slug]/price-history — getPriceHistorySitemapSlugs: gated on
 //     history DEPTH (>= 2 envelope days = non-thin chart), NOT current stock. A
 //     coral can be in the price-history set but absent from the parent set (rich
@@ -54,7 +57,7 @@ const STATIC_ROUTES: Array<{
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [coralSlugs, priceHistorySlugs, vendorSlugs] = await Promise.all([
-    getSitemapCoralSlugs(),
+    getIndexableCoralSlugs(),
     getPriceHistorySitemapSlugs(),
     getAllActiveVendorSlugs(),
   ]);

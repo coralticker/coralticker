@@ -24,6 +24,7 @@ import { buildLineageFields } from '@/lib/format/lineage-fields';
 import { pluralize } from '@/lib/format/pluralize';
 import { distinctInStockVendorCount } from '@/lib/format/vendor-count';
 import { buildCoralJsonLd, serializeJsonLd } from '@/lib/seo/coral-jsonld';
+import { coralPageRobots } from '@/lib/seo/coral-robots';
 import { SITE_URL } from '@/lib/seo/site-url';
 import { VendorAvailabilityRow } from './_components/vendor-availability-row';
 
@@ -69,6 +70,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     // claims it (coverage-claim bar).
     title: `${coral.canonical_name}, current price across reef vendors`, // suffix via root title.template
     description: `Where to buy ${coral.canonical_name}: compare current prices across reef coral vendors and get a drop alert when it lists.`,
+    // noindex a never-listed (lore-only, thin) coral page; ever-listed pages stay
+    // indexable. Same has_ever_listed predicate as the sitemap inclusion gate —
+    // robots must live in metadata (the page body can't set it). Returns undefined
+    // for ever-listed, so the key is omitted and Next defaults to index,follow.
+    robots: coralPageRobots(coral.has_ever_listed),
     // Canonical = bare route — the ?include-oos=1 toggle variant resolves to
     // the bare-route SERP card.
     alternates: {

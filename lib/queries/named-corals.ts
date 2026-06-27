@@ -14,6 +14,7 @@ export interface NamedCoral {
   source_urls: string[] | null;
   requires_vendor_prefix: boolean;
   active: boolean;
+  has_ever_listed: boolean;
 }
 
 // React cache() wrap: /coral/[slug] is dynamic and calls this twice per hit
@@ -35,10 +36,19 @@ export const getNamedCoralBySlug = cache(
         origin_vendor,
         source_urls,
         requires_vendor_prefix,
-        active
-      FROM named_corals
-      WHERE slug = ${slug}
-        AND active = true
+        active,
+        -- has_ever_listed: the IDENTICAL predicate getIndexableCoralSlugs uses
+        -- for sitemap inclusion (one predicate, two surfaces — keep in lockstep,
+        -- no drift). Drives the page-level noindex for never-listed (lore-only,
+        -- thin) corals via coralPageRobots in generateMetadata.
+        EXISTS (
+          SELECT 1
+          FROM vendor_listings vl
+          WHERE vl.named_coral_id = nc.id
+        ) AS has_ever_listed
+      FROM named_corals nc
+      WHERE nc.slug = ${slug}
+        AND nc.active = true
       LIMIT 1
     `) as unknown as NamedCoral[];
 
@@ -58,29 +68,27 @@ export async function getAllNamedCoralSlugs(): Promise<{ slug: string }[]> {
   return rows;
 }
 
-// Sitemap-scoped slug set: in-window-gated, NOT the full active seed list
-// getAllNamedCoralSlugs returns. A never-/stale-listed coral renders a thin
-// 200 "Currently unavailable." page (no noindex); listing those in the sitemap
-// is a soft-404 signal to Google (CTK-162 scope d, PR #21 /code-review F1).
+// Evergreen-end-state, now landed: sitemap-scoped slug set = every active coral
+// that has EVER had a vendor listing (monotonic — once listed, always indexable),
+// NOT the full active seed list getAllNamedCoralSlugs returns. The prior in-window
+// gate flagged this as a TODO ("once scope b/c land the page stops being thin for
+// never-listed corals"); CTK-185(a)'s lore render + the price-history/guides
+// surfaces are that content, so an ever-listed coral page is non-thin even when
+// currently OOS — it carries the lore beat PLUS a real availability/price ladder
+// (current or historical). Indexable regardless of recency. Dropping the in-window
+// clause makes the gate monotonic: a coral can no longer flicker in and out of the
+// sitemap as its listings age past the window (the soft-404 churn the window
+// gate's coupling fought is gone with the window).
 //
-// The EXISTS gate uses the same in-window predicate the page's content rides —
-// windowStart derives from the imported CORAL_RECENCY_DAYS, so this set can
-// never drift from the page's content window. NOTE: app-clock windowStart (the
-// established sibling pattern — getCoralAvailability, getAllNamedCoralsWithListings)
-// is used instead of the directive's literal SQL `now() - interval` form
-// precisely BECAUSE the SQL form would gate on the DB clock and reintroduce the
-// drift the coupling exists to prevent. Predicate is stock-agnostic on purpose:
-// an in-window all-OOS coral still renders a real "Currently out of stock." page
-// (eyebrow count + toggle), so it is indexable, not thin.
-//
-// Evergreen-end-state TODO: once scope b/c land (price-history + guides give
-// every coral durable indexable content), this gate opens — the page stops
-// being thin for never-listed corals and the sitemap can return to the full set.
-export async function getSitemapCoralSlugs(): Promise<{ slug: string }[]> {
+// Never-listed seed corals (lore-only, no listing ever) are the genuinely-thin
+// case. Those are handled by PAGE-level noindex (generateMetadata reads
+// has_ever_listed → coralPageRobots), NOT by sitemap omission alone — sitemap
+// presence and robots indexability are the SAME has_ever_listed predicate read
+// from two surfaces (getNamedCoralBySlug carries the identical EXISTS clause).
+// Keep them in lockstep. Excluding thin pages here still avoids the soft-404
+// signal to Google (CTK-162 scope d, PR #21 /code-review F1).
+export async function getIndexableCoralSlugs(): Promise<{ slug: string }[]> {
   const sql = getNeonSql();
-  const windowStart = new Date(
-    Date.now() - CORAL_RECENCY_DAYS * MS_PER_DAY,
-  ).toISOString();
   const rows = (await sql`
     SELECT nc.slug
     FROM named_corals nc
@@ -89,7 +97,6 @@ export async function getSitemapCoralSlugs(): Promise<{ slug: string }[]> {
         SELECT 1
         FROM vendor_listings vl
         WHERE vl.named_coral_id = nc.id
-          AND vl.last_seen_at > ${windowStart}
       )
   `) as unknown as { slug: string }[];
   return rows;
@@ -106,11 +113,11 @@ export async function getSitemapCoralSlugs(): Promise<{ slug: string }[]> {
 // function the chart consumes means this gate can't drift from the render.
 //
 // Listing thin pages would be a soft-404 signal to Google — same exclusion
-// rationale as getSitemapCoralSlugs (PR #21 /code-review F1), but the predicate
+// rationale as getIndexableCoralSlugs (PR #21 /code-review F1), but the predicate
 // is history-DEPTH, not current-stock: a coral with rich history that is OOS
 // today still renders a real historical trend, so it stays IN the price-history
-// sitemap (and the parent-page back-link prevents the SEO orphan when its OOS
-// parent drops out of getSitemapCoralSlugs).
+// sitemap (and the parent-page back-link prevents the SEO orphan if its parent
+// were ever absent from getIndexableCoralSlugs).
 export async function getPriceHistorySitemapSlugs(): Promise<{ slug: string }[]> {
   const sql = getNeonSql();
   const rows = (await sql`
