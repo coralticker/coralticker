@@ -18,7 +18,6 @@ function coral(overrides: Partial<NamedCoral>): NamedCoral {
     genus: null,
     lore: null,
     origin_vendor: null,
-    description: null,
     source_urls: null,
     requires_vendor_prefix: false,
     active: true,

@@ -146,7 +146,7 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
   const jsonLd = buildCoralJsonLd({
     siteUrl: SITE_URL,
     canonicalName: coral.canonical_name,
-    description: coral.description,
+    description: coral.lore,
     slug,
     listings,
   });
@@ -224,8 +224,8 @@ export default async function CoralPage({ params, searchParams }: PageProps) {
         </div>
       ) : null}
 
-      {coral.description !== null ? (
-        <p className="text-base leading-relaxed mb-8">{coral.description}</p>
+      {coral.lore !== null ? (
+        <p className="text-base leading-relaxed mb-8">{coral.lore}</p>
       ) : null}
 
       {/* Contextual back-link to any buying guide that features this coral
