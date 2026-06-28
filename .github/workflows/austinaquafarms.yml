@@ -1,0 +1,106 @@
+name: austinaquafarms
+
+on:
+  schedule:
+    # CTK-149 cadence lock per arch §2.7 decision #15 + open-items.md off-minute
+    # discipline.
+    #
+    # 13 * * * * UTC = every hour at :13 minutes past — off-minute lock per the
+    # top-of-hour degradation discipline (:00 cron slots silently degrade under
+    # GH Actions free-tier scheduled-workflow load peaks; empirical evidence in
+    # open-items.md L60: a :23 slot fired 3h26m late under top-of-hour-cluster
+    # degradation — so :13 is deliberately well clear of both :00 and :23).
+    #
+    # Austin Aqua Farms is hourly-cadence ('hourly' cadence_label per vendor_id=35
+    # vendors row) — same posture as the rest of the Shopify fleet: rolling
+    # new-coral inventory on a sponsor-roster wild-import + aquaculture house.
+    #
+    # Off-minute selection (Session 1, 2026-06-28): hourly minutes taken
+    # fleet-wide: JF :07, cohort-signal :11, Vivid :19, RR :25, UC :29,
+    # Williamson's :33, PE :37, RC :41, WWC :43, Cornbred :47, POTO :53, TSA :57.
+    # The */15 weekend workflows hit :00/:15/:30/:45; the daily fires sit at
+    # :02/:12/:23/:31/:47 (various hours). :13 is a clean off-minute singleton —
+    # 2 minutes clear of the lightweight cohort-signal :11 (seconds-long, not a
+    # full scrape), 6 minutes clear of Vivid :19, no */15 collision, no daily-fire
+    # neighbor at :13, and well outside the :00 top-of-hour degradation cluster.
+    # AAF is the fleet's DEEPEST catalog (2303 rows / 10 pages / ~20s fetch +
+    # ~2302-image Phase B cold-start), so it deliberately avoids the :00 cluster
+    # where scheduled-trigger reliability degrades most.
+    - cron: '13 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Concurrency: queue (don't cancel) per the JF cascade-repair shape (CTK-027
+# 2026-05-08 disposition). Phase 2 vendors ship with explicit concurrency blocks
+# from day one.
+#
+# cancel-in-progress: false rationale — an operator-trigger landing during an
+# in-flight cron fire queues behind the running fire. Cancelling would risk
+# truncating a running Phase B mirror loop mid-write (vendor_listings /
+# price_history / R2 image-mirror double-write avoidance). The block also resolves
+# GH-Actions-default silent-drop behavior on workflow_dispatch overlap
+# (open-items.md L50 schedule-suppression) — the explicit group converts
+# silent-drop into queue-with-pending-replacement. AAF is the deepest catalog in
+# the fleet (2303 rows, ~20s fetch + a ~2302-image Phase B cold-start mirror loop
+# of several minutes), so the queue-not-cancel posture matters MORE here than for
+# the small single-page vendors — an operator re-trigger must not truncate a long
+# first-mirror. Steady-state hourly fires (only the day's new/changed rows
+# re-mirror) finish in well under a minute, so queue depth never accumulates.
+concurrency:
+  group: austinaquafarms-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # 60-min cap inherits the Phase 1+2 Shopify-fleet carve-out. AAF's 2303-product
+    # catalog at ~500-600ms per mirror = ~20-25 min Phase B max on the FIRST
+    # cold-start run (every row is new -> every image mirrors); this is the only
+    # fleet vendor whose cold-start meaningfully approaches the cap, but ~25 min
+    # still leaves >50% headroom. Steady-state hourly fires finish well under a
+    # minute (only the day's new/changed rows re-mirror).
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Preflight NEON_DATABASE_URL
+        uses: ./.github/actions/preflight-neon-secret
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+      - name: Run Austin Aqua Farms scraper
+        id: scrape
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: python -m scrapers.common.run austinaquafarms
+
+      - name: Cleanup stale running rows
+        if: always()
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python -m scrapers.common.run austinaquafarms --cleanup
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"austinaquafarms scraper failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"
