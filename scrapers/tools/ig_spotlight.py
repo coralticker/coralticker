@@ -127,6 +127,15 @@ VENDOR_IG: dict[str, VendorIG] = {
     # Canon row lives in branding-guide.md §Usage-rules IG-handle table. No
     # branded hashtag.
     "williamsons":     VendorIG("Williamson's",   "@williamsonsreef",             None),
+    # CTK-148 — reefregeneration active (vendor_id=34). Handle confirmed canon
+    # 2026-06-28 (/brand-manager): @reef_regeneration. NOT the reverse-link path
+    # used for Williamson's — reefregeneration.com exposes no IG link AND the IG
+    # bio carries no link back to the site. Confirmed instead by a distinctive
+    # positioning match: the bio states fully-aquacultured corals + 10% of profits
+    # to coral restoration, the site's own signature claim (not a generic coral-
+    # shop line, not a domain-mirror guess). Canon row in branding-guide.md
+    # §Usage-rules IG-handle table. No branded hashtag.
+    "reefregeneration": VendorIG("Reef Regen",    "@reef_regeneration",           None),
 }
 
 # Lead-event arm -> canon event verb (rev4 L45-48; cross-channel verb canon).

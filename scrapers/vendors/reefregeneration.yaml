@@ -1,0 +1,147 @@
+# Reef Regeneration scraper config (CTK-148 Session 1).
+#
+# Authoritative platform/method fields live on the vendors row (migration
+# 0060_add_reefregeneration_vendor.sql, vendor_id=34). YAML carries scrape-tuning
+# per arch §2.3 — values that may change without a code edit (delay, page size,
+# max pages, hash anchor, originator prefix, category filter, cohort-OOS). DB row
+# wins on conflict.
+#
+# Pure config clone of the Shopify fleet (PE/WWC/TSA/JF/Battlecorals/Unique
+# Corals/Vivid/Reef Chasers/POTO/Cornbred/Williamson's): parse_shopify carries
+# the whole fetch/parse path. No shared-code edit.
+
+slug: reefregeneration
+platform: shopify
+base_url: https://reefregeneration.com
+
+# Standard Shopify endpoint; five-signal re-confirm at build 2026-06-28
+# (platform can drift pre-flight 2026-06-12 -> build):
+#   (1) homepage head carries window.Shopify / Shopify.shop / Shopify.theme
+#       + cdn.shopify.com + myshopify references.
+#   (2) powered-by absent; server: cloudflare fronts a clean 200 (no JS
+#       challenge / no cf-mitigated body signature).
+#   (3) no platform-deviation headers (standard Shopify behind Cloudflare).
+#   (4) robots.txt explicit "# Shopify storefront. Public product, collection,
+#       page, blog, policy, cart, and localized HTML is crawlable." preamble;
+#       /products.json NOT disallowed. New-era agentic-commerce posture present
+#       (agents.md, UCP discovery, UCP/MCP endpoint) scoped to cart/checkout
+#       automation only — read-only catalog crawl of /products.json is Allowed;
+#       our scraper reads catalog and never touches cart/checkout (arch §2.5, no
+#       new ToS risk).
+#   (5) /products.json HTTP 200 + canonical products array with the 13-key
+#       first-product shape (body_html / created_at / handle / id / images /
+#       options / product_type / published_at / tags / title / updated_at /
+#       variants / vendor) matching the Shopify-fleet empirical anchor.
+products_path: /products.json
+
+# Page size at Shopify's max (250). Full-catalog walk 2026-06-28: page 1 = 111
+# (under-full -> natural terminator). Small single-page catalog, smaller than
+# Williamson's (202). vendor field uniformly "Reef Regeneration" (1 distinct
+# value across all 111 rows — no gift-card/vendor exception). tags EMPTY on every
+# row (0 distinct tags catalog-wide) — see category_filter note below for why
+# that rules out any tag-axis gate.
+page_size: 250
+
+# Inherits the fleet empirical request_delay_sec=2 lock. 111 products / 250 per
+# page = 1 page x 2s = ~2s total scrape time, trivial vs. the 60-min workflow
+# timeout. Bump to 3-4s per arch §2.4 retry-policy outcome only if 429s appear.
+request_delay_sec: 2
+
+# Belt-and-suspenders ceiling. 111-product catalog at 250/page = 1 page today;
+# 5 leaves room for drop-spike inventory without re-tuning. Matches the
+# small-catalog 5-cap posture (Battlecorals / UC / RC / Cornbred / Williamson's).
+max_pages: 5
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object. Same
+# hash_anchor as the rest of the Shopify fleet per parse_shopify.py shape
+# stability. Empirical anchor (Session 1 walk 2026-06-28): 13 keys = body_html,
+# created_at, handle, id, images, options, product_type, published_at, tags,
+# title, updated_at, variants, vendor.
+hash_anchor: first_product_keys
+
+# originator_prefix=null per Reef Chasers (CTK-086) / Cornbred (CTK-142) /
+# Williamson's (CTK-146) precedent. Reef Regeneration DOES carry an "RRG " house
+# prefix on its own lineages (RRG Paint Splatter Jawbreaker, RRG Sub Zero
+# Rhodactis, RRG Gummy Bear Bounce Mushroom, RRG Blueberry Blast Acro), alongside
+# heavy reseller stock (WWC/JF/TSA/POTO/UC/CB/RRU/TGC prefixes) — it is a mixed
+# house+reseller. But the seed-list (.claude/research/named-coral-seed-list.md)
+# has ZERO Reef-Regeneration/RRG-attributed canonical entries (grep 2026-06-28),
+# so matcher §3.4 stage-3 synthesis would be a no-op. null is the correct config
+# today; flip to 'rrg' only on a future seed-list expansion that attributes
+# canonicals to RRG. Flagged for /lead-backend at the next seed-list review
+# (same disposition shape as aquasd's "ASD " prefix, CTK-090).
+originator_prefix: null
+
+# cohort_oos_at_persist: true — trust-floor parity (CTK-105 D-4 lineage) + the
+# fleet-wide default as of 2026-06-04. Net-new vendor, zero prior vendor_listings
+# (migration 0060 lands the row in the same CTK), so the first scrape has no
+# prior cohort -> zero would-flip rows (expected listings_oos ~0 on first
+# scrape). The catalog DOES carry 20 OOS-at-parse rows (variant.available=false:
+# OG Weeping Willow, CCA Crayola Meltdown Chalice, etc.) — those persist as NEW
+# rows with in_stock=false (counted in listings_new, NOT listings_oos), so the
+# C2 first-scrape check is Δ catalog (0->111) ≈ listings_new (111),
+# listings_oos=0. Also auto-enrolls Reef Regeneration in the health-digest
+# cohort-OOS section (health_digest.py globs vendors/*.yaml and keys on this
+# flag) — observability wired by config alone.
+cohort_oos_at_persist: true
+
+# auction_detection: OMITTED (None = no-op, parse_shopify.py permissive default).
+# INV-05 is NOT triggered for Reef Regeneration. Full-catalog walk 2026-06-28
+# (111 rows, 1 page) found ZERO auction signal: no wk_end_auction tag, no auc/bid
+# tag substring anywhere, no product_type:Auction, no 'auction' in any
+# title/handle. (RR carries no tags at all, so a tag-borne auction signal is
+# structurally impossible here.) Re-confirm at any future re-walk; flip to an
+# auction_detection block + flag /lead-backend if a wk_end_auction-style surface
+# ever appears.
+
+# category_filter — DELIBERATELY NO product_type_allowlist (CTK-148 #1,
+# Jon-approved 2026-06-28). Reef Regeneration is the ONE Shopify-fleet vendor
+# without an allowlist; this absence is a decision, not an omission. Rationale:
+#
+#   - The full-catalog walk 2026-06-28 found 18 product_type buckets, EVERY one
+#     coral-native (Mushroom 19, Acan 17, Zoa 15, Acro 13, Goni 10, Chalice 10,
+#     Monti 6, Torch 4, Euphyllia 4, Softies 3, Favia 2, Blasto 2, + six
+#     single-count exotic genera: platygyra, LPS, Plate, bower, Scolymia,
+#     Stylocoeniella). ZERO non-coral, zero equipment, zero gift cards, zero ''
+#     bucket. So an allowlist would gate against junk that does not exist.
+#   - RR mints a NEW product_type per coral genus (6 single-count exotics in just
+#     111 rows -> open-ended genus coinage). An allowlist would silently drop the
+#     NEXT new genus bucket (bucket #19, #20...) the moment RR lists it. The
+#     allowlist-miss WARN in parse_shopify._should_keep is gated behind
+#     in_stock_only, which RR does NOT set (default False), so a new-bucket drop
+#     would fire NO WARN/Slack alert -> silent coverage loss.
+#   - Failure asymmetry: with no allowlist, novel non-coral junk leaks VISIBLY
+#     (one wrong card on the site, caught by eyeball / catalog-count drift watch,
+#     denylisted on sighting). With an allowlist, novel coral drops INVISIBLY
+#     (lost coverage, the core moat, with no signal). Visible-junk-in beats
+#     invisible-coral-out for a coverage-moat product.
+#
+# So the only gate is a title_denylist forward-bind for chaeto/macroalgae — the
+# fleet-wide pattern per Jon's "filter chaeto from all vendors just to be safe"
+# 2026-06-01 (CTK-107 D-2-quater). It is the ONLY junk gate RR has, so it is kept
+# modestly generous on the chaeto/macroalgae variants (canonical + misspelling +
+# hyphen + spacing). It fires on ZERO rows in the locked 2026-06-28 walk (RR
+# stocks no macroalgae today) — pure forward-bind. A tag_denylist is useless here
+# (RR carries no tags); a tag_allowlist or product_type_allowlist is rejected per
+# the rationale above. New junk classes that appear later get added to this
+# denylist on sighting (visible-leak posture, Jon 2026-06-28).
+#
+# Residual leak risk + backstop: with no allowlist, ANY future non-coral RR adds
+# (equipment, a gift card) leaks until denylisted. The backstop is
+# scraper_runs.listings_seen catalog-count drift watch at /lead-backend
+# per-vendor close-monitor + periodic re-walk (same rotating-bucket posture as
+# Cornbred/Williamson's, feedback_rotating_bucket_allowlist). There is no
+# automatic new-junk signal (the WARN that would fire is allowlist-gated, and
+# there is no allowlist) — the drift watch + re-walk + eyeball is the only
+# backstop, accepted deliberately as the cost of not silently dropping coral.
+category_filter:
+  # title_denylist: case-insensitive substring per CTK-096 D-1. Defensive
+  # chaeto/macroalgae forward-bind (CTK-107 D-2-quater fleet-wide pattern). No
+  # active macroalgae leak on RR today (Session 1 walk found zero) — pure
+  # forward-bind, kept modestly generous since it is RR's only junk gate.
+  title_denylist:
+    - Chaeto                 # canonical + Chaetomorpha substring catch (forward-bind)
+    - Cheato                 # POTO-style misspelling forward-binding
+    - Macroalgae             # generic macroalgae catch (forward-bind)
+    - Macro Algae            # space-separated variant catch (forward-bind)
+    - Macro-Algae            # hyphenated variant catch (forward-bind)
