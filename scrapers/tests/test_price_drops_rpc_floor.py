@@ -21,7 +21,8 @@ Four pins on the migration-0035 get_recent_price_drops(integer) body:
      is removed (close-fold /code-review rider (e)).
 
 Requires migration 0035 applied (floor + tiebreak live in the function
-body) — run AFTER scripts/apply_migration_0035.py.
+body) — apply via `python -m scripts.apply_migration 35` (CTK-208 shared
+runner; the per-migration apply_migration_0035.py clone was removed).
 
 Test rows are seeded on the active=false '_ctk124_test' vendor with
 in_stock=true and an in-window onset, so they are RPC-visible for the

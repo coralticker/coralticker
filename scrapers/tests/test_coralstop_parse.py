@@ -2,6 +2,12 @@
 Stop's Shopify /products.json shape against locked fixture
 scrapers/tests/fixtures/coralstop/products.sample.json.
 
+CTK-208: migrated onto scrapers/tests/vendor_parse_harness.py. The shared scaffolding
+(_load_fixture, the _keep/_normalize/_tag_denylist_norm production-call wrappers,
+_by_title, the pytest fixture shim, main(), and the two common tests —
+html_hash_first_product_keys + yaml_mirror_parity) now lives in the harness, driven by
+the CONFIG below. The Coral-Stop-specific regressions are kept textually unchanged.
+
 Parse-only — no DB, no network. Validates parse_shopify._normalize_product output
 shape + html_hash sentinel + the NO-ALLOWLIST title_denylist-only category_filter
 that makes Coral Stop a no-product_type_allowlist / no-tag_allowlist vendor
@@ -29,18 +35,19 @@ Other regressions pinned:
     are 2-word and must not touch a bare-"Frag" coral; "Booster" must not become
     bare "Polyp" — test_denylist_specificity.
   - The "Leather Patch Hat" apparel row (which infer_category mis-buckets softie via
-    \bleather) must drop — test_exact_drop_set + test_leather_patch_hat_drops.
+    \\bleather) must drop — test_exact_drop_set + test_leather_patch_hat_drops.
 
 INV-05 is NOT triggered: the full-catalog walk found zero auction signal (no
 wk_end_auction/auc/bid tags, no product_type:Auction, no 'auction' in any
 title/handle; DOOR BUSTER = fixed-price flash sale, not a bid surface).
-coralstop.yaml carries no auction_detection block; test_yaml_mirror_parity pins
+coralstop.yaml carries no auction_detection block; yaml_mirror_parity pins
 that absence.
 
-Mirror-parity (CTK-115 convention): test loads scrapers/vendors/coralstop.yaml and
-asserts the in-test CORALSTOP_CATEGORY_FILTER equals the YAML block byte-exact, AND
-that the YAML carries NO product_type_allowlist and NO tag_allowlist (the
-load-bearing absences) — either landing later fails test_yaml_mirror_parity loudly.
+Mirror-parity (CTK-115 convention): the harness yaml_mirror_parity loads
+scrapers/vendors/coralstop.yaml and asserts the CONFIG category_filter equals the
+YAML block byte-exact, AND that the YAML carries NO product_type_allowlist and NO
+tag_allowlist (the load-bearing absences via CONFIG.expected_absent_axes) — either
+landing later fails loudly.
 
 Runnable as:
   python -m scrapers.tests.test_coralstop_parse
@@ -55,34 +62,26 @@ EXPECTED_TOTAL/EXPECTED_KEPT/DROPPED_TITLES + the NULL set to match the snapshot
 from __future__ import annotations
 
 import collections
-import hashlib
-import json
 import sys
-import traceback
 from pathlib import Path
 
-import yaml
-
 from scrapers.common.normalize import infer_category
-from scrapers.common.parse_shopify import (
-    _normalize_product,
-    _normalize_tag,
-    _should_keep,
+from scrapers.tests.vendor_parse_harness import (
+    VendorParseConfig,
+    by_title as _by_title,
+    check_html_hash_first_product_keys,
+    check_yaml_mirror_parity,
+    make_keep,
+    make_normalize,
+    run_main,
 )
 
 
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "coralstop" / "products.sample.json"
-YAML_PATH = Path(__file__).parent.parent / "vendors" / "coralstop.yaml"
-BASE_URL = "https://coralstop.com"
-ORIGINATOR_PREFIX = None  # CTK-209 — null (no Coral-Stop-attributed seed-list canonicals)
-IMAGE_STRATEGY = "mirror"
-AUCTION_DETECTION = None   # CTK-209 — INV-05 not triggered; no auction_detection block
-
 # Hand-mirror of scrapers/vendors/coralstop.yaml category_filter — kept byte-exact
-# with the YAML; test_yaml_mirror_parity asserts the equality so a YAML amendment
-# that isn't mirrored here fails loudly (CTK-115 drift class). NOTE the deliberate
-# ABSENCE of product_type_allowlist AND tag_allowlist — Coral Stop is a no-allowlist
-# vendor (CTK-209 #1). Only the 51-row non-coral tail is denied, all by title.
+# with the YAML; yaml_mirror_parity asserts the equality so a YAML amendment that
+# isn't mirrored here fails loudly (CTK-115 drift class). NOTE the deliberate ABSENCE
+# of product_type_allowlist AND tag_allowlist — Coral Stop is a no-allowlist vendor
+# (CTK-209 #1). Only the 51-row non-coral tail is denied, all by title.
 CORALSTOP_CATEGORY_FILTER = {
     "title_denylist": [
         "Amino", "Supplement", "Dry Powder", "Probiotic", "Live Bacteria",
@@ -95,6 +94,31 @@ CORALSTOP_CATEGORY_FILTER = {
         "Macroalgae",
     ],
 }
+
+CONFIG = VendorParseConfig(
+    fixture_path=Path(__file__).parent / "fixtures" / "coralstop" / "products.sample.json",
+    yaml_path=Path(__file__).parent.parent / "vendors" / "coralstop.yaml",
+    base_url="https://coralstop.com",
+    image_strategy="mirror",
+    originator_prefix=None,   # CTK-209 — null (no Coral-Stop-attributed seed-list canonicals)
+    auction_detection=None,   # CTK-209 — INV-05 not triggered; no auction_detection block
+    category_filter=CORALSTOP_CATEGORY_FILTER,
+    in_stock_only=False,      # Coral Stop has no in_stock_only
+    expected_first_product_keys=[
+        "body_html", "created_at", "handle", "id", "images", "options",
+        "product_type", "published_at", "tags", "title", "updated_at",
+        "variants", "vendor",
+    ],
+    html_hash_sentinel="c94c512f27be051326728462bfaf34b4b4cb3f2595a3eafbe44ba45a672aad70",
+    expected_filter_keys=frozenset({"title_denylist"}),
+    expected_absent_axes=frozenset({"product_type_allowlist", "tag_allowlist"}),
+    expect_in_stock_only_absent=True,
+    expect_auction_detection_none=True,
+)
+
+_keep = make_keep(CONFIG)
+_normalize = make_normalize(CONFIG)
+
 
 # Expected keep/drop counts on the LOCKED 2026-06-28 fixture (939 rows). Exactly 51
 # rows drop (the non-coral tail); every coral — including the 13 no-tag DOOR BUSTER
@@ -176,67 +200,20 @@ EXPECTED_NULL_KEPT_COUNT = 2
 CORAL_ANCHOR = "Baby Fox Coral"
 
 
-def _tag_denylist_norm() -> set[str]:
-    """Mirror the production hoist in fetch_and_parse: normalize the YAML
-    tag_denylist into the set _should_keep consumes. Coral Stop carries no
-    tag_denylist, so this is the empty set — the tag axis is structurally inert
-    here. Kept for production-call parity."""
-    return {_normalize_tag(e) for e in (CORALSTOP_CATEGORY_FILTER.get("tag_denylist") or [])}
-
-
-def _keep(p: dict) -> bool:
-    """_should_keep called exactly as production does — category_filter +
-    in_stock_only=False (Coral Stop has no in_stock_only) + the normalized
-    tag_denylist."""
-    return _should_keep(p, CORALSTOP_CATEGORY_FILTER, False, _tag_denylist_norm())
-
-
-def _normalize(p: dict) -> dict:
-    return _normalize_product(p, BASE_URL, IMAGE_STRATEGY, ORIGINATOR_PREFIX, AUCTION_DETECTION)
-
-
-def _load_fixture() -> list[dict]:
-    with FIXTURE_PATH.open("r", encoding="utf-8") as f:
-        return json.load(f)["products"]
-
-
 try:
     import pytest
+
     @pytest.fixture(scope="module")
     def products():
-        return _load_fixture()
+        from scrapers.tests.vendor_parse_harness import load_fixture
+        return load_fixture(CONFIG)
 except ImportError:
     pass
 
 
-def _by_title(products: list[dict], title: str) -> dict:
-    for p in products:
-        if p["title"] == title:
-            return p
-    raise KeyError(f"fixture missing product titled {title!r}")
-
-
-# Test 1: html_hash sentinel — sorted-keys-of-first-product SHA256
+# Test 1 (COMMON, harness): html_hash sentinel — sorted-keys-of-first-product SHA256
 def test_html_hash_first_product_keys(products):
-    """Arch §2.6 Shopify variant: hash sorted key set of first product. Matches the
-    13-key Shopify-fleet anchor. Sentinel flips only when keys add/remove."""
-    first = products[0]
-    keys = sorted(first.keys())
-    expected_keys = [
-        "body_html", "created_at", "handle", "id", "images", "options",
-        "product_type", "published_at", "tags", "title", "updated_at",
-        "variants", "vendor",
-    ]
-    assert keys == expected_keys, (
-        f"first-product key set drift — expected {expected_keys}, got {keys}"
-    )
-    # The exact sentinel digest (sha256 of the comma-joined sorted key set) — the
-    # production html_hash for the Shopify first_product_keys anchor (arch §2.6),
-    # identical to the rest of the Shopify fleet's 13-key shape.
-    sha = hashlib.sha256(",".join(keys).encode("utf-8")).hexdigest()
-    assert sha == "c94c512f27be051326728462bfaf34b4b4cb3f2595a3eafbe44ba45a672aad70", (
-        f"first-product-keys html_hash sentinel drift — got {sha}"
-    )
+    check_html_hash_first_product_keys(products, CONFIG)
 
 
 # Test 2: total kept = 888 (939 - the 51-row non-coral tail)
@@ -429,81 +406,32 @@ def test_category_coverage_floor(products):
     )
 
 
-# Test 12 (MIRROR-PARITY, CTK-115): in-test filter == coralstop.yaml byte-exact
+# Test 12 (COMMON, harness, MIRROR-PARITY CTK-115): CONFIG == coralstop.yaml
 def test_yaml_mirror_parity():
-    """CTK-115 mirror-parity: the in-test CORALSTOP_CATEGORY_FILTER must equal the
-    scrapers/vendors/coralstop.yaml category_filter byte-exact, the YAML must carry
-    NO product_type_allowlist AND NO tag_allowlist (the load-bearing CTK-209 #1
-    absences), NO auction_detection block (INV-05 not triggered), and NO
-    in_stock_only.
-
-    The keys-exact assertion is load-bearing: this test (and _keep()) model only the
-    single axis Coral Stop uses today (title_denylist) with in_stock_only=False. If a
-    future maintainer adds product_type_allowlist or tag_allowlist (the regressions
-    this ticket exists to prevent — they would silently zero the catalog on a feed
-    relabel / drop the no-tag DOOR BUSTERs), the locked-fixture keep count would NOT
-    reflect it and the suite would stay green against diverged production behavior.
-    So we fail loudly the moment the YAML's filter-axis set — or the in_stock_only
-    flag — drifts from what this test models."""
-    cfg = yaml.safe_load(YAML_PATH.read_text(encoding="utf-8"))
-    yaml_filter = cfg["category_filter"]
-    assert yaml_filter.get("title_denylist", []) == CORALSTOP_CATEGORY_FILTER["title_denylist"], (
-        "title_denylist drift between coralstop.yaml and the test mirror"
-    )
-    assert "product_type_allowlist" not in yaml_filter, (
-        "coralstop.yaml grew a product_type_allowlist — that is the CTK-209 #1 "
-        "regression (silent catalog-zeroing on a feed relabel). Re-walk + re-decide."
-    )
-    assert "tag_allowlist" not in yaml_filter, (
-        "coralstop.yaml grew a tag_allowlist — rejected per CTK-209 #1 (would drop "
-        "the no-tag DOOR BUSTER corals)"
-    )
-    assert set(yaml_filter.keys()) == set(CORALSTOP_CATEGORY_FILTER.keys()), (
-        f"coralstop.yaml category_filter grew/changed an axis the test mirror "
-        f"doesn't model: YAML={sorted(yaml_filter.keys())} vs "
-        f"mirror={sorted(CORALSTOP_CATEGORY_FILTER.keys())} — extend "
-        f"CORALSTOP_CATEGORY_FILTER + _keep()"
-    )
-    assert "in_stock_only" not in cfg, (
-        "coralstop.yaml set in_stock_only — _keep() hardcodes False and the locked "
-        "count would no longer reflect production; thread it through the test"
-    )
-    assert cfg.get("auction_detection") is None, (
-        "coralstop.yaml grew an auction_detection block — INV-05 disposition changed; "
-        "re-confirm the walk + update this test mirror"
-    )
+    check_yaml_mirror_parity(CONFIG)
 
 
 def main() -> int:
-    products = _load_fixture()
-    no_param = {test_yaml_mirror_parity}
-    tests = [
-        test_html_hash_first_product_keys,
-        test_total_kept_is_888,
-        test_exact_drop_set,
-        test_door_buster_corals_survive,
-        test_no_allowlist_feed_relabel_survives,
-        test_fox_coral_classifies_lps,
-        test_denylist_specificity,
-        test_denylist_bare_word_anchors,
-        test_chaeto_macroalgae_forward_bind,
-        test_leather_patch_hat_drops,
-        test_normalize_no_auction_nulling,
-        test_normalize_output_shape,
-        test_category_coverage_floor,
-        test_yaml_mirror_parity,
-    ]
-    failed = 0
-    for t in tests:
-        try:
-            t() if t in no_param else t(products)
-            print(f"PASS  {t.__name__}")
-        except Exception:
-            failed += 1
-            print(f"FAIL  {t.__name__}")
-            traceback.print_exc()
-    print(f"\n{len(tests) - failed}/{len(tests)} passed")
-    return 1 if failed else 0
+    return run_main(
+        CONFIG,
+        tests=[
+            test_html_hash_first_product_keys,
+            test_total_kept_is_888,
+            test_exact_drop_set,
+            test_door_buster_corals_survive,
+            test_no_allowlist_feed_relabel_survives,
+            test_fox_coral_classifies_lps,
+            test_denylist_specificity,
+            test_denylist_bare_word_anchors,
+            test_chaeto_macroalgae_forward_bind,
+            test_leather_patch_hat_drops,
+            test_normalize_no_auction_nulling,
+            test_normalize_output_shape,
+            test_category_coverage_floor,
+            test_yaml_mirror_parity,
+        ],
+        no_param={test_yaml_mirror_parity},
+    )
 
 
 if __name__ == "__main__":
