@@ -1,0 +1,98 @@
+name: williamsons
+
+on:
+  schedule:
+    # CTK-146 cadence lock per arch §2.7 decision #15 + open-items.md
+    # off-minute discipline.
+    #
+    # 33 * * * * UTC = every hour at :33 minutes past — off-minute lock per the
+    # top-of-hour degradation discipline (:00 cron slots silently degrade under
+    # GH Actions free-tier scheduled-workflow load peaks; empirical evidence in
+    # open-items.md L60: a :23 slot fired 3h26m late under top-of-hour-cluster
+    # degradation).
+    #
+    # Williamson's is hourly-cadence ('hourly' cadence_label per vendor_id=33
+    # vendors row) — same posture as the rest of the Shopify fleet: rolling
+    # new-coral inventory on a reseller catalog.
+    #
+    # Off-minute selection (Session 1, 2026-06-28): the directive's proposed :53
+    # is NOT free — POTO owns it. Hourly minutes taken fleet-wide: JF :07,
+    # cohort-signal :11, Vivid :19, UC :29, PE :37, RC :41, WWC :43, Cornbred
+    # :47 / AquaSD :47-daily, POTO :53, TSA :57. The */15 weekend workflows hit
+    # :00/:15/:30/:45. :33 is a clean off-minute singleton — 4 minutes clear of
+    # UC :29 and PE :37, no */15 collision, and the only daily neighbor is a
+    # once-per-day :31 fire (staleness-cap, 2 min off). No sustained runner
+    # contention.
+    - cron: '33 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Concurrency: queue (don't cancel) per the JF cascade-repair shape (CTK-027
+# 2026-05-08 disposition). Phase 2 vendors ship with explicit concurrency
+# blocks from day one.
+#
+# cancel-in-progress: false rationale — an operator-trigger landing during an
+# in-flight cron fire queues behind the running fire. Cancelling would risk
+# truncating a running Phase B mirror loop mid-write (vendor_listings /
+# price_history / R2 image-mirror double-write avoidance). The block also
+# resolves GH-Actions-default silent-drop behavior on workflow_dispatch overlap
+# (open-items.md L50 schedule-suppression) — the explicit group converts
+# silent-drop into queue-with-pending-replacement. Hourly cadence (24 fires/day)
+# at Williamson's 202-product catalog scale (~2s parse + Phase B mirror loop)
+# means queue depth never meaningfully accumulates.
+concurrency:
+  group: williamsons-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # 60-min cap inherits the Phase 1+2 Shopify-fleet carve-out. Williamson's
+    # 202-product catalog at ~500-600ms per mirror = ~2 min Phase B max on the
+    # first cold-start run; steady-state hourly fires finish well under 1 min.
+    # Substantial headroom inside the 60-min ceiling.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Preflight NEON_DATABASE_URL
+        uses: ./.github/actions/preflight-neon-secret
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+      - name: Run Williamson's Reef scraper
+        id: scrape
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: python -m scrapers.common.run williamsons
+
+      - name: Cleanup stale running rows
+        if: always()
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python -m scrapers.common.run williamsons --cleanup
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"williamsons scraper failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"

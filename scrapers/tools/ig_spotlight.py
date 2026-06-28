@@ -121,6 +121,12 @@ VENDOR_IG: dict[str, VendorIG] = {
     "poto":            VendorIG("POTO",           "@piecesoftheocean",            None),
     "reef_chasers":    VendorIG("Reef Chasers",   "@reefchasers",                 None),
     "cornbred":        VendorIG("Cornbred",       "@cornbredcorals",              None),
+    # CTK-146 — williamsons active (vendor_id=33). Handle confirmed canon
+    # 2026-06-28 (/brand-manager): @williamsonsreef verified via the IG bio's
+    # reverse link to williamsonsreef.com (the site itself exposes no IG link).
+    # Canon row lives in branding-guide.md §Usage-rules IG-handle table. No
+    # branded hashtag.
+    "williamsons":     VendorIG("Williamson's",   "@williamsonsreef",             None),
 }
 
 # Lead-event arm -> canon event verb (rev4 L45-48; cross-channel verb canon).

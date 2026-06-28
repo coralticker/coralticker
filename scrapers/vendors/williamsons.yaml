@@ -1,0 +1,156 @@
+# Williamson's Reef scraper config (CTK-146 Session 1).
+#
+# Authoritative platform/method fields live on the vendors row (migration
+# 0059_add_williamsons_vendor.sql, vendor_id=33). YAML carries scrape-tuning
+# per arch §2.3 — values that may change without a code edit (delay, page
+# size, max pages, hash anchor, originator prefix, category filter,
+# cohort-OOS). DB row wins on conflict.
+#
+# Pure config clone of the Shopify fleet (PE/WWC/TSA/JF/Battlecorals/Unique
+# Corals/Vivid/Reef Chasers/POTO/Cornbred): parse_shopify carries the whole
+# fetch/parse path. No shared-code edit.
+
+slug: williamsons
+platform: shopify
+base_url: https://williamsonsreef.com
+
+# Standard Shopify endpoint; five-signal re-confirm at build 2026-06-28
+# (platform can drift pre-flight 2026-06-12 -> build):
+#   (1) homepage head carries window.Shopify / Shopify.shop / Shopify.theme
+#       + cdn.shopify.com + myshopify references.
+#   (2) powered-by: Shopify; server: cloudflare fronts a clean 200 (no JS
+#       challenge / no cf-mitigated body signature).
+#   (3) no platform-deviation headers (standard Shopify behind Cloudflare).
+#   (4) robots.txt explicit "# Shopify storefront. Public product, collection,
+#       page, blog, policy, cart, and localized HTML is crawlable." preamble;
+#       /products.json NOT disallowed. New-era agentic-commerce posture present
+#       (UCP/MCP endpoint, agents.md) scoped to checkout-automation only —
+#       read-only catalog crawl of /products.json is Allowed; our scraper reads
+#       catalog and never touches cart/checkout (arch §2.5, no new ToS risk).
+#   (5) /products.json HTTP 200 + canonical products array with the 13-key
+#       first-product shape (body_html / created_at / handle / id / images /
+#       options / product_type / published_at / tags / title / updated_at /
+#       variants / vendor) matching the Shopify-fleet empirical anchor.
+products_path: /products.json
+
+# Page size at Shopify's max (250). Full-catalog walk 2026-06-28: page 1 = 202
+# (under-full -> natural terminator). Small single-page catalog, comparable to
+# Reef Chasers (249) at the low end. vendor field uniformly "Williamson's Reef"
+# (lone exception: the Gift Card row carries vendor "williamsonsreef", denied
+# below regardless).
+page_size: 250
+
+# Inherits the fleet empirical request_delay_sec=2 lock. 202 products / 250 per
+# page = 1 page x 2s = ~2s total scrape time, trivial vs. the 60-min workflow
+# timeout. Bump to 3-4s per arch §2.4 retry-policy outcome only if 429s appear.
+request_delay_sec: 2
+
+# Belt-and-suspenders ceiling. 202-product catalog at 250/page = 1 page today;
+# 5 leaves room for drop-spike inventory without re-tuning. Matches the
+# small-catalog 5-cap posture (Battlecorals / UC / RC / Cornbred).
+max_pages: 5
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object. Same
+# hash_anchor as the rest of the Shopify fleet per parse_shopify.py shape
+# stability. Empirical anchor (Session 1 walk 2026-06-28): 13 keys = body_html,
+# created_at, handle, id, images, options, product_type, published_at, tags,
+# title, updated_at, variants, vendor.
+hash_anchor: first_product_keys
+
+# originator_prefix=null per Reef Chasers (CTK-086) / Cornbred (CTK-142)
+# precedent. Williamson's is a RESELLER, not a named-coral originator house —
+# its catalog is other houses' lineages (WWC Strip Tease, BC Miss Scarlet, RRU
+# Pink Floyd, TD Ultra Leptoseris, UC Dippin Dots, POTO Queen Of Hearts). The
+# seed-list (.claude/research/named-coral-seed-list.md) has ZERO
+# Williamson's-attributed canonical entries, so matcher §3.4 stage-3 synthesis
+# would be a no-op. null is the correct config; flip only on a future seed-list
+# expansion that attributes canonicals to Williamson's (not expected for a
+# reseller).
+originator_prefix: null
+
+# cohort_oos_at_persist: true — trust-floor parity (CTK-105 D-4 lineage) + the
+# fleet-wide default as of 2026-06-04. Net-new vendor, zero prior vendor_listings
+# (migration 0059 lands the row in the same CTK), so the first scrape has no
+# prior cohort -> zero would-flip rows (expected listings_oos ~0 on first
+# scrape). Battlecorals empty-rowset disposition (backlog=0). Also auto-enrolls
+# Williamson's in the health-digest cohort-OOS section (health_digest.py globs
+# vendors/*.yaml and keys on this flag) — observability wired by config alone.
+cohort_oos_at_persist: true
+
+# auction_detection: OMITTED (None = no-op, parse_shopify.py L149 permissive
+# default). INV-05 is NOT triggered for Williamson's. Full-catalog walk
+# 2026-06-28 (202 rows, 1 page) found ZERO auction signal: no wk_end_auction
+# tag, no auc/bid tag substring anywhere, no product_type:Auction. The single
+# "Auction order" row ($0.00, empty '' product_type, no tags) is a checkout
+# helper for paying off auction wins settled OFF-PLATFORM, NOT a live-bid coral
+# listing — it carries no bid that could write through as a real price. It is
+# caught by title_denylist below (junk-drop), not by the INV-05 auction
+# contract. Re-confirm at any future re-walk; flip to an auction_detection
+# block + flag /lead-backend if a wk_end_auction-style surface ever appears.
+
+# Category filter. CRITICAL divergence from Cornbred's genus-allowlist
+# mechanism: Williamson's product_type is NOT a genus taxonomy. The Session 1
+# walk 2026-06-28 found just TWO product_type buckets:
+#   Coral = 184   '' (empty) = 18
+# The empty '' bucket is mostly REAL CORAL (the BC ''-as-coral-grab-bag shape,
+# NOT Cornbred's drop-''): POTO Queen Of Hearts $79, WWC Strip Tease, UC Dippin
+# Dots, Aussie Bleeding Apple Scolymias, TSA Wildfire Chalice XL, RRU Pink
+# Floyd, Fairy Fart Zoa, etc. Cloning product_type_allowlist:[Coral] would
+# silently drop ~14 real coral. So BOTH buckets are allowlisted (CTK-146 #1,
+# Jon-approved 2026-06-28).
+#
+# The real coral/non-coral taxonomy lives in TAGS (SPS 90, LPS 75, Mushrooms
+# 17, zoanthids 10, Goniopora 11, Anemones 6; WYSIWYG 189 = sale-type, not
+# taxonomy). But tags do NOT discriminate cleanly enough to gate on:
+# tag_allowlist was REJECTED because (a) it drops POTO Queen Of Hearts (real
+# coral, zero tags) and (b) it keeps "Mushroom Cage Black" (equipment carrying
+# a Mushrooms tag). So the mechanism is allowlist-both-buckets + a targeted
+# denylist for the small, fully-enumerable non-coral set that lives in ''.
+#
+# Non-coral in '' enumerated row-by-row (Session 1 walk 2026-06-28):
+#   - "Williamson's Reef Gift Card"        -> giftcard tag + "Gift Card" title
+#   - "Versa Pump 4 Pack with Base Station" -> equipment ($750)
+#   - "Auction order"                      -> $0 off-platform checkout helper
+#   - "Mushroom Cage Black"                -> acclimation cage (equipment;
+#                                             Mushrooms-tagged, so title-denied,
+#                                             NOT tag-denied)
+#   - "4 Micro Brittle Starfish add to coral order." -> CUC invert add-on
+#                                             (product_type=Coral); the
+#                                             "add to coral order" pattern is
+#                                             Williamson's add-on convention.
+#
+# Residual leak risk: '' is Williamson's de-facto catch-all and already holds
+# equipment, so a NEW equipment item dropped into '' passes the product_type
+# gate and relies on the denylist. Mitigation = scraper_runs.listings_seen
+# catalog-count drift watch at /lead-backend per-vendor close-monitor + periodic
+# re-walk (same rotating-bucket posture as Cornbred,
+# feedback_rotating_bucket_allowlist). NOTE: a genuinely NEW product_type string
+# (e.g. "Equipment") drops SILENTLY — the allowlist-miss WARN in
+# parse_shopify._should_keep is gated behind in_stock_only, which this vendor
+# does NOT set (default False), so no WARN/Slack alert fires on a new-bucket
+# drop. The catalog-count drift watch + re-walk is the ONLY backstop; there is
+# no automatic new-bucket signal. (CTK-146 /code-review fold 2026-06-28.)
+category_filter:
+  product_type_allowlist:
+    - Coral                  # 184 items; the typed-coral bucket (2026-06-28)
+    - ""                     # 18 items; '' = coral grab-bag (BC precedent) — ~14 real coral (POTO Queen Of Hearts, WWC Strip Tease, UC Dippin Dots, Scolymias, TSA Wildfire Chalice) + the enumerable non-coral denied below (2026-06-28)
+  # tag_denylist: the Gift Card row carries a 'giftcard' tag — precise
+  # tag-level drop (fleet mechanism parity with the title_denylist backstop).
+  tag_denylist:
+    - giftcard               # "Williamson's Reef Gift Card" (2026-06-28)
+  # title_denylist: case-insensitive substring per CTK-096 D-1. First five
+  # entries = the enumerable non-coral in '' (resolved row-by-row Session 1).
+  # Last four = defensive chaeto/macroalgae forward-bind (CTK-107 D-2-quater
+  # fleet-wide pattern per Jon's "filter chaeto from all vendors just to be
+  # safe" 2026-06-01; /lead-backend fleet-parity). No active chaeto/macroalgae
+  # leak on Williamson's today (Session 1 walk found zero) — pure forward-bind.
+  title_denylist:
+    - Gift Card              # gift card (belt-and-suspenders with the giftcard tag)
+    - Versa Pump             # equipment: "Versa Pump 4 Pack with Base Station" $750 (2026-06-28)
+    - Auction order          # $0 off-platform-win checkout helper, NOT an INV-05 auction (2026-06-28)
+    - Mushroom Cage          # acclimation cage equipment; specific "Mushroom Cage" so real mushroom corals survive (2026-06-28)
+    - add to coral order     # CUC/invert add-on convention ("4 Micro Brittle Starfish add to coral order.") — not coral (2026-06-28)
+    - Chaeto                 # canonical + Chaetomorpha substring catch (forward-bind)
+    - Cheato                 # POTO-style misspelling forward-binding
+    - Macroalgae             # generic macroalgae catch (forward-bind)
+    - Macro Algae            # space-separated variant catch (forward-bind)
