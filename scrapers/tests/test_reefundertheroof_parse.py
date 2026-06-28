@@ -95,7 +95,7 @@ RUTR_CATEGORY_FILTER = {
 # false-fires on a coral title (e.g. bare "Frag"), moves these counts.
 EXPECTED_TOTAL = 82
 EXPECTED_KEPT = 67
-EXPECTED_DROPPED = 15
+EXPECTED_DROPPED = EXPECTED_TOTAL - EXPECTED_KEPT  # 15; derived so a re-pin can't desync it
 
 # The exact 15-row non-coral tail (the only drops on the locked fixture).
 DROPPED_TITLES = {
@@ -181,8 +181,14 @@ def test_html_hash_first_product_keys(products):
     assert keys == expected_keys, (
         f"first-product key set drift — expected {expected_keys}, got {keys}"
     )
+    # Pin the exact sentinel digest (sha256 of the comma-joined sorted key set) —
+    # this is the production html_hash for the Shopify first_product_keys anchor
+    # (arch §2.6), confirmed equal to the first-scrape run's html_hash. A real
+    # regression guard, not the prior tautological len(sha)==64 (always true).
     sha = hashlib.sha256(",".join(keys).encode("utf-8")).hexdigest()
-    assert len(sha) == 64
+    assert sha == "c94c512f27be051326728462bfaf34b4b4cb3f2595a3eafbe44ba45a672aad70", (
+        f"first-product-keys html_hash sentinel drift — got {sha}"
+    )
 
 
 # Test 2: total kept = 67 (82 - the 15-row non-coral tail)

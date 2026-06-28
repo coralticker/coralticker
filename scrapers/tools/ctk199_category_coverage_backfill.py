@@ -105,6 +105,20 @@ _ANCHOR_TOKENS: tuple[tuple[str, re.Pattern[str]], ...] = (
                           r"|\bheliofungia\b|\bscroll\s+coral\b|\bturbinaria\b"
                           r"|\bwar\s+coral\b|\bmaze\s+brain\b", re.I)),
     ("softie", re.compile(r"\banthelia\b|\bdaisy\s+polyps?\b|\bpipe\s+organ\b|\btubipora\b|\bsympodium\b", re.I)),
+    # CTK-207 coverage-ADD tokens (mirrors the normalize._CATEGORY_PATTERNS sps/lps
+    # additions). These drive coral->coral CORRECTIONS the weekly self-healing
+    # audit must apply forward, not just the fills: the standing fleet carries ~30
+    # Pavona rows stored lps (from vendor tags/product_type) that the title token
+    # `\bpavona\b` now resolves sps — without this entry those flips would be
+    # excluded as "drift" and the CTK-207 standardization would never self-heal for
+    # rows that don't otherwise re-scrape. pavona->sps re-decided CTK-207 (CTK-199
+    # round-3 left it a 30:26 near-tie; FP audit found 0 matched-coral re-buckets).
+    # setosa/tort/tortuosa/slimer/mili are SPS trade names (today fill NULL or are
+    # already sps; carried for forward correction-consistency); alveo->lps. The
+    # bird's-nest apostrophe form is included so an apostrophe-form row mis-tagged
+    # lps corrects to sps.
+    ("sps",    re.compile(r"\bpavona\b|\bsetosa\b|\btort\b|\btortuosa\b|\bslimer\b|\bmili\b|\bbird'?s?\s*nest\b", re.I)),
+    ("lps",    re.compile(r"\balveo\b", re.I)),
 )
 
 
