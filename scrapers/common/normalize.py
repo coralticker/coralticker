@@ -162,6 +162,34 @@ _WHITESPACE_RUN = re.compile(r"\s+")
 # Plate loosening SHIPS as a NULL-only floor (see _LOOSE_PLATE below), not a
 # main-pattern term — 7 clean trade-name fills (Oil Spill Plate, Burning Shadow
 # Plate), 0 matched-coral FP, frag/mounting/bundle guarded.
+#
+# CTK-207: a coverage-ADD pass (same sanctioned, FP-gated path as CTK-194/199 —
+# explicitly authorized new genera/common-names, gated by the CTK-189 reverse-
+# guard: 0 mis-tags against named_coral_id IS NOT NULL rows, 0 non-coral rows
+# flipped into a coral category). The new vendor (Reef Under The Roof, CTK-207)
+# is a blank-product_type, title-keyword-classified Shopify store, so its corals
+# lean on these title tokens; the same additions recover ~31 existing NULL corals
+# across jf/poto/wwc/tsa/cornbred/pacific_east/vivid/battlecorals (before/after
+# quantified in CTK-207 results.md). FP audit method: pure pattern-delta over the
+# persisted raw_title haystack (OLD-regex vs NEW-regex, same input) so any change
+# is attributable solely to these tokens; product_type/tags are not persisted, so
+# title is the available haystack (the standard new-token audit shape; caveat in
+# results.md).
+#   sps   — `\bmili\b` (single-L millepora variant; distinct from \bmilli\b
+#           "milliliter" / \bmillie "Millie" / \bmillepora\b / \bmille\b "Acropora
+#           millepora"); `\btort\b`|`\btortuosa\b` (Acropora tortuosa + its trade
+#           abbrev — whole-word anchored so "distort"/"contort" descriptors can't
+#           bleed, confirmed 0 fleet matches at audit); `\bslimer\b` (Bali Green
+#           Slimer, an Acropora yongei trade name); `\bpavona\b` (genus Pavona);
+#           `\bsetosa\b` (Seriatopora setosa). Bird's-nest apostrophe fix:
+#           `\bbirds?\s*nest\b` -> `\bbird'?s?\s*nest\b` so "Bird's Nest" (the
+#           apostrophe-s live form) matches alongside "birds nest"/"bird nest".
+#   lps   — `\balveo\b` (Alveopora abbrev + the "Alveo-" hyphen form; the full
+#           `\balveopora\b` is already present, so this only adds the abbreviation).
+# pavona note: CTK-199 round 3 SKIPPED bare "pavona" as a near-tie (fleet lps 30 :
+# sps 26) and left it to the matcher. CTK-207 re-decides it sps per the directive;
+# the FP audit confirms the re-bucket set against matched corals is empty (the
+# near-tie rows that flip lps->sps carry no named_coral_id) — see results.md.
 _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("chalice",  re.compile(r"\bchalices?\b|\bechinophyllia\b|\bmycedium\b|\boxypora\b", re.I)),
     ("anemone",  re.compile(r"\banemones?\b|\bbta\b|\brbta\b|\bcondy\b", re.I)),
@@ -169,8 +197,8 @@ _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("mushroom", re.compile(r"\bmushrooms?\b|\brhodactis\b|\bdiscosoma\b|\bricordea\b", re.I)),
     ("zoa",      re.compile(r"\bzoa(?:nthid)?s?\b|\bpaly", re.I)),
     ("softie",   re.compile(r"\bsofties?\b|\bsofty\b|\bleather\b|\btoadstool\b|\bkenya\b|\bsinularia\b|\bsarcophyton\b|\bcloves?\b|\bgorgonian|\bxenia\b|\bcespitularia\b|\bstar\s+polyps?\b|\banthelia\b|\bdaisy\s+polyps?\b|\bpipe\s+organ\b|\btubipora\b|\bsympodium\b", re.I)),
-    ("sps",      re.compile(r"\bsps\b|\bacropora\b|\bmontipora\b|\bstylophora\b|\bseriatopora\b|\bpocillopora\b|\bmonti|\bacro\b|\bmilli\b|\bmillie|\bmillepora\b|\bdigi\b|\bdigitata\b|\bstylo|\banacro|\bpsamm[oa]cora\b|\bstag(?:horn)?\b|\bbirds?\s*nest\b|\btenuis\b|\bmille\b", re.I)),
-    ("lps",      re.compile(r"\blps\b|\beuphyllia\b|\btorch\b|\bhammer\b|\bfrogspawn\b|\bacanthophyllia\b|\btrachyphyllias?\b|\bcynarina\b|\bsymphyllia\b|\bfavia\b|\bfavites\b|\bmicromussa\b|\bacan\b|\bacantho|\bblasto|\bduncan|\blobo|\bscoly|\bpectinia\b|\bpectina\b|\bfungia|\bbowerbanki\b|\bgoni|\balveopora\b|\bgalaxea\b|\belegance\b|\baustralomussa\b|\bleptoseris\b|\bleptastrea\b|\bcyphastrea\b|\bcaulastrea\b|\bcandy\s+cane\b|\blithophyllon\b|\blitho\b|\bindophyllia\b|\btrumpet\b|\bbubble\s+coral\b|\bdiaseris\b|\bplate\s+coral\b|\bhydnophora\b|\bhydno\b|\bastreopora\b|\blepto\b|\bechinata\b|\bgalaxia\b|\bplatygyra\b|\bheliofungia\b|\bscroll\s+coral\b|\bturbinaria\b|\bwar\s+coral\b|\bmaze\s+brain\b", re.I)),
+    ("sps",      re.compile(r"\bsps\b|\bacropora\b|\bmontipora\b|\bstylophora\b|\bseriatopora\b|\bpocillopora\b|\bmonti|\bacro\b|\bmilli\b|\bmillie|\bmillepora\b|\bdigi\b|\bdigitata\b|\bstylo|\banacro|\bpsamm[oa]cora\b|\bstag(?:horn)?\b|\bbird'?s?\s*nest\b|\btenuis\b|\bmille\b|\bmili\b|\btort\b|\btortuosa\b|\bslimer\b|\bpavona\b|\bsetosa\b", re.I)),
+    ("lps",      re.compile(r"\blps\b|\beuphyllia\b|\btorch\b|\bhammer\b|\bfrogspawn\b|\bacanthophyllia\b|\btrachyphyllias?\b|\bcynarina\b|\bsymphyllia\b|\bfavia\b|\bfavites\b|\bmicromussa\b|\bacan\b|\bacantho|\bblasto|\bduncan|\blobo|\bscoly|\bpectinia\b|\bpectina\b|\bfungia|\bbowerbanki\b|\bgoni|\balveopora\b|\bgalaxea\b|\belegance\b|\baustralomussa\b|\bleptoseris\b|\bleptastrea\b|\bcyphastrea\b|\bcaulastrea\b|\bcandy\s+cane\b|\blithophyllon\b|\blitho\b|\bindophyllia\b|\btrumpet\b|\bbubble\s+coral\b|\bdiaseris\b|\bplate\s+coral\b|\bhydnophora\b|\bhydno\b|\bastreopora\b|\blepto\b|\bechinata\b|\bgalaxia\b|\bplatygyra\b|\bheliofungia\b|\bscroll\s+coral\b|\bturbinaria\b|\bwar\s+coral\b|\bmaze\s+brain\b|\balveo\b", re.I)),
     ("fish",     re.compile(r"\bfish\b|\bwrasse\b|\btang\b|\bgoby\b|\bclownfish\b|\bblenny\b", re.I)),
     ("invert",   re.compile(r"\bsnails?\b|\bshrimp\b|\bcrabs?\b|\burchin\b|\bstarfish\b|\bcucumber\b", re.I)),
     ("equipment",re.compile(r"\bpumps?\b|\bskimmers?\b|\breactors?\b|\bheaters?\b|\bcontrollers?\b|\bfilters?\b", re.I)),

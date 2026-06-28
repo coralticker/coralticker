@@ -1,0 +1,128 @@
+# Reef Under The Roof scraper config (CTK-207 Session 1).
+#
+# Authoritative platform/method fields live on the vendors row (migration
+# 0063_add_reefundertheroof_vendor.sql, vendor_id=36). YAML carries scrape-tuning
+# per arch §2.3 — values that may change without a code edit (delay, page size,
+# max pages, hash anchor, originator prefix, category filter, cohort-OOS). DB row
+# wins on conflict.
+#
+# Pure config clone of the Shopify fleet (PE/WWC/TSA/JF/Battlecorals/Unique
+# Corals/Vivid/Reef Chasers/POTO/Cornbred/Williamson's/Reef Regeneration/AAF):
+# parse_shopify carries the whole fetch/parse path. The ONE shared-code touch this
+# CTK lands (normalize._CATEGORY_PATTERNS sps/lps additions) is a fleet-general
+# classifier patch, not an RUTR-specific parser branch.
+
+slug: reefundertheroof
+platform: shopify
+base_url: https://reefundertheroof.com
+
+# Standard Shopify endpoint; five-signal re-confirm at build 2026-06-28:
+#   (1) Powered-by-Shopify + cdn.shopify.com images (pre-flight live-verified).
+#   (2) Shopify robots.txt; /products.json not disallowed.
+#   (3) no platform-deviation headers (standard Shopify).
+#   (4) /products.json HTTP 200 + canonical products array with the 13-key
+#       first-product shape (body_html / created_at / handle / id / images /
+#       options / product_type / published_at / tags / title / updated_at /
+#       variants / vendor) matching the Shopify-fleet empirical anchor.
+#   (5) read-only catalog crawl of /products.json only; never cart/checkout
+#       (arch §2.5, no new ToS risk).
+products_path: /products.json
+
+# Page size at Shopify's max (250). Full-catalog walk 2026-06-28: 82 products on a
+# single page (page 1 = 82, page 2 = 0 -> short-page terminator). vendor field
+# uniformly "ReefUnderTheRoof" (1 distinct value across all 82 rows). Homegrown
+# frags — SPS/LPS/zoa/torch + WYSIWYG/cut-to-order.
+page_size: 250
+
+# Inherits the fleet empirical request_delay_sec=2 lock. 82 products / 250 per
+# page = 1 page x 2s = trivial fetch time. Bump to 3-4s per arch §2.4 retry-policy
+# outcome only if 429s appear.
+request_delay_sec: 2
+
+# Small single-page catalog -> 5-cap (Williamson's / RR / Cornbred small-catalog
+# posture, NOT AAF's 15-cap, which exists only for AAF's genuinely multi-page
+# 2300-row catalog). 82 rows at 250/page = 1 page today; 5 leaves wide headroom
+# for a drop-spike without re-tuning.
+max_pages: 5
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object. Same
+# hash_anchor as the rest of the Shopify fleet per parse_shopify.py shape
+# stability. Empirical anchor (Session 1 walk 2026-06-28): 13 keys = body_html,
+# created_at, handle, id, images, options, product_type, published_at, tags,
+# title, updated_at, variants, vendor.
+hash_anchor: first_product_keys
+
+# originator_prefix=null per Reef Chasers (CTK-086) / Cornbred (CTK-142) /
+# Williamson's (CTK-146) / Reef Regeneration (CTK-148) / AAF (CTK-149) precedent.
+# RUTR is a homegrown-frag house, NOT a named-coral originator whose trade names
+# the seed-list attributes. The seed-list (.claude/research/named-coral-seed-list.md)
+# has ZERO Reef-Under-The-Roof / RUTR -attributed canonical entries (grep
+# 2026-06-28), so matcher §3.4 stage-3 synthesis would be a no-op. null is the
+# correct config; flip only on a future seed-list expansion that attributes
+# canonicals to RUTR.
+originator_prefix: null
+
+# cohort_oos_at_persist: true — trust-floor parity (CTK-105 D-4 lineage) + the
+# fleet-wide default as of 2026-06-04. Net-new vendor, zero prior vendor_listings
+# (migration 0063 lands the row in the same CTK), so the first scrape has no prior
+# cohort -> zero would-flip rows (expected listings_oos ~0 on first scrape). The
+# C2 first-scrape check is Δ catalog (0->67 kept) ≈ listings_new (67),
+# listings_oos=0. Also auto-enrolls RUTR in the health-digest cohort-OOS section
+# (health_digest.py globs vendors/*.yaml and keys on this flag).
+cohort_oos_at_persist: true
+
+# auction_detection: OMITTED (None = no-op, parse_shopify.py permissive default).
+# INV-05 is NOT triggered for Reef Under The Roof. Full-catalog walk 2026-06-28
+# (82 rows, single page — the FULL catalog, not a page-1 sample, per
+# feedback_absence_diag_full_catalog_sweep) found ZERO auction signal: no
+# wk_end_auction tag, no auc/bid tag substring anywhere, no product_type:Auction,
+# no 'auction' in any title/handle. Re-confirm at any future re-walk; flip to an
+# auction_detection block + flag /lead-backend if a wk_end_auction-style surface
+# ever appears.
+
+# category_filter — DELIBERATELY NO product_type_allowlist (CTK-207 #1; same
+# no-allowlist posture as Reef Regeneration CTK-148 #1 / AAF CTK-149 #1). This
+# absence is a DECISION, not an omission. Rationale, grounded in the full-catalog
+# walk:
+#   - RUTR's product_type is BLANK store-wide (79/82 rows '', the other 3 =
+#     'Aquarium Supplement' x2 + 'service' x1, all non-coral). product_type is
+#     NOT a coral taxonomy and NOT a coral/non-coral discriminator here. An
+#     allowlist of [''] would drop the 3 non-blank rows correctly but provides no
+#     coverage value (those 3 are already title-denylisted) while risking a silent
+#     catalog-wide drop the moment RUTR's feed app stamps a Google-merchant
+#     product_type on coral (the AAF feed-relabel catastrophe class).
+#   - Failure asymmetry (CTK-148 #1 logic): with no allowlist, novel non-coral
+#     junk leaks VISIBLY (one wrong card on the site, caught by eyeball /
+#     catalog-count drift watch, denylisted on sighting). With an allowlist, novel
+#     coral drops INVISIBLY. Visible-junk-in beats invisible-coral-out for a
+#     coverage-moat product.
+#
+# So the only gate is a title_denylist set from the full-catalog sweep: the 15-row
+# non-coral tail (5 macroalgae + mangrove + 3 frag plug/disk packs + 2 frag-pack
+# lots + 2 supplements + 1 management service + 1 coaching/consultation) + the
+# fleet-wide chaeto forward-bind (CTK-107 D-2-quater). The kept count on the
+# locked 2026-06-28 fixture is 67 (82 - 15); NULL-category coverage over the kept
+# set is 2/67 = 3.0% (Dino Fury + RR The Vinh, both genus-less trade names),
+# under the 10% pre-flight threshold, so _CATEGORY_PATTERNS is NOT edited for them.
+#
+# Residual leak risk + backstop: with no allowlist, ANY future non-coral RUTR adds
+# (equipment, apparel) leak until denylisted. The backstop is
+# scraper_runs.listings_seen catalog-count drift watch + periodic re-walk (same
+# rotating-bucket posture as the small-catalog fleet, feedback_rotating_bucket_allowlist).
+category_filter:
+  # title_denylist: case-insensitive substring per CTK-096 D-1. The 15-row
+  # non-coral tail from the 2026-06-28 sweep + the fleet-wide chaeto forward-bind.
+  # NB: "Frag Plug"/"Frag Disk"/"Frag Pack" are 2-word entries that do NOT touch
+  # the "Cut to Order Frag" corals (bare "Frag" is deliberately NOT denylisted).
+  title_denylist:
+    - Macroalgae            # 5 rows: Dragon's Breath / Chaetomorpha / Caulerpa Brachypus / Red Pom Pom Gracilaria / Caulerpa Prolifera
+    - Mangrove              # Red Mangrove
+    - Frag Plug             # White Large/Small Coral Frag Plugs packs (NOT "Cut to Order Frag" corals)
+    - Frag Disk             # White XXL Coral Frag Disks pack
+    - Frag Pack             # 10 Piece Mixed / SPS Frag Pack lots (multi-type grab-bag; Jon-approved drop 2026-06-28)
+    - Aquarium Supplement   # Phosphate / Nitrate supplements
+    - Aquarium Management   # Professional Aquarium Management Services
+    - Coaching Session      # Coaching Session - 1 hour Consultation (service row)
+    - Consultation          # belt-and-suspenders on the same service row
+    - Chaeto                # canonical + Chaetomorpha substring catch (forward-bind)
+    - Cheato                # POTO-style misspelling forward-binding (fires on zero rows today)

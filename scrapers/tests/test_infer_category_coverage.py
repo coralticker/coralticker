@@ -227,14 +227,46 @@ def test_ctk199_softie_round3():
 
 
 def test_ctk199_round3_skipped_tokens_stay_unclassified():
-    # pavona (fleet near-tie 30:26) and bare grandis (zoa trade-name signal) were
-    # deliberately NOT added this round — a title carrying ONLY the bare word, with
-    # no other coral term, must stay None so a future "just add pavona/grandis"
-    # edit trips a red test and re-checks the fleet vote.
-    assert infer_category(_p("Pavona Cactus")) is None                   # pavona not added
+    # bare grandis (zoa trade-name signal) was deliberately NOT added — a title
+    # carrying ONLY the bare word, with no other coral term, must stay None so a
+    # future "just add grandis" edit trips a red test and re-checks the fleet vote.
+    #
+    # CTK-207 NOTE: pavona was the OTHER skipped token here (CTK-199 round-3 fleet
+    # near-tie 30:26). CTK-207 re-decides it sps after a fresh fleet FP audit
+    # (0 matched-coral mis-tags; the 30 lps-stored Pavona rows that flip lps->sps
+    # are an intended standardization, not a regression) — see
+    # test_ctk207_classifier_patch + CTK-207 results.md. This guard now pins only
+    # grandis.
     assert infer_category(_p("Cosmic Grandis")) is None                  # bare grandis not added
     # ...but a real Palythoa Grandis still classifies zoa via the existing \bpaly.
     assert infer_category(_p("Palythoa Grandis")) == "zoa"
+
+
+def test_ctk207_classifier_patch():
+    # CTK-207 coverage-ADD pass (FP-gated, CTK-189 bar clean). New genus/common-name
+    # title tokens for the blank-product_type Reef Under The Roof vendor; also
+    # recovers ~31 in_stock fleet rows the title-classifier missed.
+    # sps additions:
+    assert infer_category(_p("Cali Tort")) == "sps"                      # \btort (Acropora tortuosa abbrev)
+    assert infer_category(_p("Miyagi Acropora tortuosa")) == "sps"       # \btortuosa
+    assert infer_category(_p("Bali Green Slimer")) == "sps"              # \bslimer (Acropora yongei trade)
+    assert infer_category(_p("WWC Cactus Pavona")) == "sps"              # \bpavona (CTK-207 re-decision)
+    assert infer_category(_p("JF Red Hot Setosa")) == "sps"             # \bsetosa (Montipora/Seriatopora)
+    assert infer_category(_p("Pink Millepora Mili")) == "sps"           # \bmili (single-L millepora variant)
+    # bird's-nest apostrophe fix: the apostrophe-s live form now matches alongside
+    # "birds nest" / "bird nest" / "birdsnest".
+    assert infer_category(_p("Pohnpei Bird's Nest")) == "sps"           # \bbird'?s?\s*nest
+    assert infer_category(_p("Green Birdsnest Coral")) == "sps"         # one-word form still hits
+    assert infer_category(_p("Pink Birds Nest")) == "sps"              # space form still hits
+    # lps addition:
+    assert infer_category(_p("Alveo Sunburst")) == "lps"               # \balveo (Alveopora abbrev/hyphen)
+    assert infer_category(_p("Sunset Alveopora")) == "lps"             # full genus still classifies
+
+    # FP guards — the whole-word anchors must NOT bleed into common English:
+    assert infer_category(_p("Massively Distorted Frag Rack")) is None  # \btort must not catch "distort"
+    assert infer_category(_p("Contorted Wire Holder")) is None          # ...nor "contort"
+    # bare grandis still unclassified (unchanged by this ticket).
+    assert infer_category(_p("Cosmic Grandis")) is None
 
 
 def test_ctk199_round3_bare_phrase_traps_stay_none():

@@ -147,6 +147,15 @@ VENDOR_IG: dict[str, VendorIG] = {
     # mirror guess. Canon row in branding-guide.md §Usage-rules IG-handle table.
     # No branded hashtag.
     "austinaquafarms": VendorIG("AAF",            "@austinaquafarms",             None),
+    # CTK-207 — reefundertheroof active (vendor_id=36). Handle confirmed canon
+    # 2026-06-28 (/brand-manager): @reefundertheroof. Strongest path of the wave —
+    # the FORWARD link, not Williamson's reverse-link or Reef Regen/AAF positioning
+    # match: reefundertheroof.com itself exposes the IG link directly
+    # (instagram.com/reefundertheroof), and the profile resolves with a matching
+    # display name ("Reef Under The Roof - Goran P."). Shorthand stays the full name
+    # — no community abbreviation surfaced, and invented codes are banned. Canon row
+    # in branding-guide.md §Usage-rules IG-handle table. No branded hashtag.
+    "reefundertheroof": VendorIG("Reef Under The Roof", "@reefundertheroof",        None),
 }
 
 # Lead-event arm -> canon event verb (rev4 L45-48; cross-channel verb canon).
