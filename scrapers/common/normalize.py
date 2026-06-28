@@ -203,6 +203,15 @@ _WHITESPACE_RUN = re.compile(r"\s+")
 # `\bfox\s+corals?\b` matches exactly the 10 real Fox-Coral rows (6 lps + 4 NULL),
 # 0 named_coral_id on any of them (no matcher re-bucket), 0 non-lps FP. See
 # results.md for the full pattern-delta audit.
+# CAVEAT (CTK-209 code-review F1) — infer_category matches over the SPACE-JOINED
+# haystack product_type + tags + title (see below), so in principle the phrase could
+# form ACROSS a field/tag boundary (e.g. tags=[...,"fox","coral",...] -> "...fox
+# coral..."), defeating the title-only anchor. This is a property of EVERY multiword
+# token here (candy cane / war coral / maze brain / bird's nest), not new to fox.
+# Verified non-reproducing on the actual risk vendor: 0 cross-boundary hits across
+# the live 480-product Jason Fox catalog (the only vendor that pervasively carries
+# "fox"). Latent + empirically clean; flip to a title-only match for fox only if a
+# future re-audit surfaces a real cross-tag FP.
 _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("chalice",  re.compile(r"\bchalices?\b|\bechinophyllia\b|\bmycedium\b|\boxypora\b", re.I)),
     ("anemone",  re.compile(r"\banemones?\b|\bbta\b|\brbta\b|\bcondy\b", re.I)),

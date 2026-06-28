@@ -124,10 +124,18 @@ category_filter:
   # title_denylist: case-insensitive substring per CTK-096 D-1. The 51-row
   # non-coral tail from the 2026-06-28 full-catalog sweep. Verified drop-set ==
   # exactly the 51 non-coral rows with ZERO coral collateral (the 13 DOOR BUSTER
-  # corals + all "Cut to Order"/WYSIWYG frags survive). Multiword entries are
-  # deliberately specific so they cannot bleed into coral trade names: e.g. "Frag
-  # Plug"/"Frag Plate" do not touch bare-"Frag" corals; "Reef Light"/"Light
-  # Fixture" avoid bare "Light" (would hit "Light Blue ...").
+  # corals survive). Entries are kept narrow so they cannot bleed into coral trade
+  # names: multiword anchors where the bare word is ambiguous — "Frag Plug"/"Frag
+  # Plate"/"Frag Pack" do not touch bare-"Frag" corals; "Reef Light"/"Light Fixture"
+  # avoid bare "Light" (would hit "Light Blue ..."); "AI NERO" not bare "Nero"
+  # (would hit "Habanero" Montipora/Acro + a "Nero Table" Acro); "Glue Gel" not bare
+  # "Glue" (would hit "TSA Gorilla Glue Acropora"). The remaining single-word entries
+  # (Amino/Supplement/Growth/Booster/Phyto/Mysis/Lugol/Iodine/Towel/Vectra/Seaweed/
+  # Chaeto/Macroalgae...) were fleet-audited 2026-06-28 against persisted raw_title:
+  # 0 coral-ish rows (category-set or named_coral_id) match any of them, so they are
+  # safe single words today; re-audit on the next vendor add per the rotating-bucket
+  # posture. The two CONFIRMED bare-word collisions (Nero, Glue) are the CTK-209
+  # code-review fold (anchored above).
   title_denylist:
     # Foods / amino acids / additives / supplements / bacteria
     - Amino                 # AF Amino Mix, AF Growth Boost Amino Acids
@@ -148,10 +156,11 @@ category_filter:
     - Lugol                 # Lugol's Solution - Advanced Iodine
     - Iodine                # belt-and-suspenders on the same iodine dip row
     - Coral Dip             # Potassium Chloride Coral Dip Powder
-    - Glue                  # Coral Glue Gel
-    # Frag hardware (2-word entries; NOT bare "Frag" -> Cut-to-Order frags survive)
+    - Glue Gel              # Coral Glue Gel (CTK-209 #2 anchor: bare "Glue" hit the real "TSA Gorilla Glue Acropora")
+    # Frag hardware (2-word entries; NOT bare "Frag" -> single-coral frags survive)
     - Frag Plug             # Premium Ceramic Coral Frag Plugs
     - Frag Plate            # Premium Ceramic Square Frag Plate
+    - Frag Pack             # multi-type grab-bag lot (no single identifiable coral; RUTR CTK-207 #4 precedent; 0 rows today, forward-insurance)
     # Apparel / merch / gift card / non-product
     - T-Shirt               # Coral Stop Retro Logo T-Shirt
     - Bucket Hat            # Coral Stop Logo Bucket Hat
@@ -165,8 +174,14 @@ category_filter:
     - Return Pump           # belt on the Vectra rows
     - Dosing Pump           # EcoTech Versa Dosing Pumps
     - Reef Light            # AI Hydra 32 HD LED Reef Light
-    - Nero                  # AI NERO 5 powerhead
+    - AI NERO               # AI NERO 5 powerhead (CTK-209 #2 anchor: bare "Nero" hit real "Habanero" Montipora/Acropora + a "Nero Table" Acro)
     - Light Fixture         # RADION G6 XR15/XR30 LED Light Fixtures
-    # Test kits / nori
+    # Test kits / nori / macroalgae
     - Test Kit              # Salifert Calcium/Magnesium/kH Test Kits
     - Seaweed               # Red/Purple/Green Sea Veggies Seaweed sheets
+    # Fleet-wide chaeto/macroalgae forward-bind (CTK-107 D-2-quater) — present on
+    # every Shopify config-clone; fires on 0 Coral Stop rows today (forward-insurance
+    # against routine frag-house macroalgae/cleanup stock landing NULL-category).
+    - Chaeto                # canonical + Chaetomorpha substring catch
+    - Cheato                # POTO-style misspelling forward-bind (fires on zero rows today)
+    - Macroalgae            # Dragon's Breath / Caulerpa / Gracilaria / etc.

@@ -88,10 +88,11 @@ CORALSTOP_CATEGORY_FILTER = {
         "Amino", "Supplement", "Dry Powder", "Probiotic", "Live Bacteria",
         "Bacterial", "Phyto", "Mysis", "Reef-Roids", "Growth", "Power Elixir",
         "Power Food", "Liquid Vege", "Booster", "Lugol", "Iodine", "Coral Dip",
-        "Glue", "Frag Plug", "Frag Plate", "T-Shirt", "Bucket Hat", "Patch Hat",
-        "Towel", "Gift Card", "Shipping Module", "VorTech", "Vectra",
-        "Return Pump", "Dosing Pump", "Reef Light", "Nero", "Light Fixture",
-        "Test Kit", "Seaweed",
+        "Glue Gel", "Frag Plug", "Frag Plate", "Frag Pack", "T-Shirt",
+        "Bucket Hat", "Patch Hat", "Towel", "Gift Card", "Shipping Module",
+        "VorTech", "Vectra", "Return Pump", "Dosing Pump", "Reef Light",
+        "AI NERO", "Light Fixture", "Test Kit", "Seaweed", "Chaeto", "Cheato",
+        "Macroalgae",
     ],
 }
 
@@ -246,9 +247,10 @@ def test_total_kept_is_888(products):
     survives."""
     assert len(products) == EXPECTED_TOTAL, f"fixture drifted: expected {EXPECTED_TOTAL} rows, got {len(products)}"
     kept = sum(1 for p in products if _keep(p))
-    dropped = len(products) - kept
     assert kept == EXPECTED_KEPT, f"expected {EXPECTED_KEPT} kept, got {kept}"
-    assert dropped == EXPECTED_DROPPED, f"expected {EXPECTED_DROPPED} dropped, got {dropped}"
+    # NB: the drop COUNT is not asserted here — it is len-kept, algebraically
+    # implied by the kept assert (CTK-209 code-review F6 removed the tautology). The
+    # independent drop guard is test_exact_drop_set, which pins the actual title set.
 
 
 # Test 3: the exact non-coral tail drops, nothing else
@@ -328,6 +330,43 @@ def test_denylist_specificity(products):
     # ...but the same-rooted corals survive (bare "Frag" / bare "Polyp" not denied).
     assert _keep({"title": "Rainbow Acro Frag", "product_type": "", "tags": []}) is True
     assert _keep({"title": "Green Star Polyps", "product_type": "", "tags": []}) is True
+
+
+# Test 7b (CTK-209 code-review F2): anchored denylist words don't bleed into corals
+def test_denylist_bare_word_anchors(products):
+    """The two CONFIRMED bare-word collisions from the code-review fleet audit:
+    bare "Nero" hit real "Habanero" Montipora/Acro + a "Nero Table" Acro; bare
+    "Glue" hit "TSA Gorilla Glue Acropora". The denylist anchors them to "AI NERO"
+    / "Glue Gel". Pin that the real hardware still drops AND the coral trade names
+    survive (the corals are not in Coral Stop's catalog today — synthetic rows guard
+    a future listing)."""
+    # Real hardware still drops via the anchored entries.
+    assert _keep({"title": "AI NERO 5", "product_type": "", "tags": []}) is False
+    assert _keep({"title": "CORAL GLUE GEL - 20 GRAM", "product_type": "", "tags": []}) is False
+    # The coral trade names the bare words would have wrongly dropped now survive.
+    assert _keep({"title": "CC Habanero Montipora", "product_type": "", "tags": []}) is True
+    assert _keep({"title": "TSA Habanero Acropora Coral", "product_type": "", "tags": []}) is True
+    assert _keep({"title": "Nero Table Acro", "product_type": "", "tags": []}) is True
+    assert _keep({"title": "TSA Gorilla Glue Acropora Coral", "product_type": "", "tags": []}) is True
+
+
+# Test 7c (CTK-209 code-review F3): fleet-wide chaeto/macroalgae forward-bind
+def test_chaeto_macroalgae_forward_bind(products):
+    """The fleet-wide chaeto/macroalgae title_denylist (CTK-107 D-2-quater) present
+    on every Shopify config-clone. Coral Stop carries 0 such rows today (the only
+    macroalgae is the Sea Veggies nori, dropped by "Seaweed"); these entries are
+    forward-insurance so routine frag-house macroalgae/cleanup stock can't land
+    NULL-category on the live site. Pin that they WOULD fire on synthetic rows while
+    a control coral survives."""
+    for junk_title in [
+        "Cheato Macro Refugium Starter",   # 'Cheato' misspelling forward-bind
+        "Chaetomorpha Macroalgae",         # 'Chaeto' + 'Macroalgae'
+        "Dragon's Breath Macroalgae",      # 'Macroalgae'
+    ]:
+        junk = {"title": junk_title, "product_type": "", "tags": []}
+        assert _keep(junk) is False, f"chaeto/macroalgae forward-bind failed to drop: {junk_title!r}"
+    control = {"title": "Green Slimer Acro", "product_type": "", "tags": []}
+    assert _keep(control) is True, "FP control: a coral with no denied substring must survive"
 
 
 # Test 8: the leather "Patch Hat" apparel drops (the \bleather -> softie FP)
@@ -446,6 +485,8 @@ def main() -> int:
         test_no_allowlist_feed_relabel_survives,
         test_fox_coral_classifies_lps,
         test_denylist_specificity,
+        test_denylist_bare_word_anchors,
+        test_chaeto_macroalgae_forward_bind,
         test_leather_patch_hat_drops,
         test_normalize_no_auction_nulling,
         test_normalize_output_shape,
