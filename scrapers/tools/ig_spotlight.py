@@ -156,6 +156,15 @@ VENDOR_IG: dict[str, VendorIG] = {
     # — no community abbreviation surfaced, and invented codes are banned. Canon row
     # in branding-guide.md §Usage-rules IG-handle table. No branded hashtag.
     "reefundertheroof": VendorIG("Reef Under The Roof", "@reefundertheroof",        None),
+    # CTK-209 — coralstop active (vendor_id=37). Handle confirmed canon 2026-06-28:
+    # @coralstopsales. The FORWARD-link path (strongest, same as RUTR): coralstop.com
+    # itself exposes the IG link directly (instagram.com/coralstopsales) in the
+    # storefront markup. NB the handle is @coralstopsales, NOT @coralstop (the bare
+    # domain handle is a different/unrelated account) — the live forward link is the
+    # disambiguator. Shorthand "Coral Stop" — no community abbreviation surfaced, and
+    # invented codes are banned. Canon row in branding-guide.md §Usage-rules IG-handle
+    # table (pending /brand-manager). No branded hashtag.
+    "coralstop":       VendorIG("Coral Stop",   "@coralstopsales",              None),
 }
 
 # Lead-event arm -> canon event verb (rev4 L45-48; cross-channel verb canon).

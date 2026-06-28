@@ -269,6 +269,22 @@ def test_ctk207_classifier_patch():
     assert infer_category(_p("Cosmic Grandis")) is None
 
 
+def test_ctk209_fox_coral_phrase_token():
+    # CTK-209 lps coverage-ADD: Fox Coral (Nemenzophyllia turbida), the Coral Stop
+    # NULL "Baby Fox Coral" + 3 fleet rows. The token is the PHRASE "fox coral".
+    assert infer_category(_p("Baby Fox Coral")) == "lps"      # Coral Stop door-buster-shape NULL
+    assert infer_category(_p("Fox Coral")) == "lps"
+    assert infer_category(_p("Turquoise Fox Coral")) == "lps"
+    assert infer_category(_p("Green Fox Corals")) == "lps"    # plural form
+    # CRITICAL FP guard — bare "Fox" must NEVER classify. "Jason Fox" (the jf
+    # vendor) puts "Fox" in hundreds of unrelated coral titles; a bare \bfox\b
+    # token would mis-tag all of them lps. These MUST stay their real category /
+    # None, NOT lps.
+    assert infer_category(_p("Jason Fox Acropora")) == "sps"  # \bacropora wins; fox must not force lps
+    assert infer_category(_p("JF Fox Flame Zoa")) == "zoa"    # \bzoa wins; bare fox inert
+    assert infer_category(_p("Jason Fox Mystery")) is None    # no coral term + bare fox => still None
+
+
 def test_ctk199_round3_bare_phrase_traps_stay_none():
     # The round-3 phrase tokens (war coral / scroll coral / maze brain) must NEVER
     # fire on the bare leading word — those are common English / trade words.

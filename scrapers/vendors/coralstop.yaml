@@ -1,0 +1,172 @@
+# Coral Stop scraper config (CTK-209 Session 1).
+#
+# Authoritative platform/method fields live on the vendors row (migration
+# 0064_add_coralstop_vendor.sql, vendor_id=37). YAML carries scrape-tuning per arch
+# §2.3 — values that may change without a code edit (delay, page size, max pages,
+# hash anchor, originator prefix, category filter, cohort-OOS). DB row wins on
+# conflict.
+#
+# Pure config clone of the Shopify fleet (PE/WWC/TSA/JF/Battlecorals/Unique
+# Corals/Vivid/Reef Chasers/POTO/Cornbred/Williamson's/Reef Regeneration/AAF/RUTR):
+# parse_shopify carries the whole fetch/parse path. The ONE shared-code touch this
+# CTK lands (normalize._CATEGORY_PATTERNS `\bfox\s+corals?\b` lps add) is a
+# fleet-general classifier patch, not a Coral-Stop-specific parser branch.
+
+slug: coralstop
+platform: shopify
+base_url: https://coralstop.com
+
+# Standard Shopify endpoint; five-signal re-confirm at build 2026-06-28:
+#   (1) Powered-by-Shopify + cdn.shopify.com images (pre-flight live-verified).
+#   (2) Shopify robots.txt; /products.json not disallowed (User-agent: * Allow: /).
+#   (3) no platform-deviation headers (standard Shopify storefront; the robots.txt
+#       advertises a UCP/MCP agent-commerce endpoint, but the /products.json
+#       catalog crawl path is unchanged and explicitly allowed).
+#   (4) /products.json HTTP 200 + canonical products array with the 13-key
+#       first-product shape (body_html / created_at / handle / id / images /
+#       options / product_type / published_at / tags / title / updated_at /
+#       variants / vendor) matching the Shopify-fleet empirical anchor.
+#   (5) read-only catalog crawl of /products.json only; never cart/checkout/UCP
+#       (arch §2.5, no new ToS risk). robots.txt explicitly bars agent checkout —
+#       we do not transact, only read the public catalog.
+products_path: /products.json
+
+# Page size at Shopify's max (250). Full-catalog walk 2026-06-28: 939 products
+# across 4 pages (250/250/250/189; page 5 = 0 -> short-page terminator). 937 of 939
+# in-stock (gate-0 metric). vendor field uniformly "Coral Stop" (1 distinct value).
+# Mixed shop: corals (sps/lps/zoa/chalice/mushroom/softie) the bulk, plus a
+# non-coral tail (supplements / lights / pumps / apparel / test kits) the
+# title_denylist drops.
+page_size: 250
+
+# Inherits the fleet empirical request_delay_sec=2 lock. 939 products / 250 per page
+# = 4 pages x 2s = ~8s of inter-page delay; trivial fetch time. Bump to 3-4s per
+# arch §2.4 retry-policy outcome only if 429s appear.
+request_delay_sec: 2
+
+# Multi-page deep catalog (939 rows / 4 pages) -> 8-cap. NOT the small-catalog 5-cap
+# (Williamson's / RR / Cornbred / RUTR single-page posture) and NOT AAF's 15-cap
+# (its 2300-row / 10-page catalog). 4 pages today; 8 leaves headroom to ~2000 rows
+# before a re-tune, and absorbs a drop-spike without truncating the walk.
+max_pages: 8
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object. Same
+# hash_anchor + same 13-key empirical anchor as the rest of the Shopify fleet
+# (parse_shopify.py shape stability). Empirical anchor (Session 1 walk 2026-06-28):
+# 13 keys = body_html, created_at, handle, id, images, options, product_type,
+# published_at, tags, title, updated_at, variants, vendor.
+hash_anchor: first_product_keys
+
+# originator_prefix=null per the small/no-allowlist fleet precedent (Reef Chasers
+# CTK-086 / Cornbred CTK-142 / Williamson's CTK-146 / Reef Regeneration CTK-148 /
+# AAF CTK-149 / RUTR CTK-207). Coral Stop is a frag-house reseller, NOT a
+# named-coral originator whose trade names the seed-list attributes. The seed-list
+# (.claude/research/named-coral-seed-list.md) has ZERO Coral-Stop-attributed
+# canonical entries (grep 2026-06-28), so matcher §3.4 stage-3 synthesis would be a
+# no-op. null is the correct config; flip only on a future seed-list expansion that
+# attributes canonicals to Coral Stop.
+originator_prefix: null
+
+# cohort_oos_at_persist: true — trust-floor parity (CTK-105 D-4 lineage) + the
+# fleet-wide default as of 2026-06-04. Net-new vendor, zero prior vendor_listings
+# (migration 0064 lands the row in the same CTK), so the first scrape has no prior
+# cohort -> zero would-flip rows (expected listings_oos ~0 on first scrape; the 2
+# live-OOS rows persist as new+OOS, not flips). The C2 first-scrape check is Δ
+# catalog (0->888 kept) ≈ listings_new (888). Also auto-enrolls Coral Stop in the
+# health-digest cohort-OOS section (health_digest.py globs vendors/*.yaml and keys
+# on this flag).
+cohort_oos_at_persist: true
+
+# auction_detection: OMITTED (None = no-op, parse_shopify.py permissive default).
+# INV-05 is NOT triggered for Coral Stop. Full-catalog walk 2026-06-28 (939 rows /
+# 4 pages — the FULL catalog, not a page-1 sample, per
+# feedback_absence_diag_full_catalog_sweep) found ZERO auction signal: no
+# wk_end_auction tag, no auc/bid tag substring, no product_type:Auction, no
+# 'auction' in any title/handle. The "DOOR BUSTER" rows are fixed-price flash-sale
+# corals (real current_price, no bid surface), NOT auctions. Re-confirm at any
+# future re-walk; flip to an auction_detection block + flag /lead-backend if a
+# wk_end_auction-style surface ever appears.
+
+# category_filter — DELIBERATELY NO product_type_allowlist (CTK-209 #1; same
+# no-allowlist posture as Reef Regeneration CTK-148 #1 / AAF CTK-149 #1 / RUTR
+# CTK-207 #1). This absence is a DECISION, not an omission. Rationale, grounded in
+# the full-catalog walk:
+#   - Coral Stop's product_type is BLANK store-wide (939/939 rows ''). product_type
+#     is NOT a coral taxonomy and NOT a coral/non-coral discriminator here. An
+#     allowlist of [''] would keep everything (no value) while risking a silent
+#     catalog-wide drop the moment Coral Stop's feed app stamps a Google-merchant
+#     product_type on coral (the AAF feed-relabel catastrophe class).
+#   - The "DOOR BUSTER" flash-sale corals carry NO 'CORAL' tag and NO product_type,
+#     so a tag_allowlist would silently drop them — exactly the corals a coverage
+#     product most wants. So NO tag_allowlist either (CTK-209 #1).
+#   - Failure asymmetry (CTK-148 #1 logic): with no allowlist, novel non-coral junk
+#     leaks VISIBLY (one wrong card on the site, caught by eyeball / catalog-count
+#     drift watch, denylisted on sighting). With an allowlist, novel coral drops
+#     INVISIBLY. Visible-junk-in beats invisible-coral-out for a coverage-moat
+#     product.
+#
+# So the only gate is a title_denylist set from the full-catalog sweep: the 51-row
+# non-coral tail (supplements / foods / additives / bacteria / dips / glue / frag
+# plugs+plates / apparel / gift card / lights / pumps / powerheads / test kits /
+# seaweed / shipping module). The kept count on the locked 2026-06-28 fixture is 888
+# (939 - 51). NULL-category coverage over the kept set is 3/888 = 0.34% BEFORE the
+# CTK-209 fox-coral fold, 2/888 = 0.23% AFTER (Baby Fox Coral -> lps); the residual
+# two are genus-less DOOR BUSTER trade names (Gonzo Gold Dragon Bounce + Blue Raven
+# Merletti), far under the 10% pre-flight threshold, so _CATEGORY_PATTERNS is NOT
+# edited for them.
+#
+# Residual leak risk + backstop: with no allowlist, ANY future non-coral Coral Stop
+# adds (new equipment brands, new apparel) leak until denylisted. The backstop is
+# scraper_runs.listings_seen catalog-count drift watch + periodic re-walk (same
+# rotating-bucket posture as the rest of the no-allowlist fleet,
+# feedback_rotating_bucket_allowlist).
+category_filter:
+  # title_denylist: case-insensitive substring per CTK-096 D-1. The 51-row
+  # non-coral tail from the 2026-06-28 full-catalog sweep. Verified drop-set ==
+  # exactly the 51 non-coral rows with ZERO coral collateral (the 13 DOOR BUSTER
+  # corals + all "Cut to Order"/WYSIWYG frags survive). Multiword entries are
+  # deliberately specific so they cannot bleed into coral trade names: e.g. "Frag
+  # Plug"/"Frag Plate" do not touch bare-"Frag" corals; "Reef Light"/"Light
+  # Fixture" avoid bare "Light" (would hit "Light Blue ...").
+  title_denylist:
+    # Foods / amino acids / additives / supplements / bacteria
+    - Amino                 # AF Amino Mix, AF Growth Boost Amino Acids
+    - Supplement            # Ca Plus / KH Plus / Mg Plus Supplement
+    - Dry Powder            # Calcium / KH Buffer / Magnesium Dry Powder
+    - Probiotic             # Pro Bio S Probiotic Bacteria
+    - Live Bacteria         # BioDigest Live Bacteria
+    - Bacterial             # -NP Pro Liquid Bacterial Growth Polymer
+    - Phyto                 # AF Phyto Mix
+    - Mysis                 # AF Liquid Mysis
+    - Reef-Roids            # Reef-Roids Nano (coral food)
+    - Growth                # AF Build/Energy/Growth Boost + -NP Pro (growth additives)
+    - Power Elixir          # AF Power Elixir
+    - Power Food            # AF Power Food
+    - Liquid Vege           # AF Liquid Vege
+    - Booster               # Polyp Lab Polyp-Booster (NB: not bare "Polyp" — that is a coral word)
+    # Dips / iodine / glue
+    - Lugol                 # Lugol's Solution - Advanced Iodine
+    - Iodine                # belt-and-suspenders on the same iodine dip row
+    - Coral Dip             # Potassium Chloride Coral Dip Powder
+    - Glue                  # Coral Glue Gel
+    # Frag hardware (2-word entries; NOT bare "Frag" -> Cut-to-Order frags survive)
+    - Frag Plug             # Premium Ceramic Coral Frag Plugs
+    - Frag Plate            # Premium Ceramic Square Frag Plate
+    # Apparel / merch / gift card / non-product
+    - T-Shirt               # Coral Stop Retro Logo T-Shirt
+    - Bucket Hat            # Coral Stop Logo Bucket Hat
+    - Patch Hat             # Coral Stop Circle Logo Leather Patch Hat (else \bleather -> softie FP)
+    - Towel                 # Coral Stop Logo Aquarium Towel
+    - Gift Card             # Coral Stop Gift Card
+    - Shipping Module       # Shipping Module (non-product line item)
+    # Lighting / flow / equipment
+    - VorTech               # EcoTech VorTech MP10W/MP40W/MP60W powerheads
+    - Vectra                # Vectra L2/M2/S2 return pumps
+    - Return Pump           # belt on the Vectra rows
+    - Dosing Pump           # EcoTech Versa Dosing Pumps
+    - Reef Light            # AI Hydra 32 HD LED Reef Light
+    - Nero                  # AI NERO 5 powerhead
+    - Light Fixture         # RADION G6 XR15/XR30 LED Light Fixtures
+    # Test kits / nori
+    - Test Kit              # Salifert Calcium/Magnesium/kH Test Kits
+    - Seaweed               # Red/Purple/Green Sea Veggies Seaweed sheets

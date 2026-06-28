@@ -1,0 +1,97 @@
+name: coralstop
+
+on:
+  schedule:
+    # CTK-209 cadence lock per arch §2.7 decision #15 + open-items.md off-minute
+    # discipline.
+    #
+    # 49 * * * * UTC = every hour at :49 minutes past — off-minute lock per the
+    # top-of-hour degradation discipline (:00 cron slots silently degrade under GH
+    # Actions free-tier scheduled-workflow load peaks; empirical evidence in
+    # open-items.md L60: a :23 slot fired 3h26m late under top-of-hour-cluster
+    # degradation, so :49 is deliberately clear of both :00 and :23).
+    #
+    # Coral Stop is hourly-cadence ('hourly' cadence_label per vendor_id=37 vendors
+    # row) — same posture as the rest of the Shopify fleet: rolling new-coral
+    # inventory on a frag-house reseller.
+    #
+    # Off-minute selection (Session 1, 2026-06-28): hourly minutes taken fleet-wide:
+    # JF :07, cohort-signal :11, AAF :13, Vivid :19, RUTR :21, RR :25, UC :29,
+    # Williamson's :33, PE :37, RC :41, WWC :43, Cornbred :47, POTO :53, TSA :57.
+    # The */15 weekend workflows hit :00/:15/:30/:45. :49 is a clean off-minute
+    # singleton — 2 minutes clear of Cornbred :47, 4 clear of POTO :53, no */15
+    # collision, and well outside the :00 top-of-hour degradation cluster.
+    - cron: '49 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Concurrency: queue (don't cancel) per the JF cascade-repair shape (CTK-027
+# 2026-05-08 disposition). Phase 2 vendors ship with explicit concurrency blocks
+# from day one.
+#
+# cancel-in-progress: false rationale — an operator-trigger landing during an
+# in-flight cron fire queues behind the running fire. Cancelling would risk
+# truncating a running Phase B mirror loop mid-write (vendor_listings /
+# price_history / R2 image-mirror double-write avoidance). The block also resolves
+# GH-Actions-default silent-drop behavior on workflow_dispatch overlap
+# (open-items.md L50 schedule-suppression) — the explicit group converts
+# silent-drop into queue-with-pending-replacement. Coral Stop's 939-row / 4-page
+# catalog parses + mirrors in well under the hourly window, so queue depth never
+# accumulates.
+concurrency:
+  group: coralstop-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # 60-min cap inherits the Phase 1+2 Shopify-fleet carve-out. Coral Stop's
+    # 939-product / 4-page catalog at ~500-600ms per mirror = a few minutes Phase B
+    # max on the first cold-start run (888 kept rows to mirror); steady-state hourly
+    # fires finish in well under a minute once images are mirrored. Vast headroom
+    # inside the 60-min ceiling.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Preflight NEON_DATABASE_URL
+        uses: ./.github/actions/preflight-neon-secret
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+      - name: Run Coral Stop scraper
+        id: scrape
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: python -m scrapers.common.run coralstop
+
+      - name: Cleanup stale running rows
+        if: always()
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python -m scrapers.common.run coralstop --cleanup
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"coralstop scraper failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"

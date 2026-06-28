@@ -190,6 +190,19 @@ _WHITESPACE_RUN = re.compile(r"\s+")
 # sps 26) and left it to the matcher. CTK-207 re-decides it sps per the directive;
 # the FP audit confirms the re-bucket set against matched corals is empty (the
 # near-tie rows that flip lps->sps carry no named_coral_id) — see results.md.
+#
+# CTK-209: one fleet-general lps add for the Coral Stop vendor (a blank-product_type
+# title-classifier store), same FP-gated path.
+#   lps   — `\bfox\s+corals?\b` (Fox Coral = Nemenzophyllia turbida, an LPS common
+#           name). Currently NULLs "Baby Fox Coral" (Coral Stop) + 3 fleet rows
+#           ("Fox Coral", "Fox Coral Colony", "Turquoise Fox Coral").
+# CRITICAL FP note — the token is the PHRASE "fox coral", NOT a bare `\bfox\b`. A
+# bare `\bfox\b` matches 714 persisted raw_title rows fleet-wide (sps 312, lps 188,
+# zoa 94, ...) because "Jason Fox" (the jf vendor) puts "Fox" in hundreds of
+# unrelated coral titles — a catastrophic mis-classification. The phrase-anchored
+# `\bfox\s+corals?\b` matches exactly the 10 real Fox-Coral rows (6 lps + 4 NULL),
+# 0 named_coral_id on any of them (no matcher re-bucket), 0 non-lps FP. See
+# results.md for the full pattern-delta audit.
 _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("chalice",  re.compile(r"\bchalices?\b|\bechinophyllia\b|\bmycedium\b|\boxypora\b", re.I)),
     ("anemone",  re.compile(r"\banemones?\b|\bbta\b|\brbta\b|\bcondy\b", re.I)),
@@ -198,7 +211,7 @@ _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("zoa",      re.compile(r"\bzoa(?:nthid)?s?\b|\bpaly", re.I)),
     ("softie",   re.compile(r"\bsofties?\b|\bsofty\b|\bleather\b|\btoadstool\b|\bkenya\b|\bsinularia\b|\bsarcophyton\b|\bcloves?\b|\bgorgonian|\bxenia\b|\bcespitularia\b|\bstar\s+polyps?\b|\banthelia\b|\bdaisy\s+polyps?\b|\bpipe\s+organ\b|\btubipora\b|\bsympodium\b", re.I)),
     ("sps",      re.compile(r"\bsps\b|\bacropora\b|\bmontipora\b|\bstylophora\b|\bseriatopora\b|\bpocillopora\b|\bmonti|\bacro\b|\bmilli\b|\bmillie|\bmillepora\b|\bdigi\b|\bdigitata\b|\bstylo|\banacro|\bpsamm[oa]cora\b|\bstag(?:horn)?\b|\bbird'?s?\s*nest\b|\btenuis\b|\bmille\b|\bmili\b|\btort\b|\btortuosa\b|\bslimer\b|\bpavona\b|\bsetosa\b", re.I)),
-    ("lps",      re.compile(r"\blps\b|\beuphyllia\b|\btorch\b|\bhammer\b|\bfrogspawn\b|\bacanthophyllia\b|\btrachyphyllias?\b|\bcynarina\b|\bsymphyllia\b|\bfavia\b|\bfavites\b|\bmicromussa\b|\bacan\b|\bacantho|\bblasto|\bduncan|\blobo|\bscoly|\bpectinia\b|\bpectina\b|\bfungia|\bbowerbanki\b|\bgoni|\balveopora\b|\bgalaxea\b|\belegance\b|\baustralomussa\b|\bleptoseris\b|\bleptastrea\b|\bcyphastrea\b|\bcaulastrea\b|\bcandy\s+cane\b|\blithophyllon\b|\blitho\b|\bindophyllia\b|\btrumpet\b|\bbubble\s+coral\b|\bdiaseris\b|\bplate\s+coral\b|\bhydnophora\b|\bhydno\b|\bastreopora\b|\blepto\b|\bechinata\b|\bgalaxia\b|\bplatygyra\b|\bheliofungia\b|\bscroll\s+coral\b|\bturbinaria\b|\bwar\s+coral\b|\bmaze\s+brain\b|\balveo\b", re.I)),
+    ("lps",      re.compile(r"\blps\b|\beuphyllia\b|\btorch\b|\bhammer\b|\bfrogspawn\b|\bacanthophyllia\b|\btrachyphyllias?\b|\bcynarina\b|\bsymphyllia\b|\bfavia\b|\bfavites\b|\bmicromussa\b|\bacan\b|\bacantho|\bblasto|\bduncan|\blobo|\bscoly|\bpectinia\b|\bpectina\b|\bfungia|\bbowerbanki\b|\bgoni|\balveopora\b|\bgalaxea\b|\belegance\b|\baustralomussa\b|\bleptoseris\b|\bleptastrea\b|\bcyphastrea\b|\bcaulastrea\b|\bcandy\s+cane\b|\blithophyllon\b|\blitho\b|\bindophyllia\b|\btrumpet\b|\bbubble\s+coral\b|\bdiaseris\b|\bplate\s+coral\b|\bhydnophora\b|\bhydno\b|\bastreopora\b|\blepto\b|\bechinata\b|\bgalaxia\b|\bplatygyra\b|\bheliofungia\b|\bscroll\s+coral\b|\bturbinaria\b|\bwar\s+coral\b|\bmaze\s+brain\b|\balveo\b|\bfox\s+corals?\b", re.I)),
     ("fish",     re.compile(r"\bfish\b|\bwrasse\b|\btang\b|\bgoby\b|\bclownfish\b|\bblenny\b", re.I)),
     ("invert",   re.compile(r"\bsnails?\b|\bshrimp\b|\bcrabs?\b|\burchin\b|\bstarfish\b|\bcucumber\b", re.I)),
     ("equipment",re.compile(r"\bpumps?\b|\bskimmers?\b|\breactors?\b|\bheaters?\b|\bcontrollers?\b|\bfilters?\b", re.I)),
