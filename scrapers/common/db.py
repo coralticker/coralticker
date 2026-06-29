@@ -164,12 +164,54 @@ class TestDatabaseNotConfigured(RuntimeError):
     = 0-errors); script-mode main() catches it, prints the reason, and exits
     nonzero (exit-0 would be the "silently passed without touching a DB" trap)."""
 
+    # Not a pytest test class despite the Test* name — silences PytestCollection
+    # warnings wherever this exception is imported into a test module.
+    __test__ = False
+
 
 class TestDatabasePointsAtProd(RuntimeError):
     """TEST_DATABASE_URL resolves to the SAME DSN as NEON_DATABASE_URL. Raised
     loud in EVERY mode — pytest and script-mode alike — and never converted to a
     skip. A test target equal to prod is the corruption path CTK-215 exists to
     close; failing closed here, including in CI, is the whole point."""
+
+    # Not a pytest test class despite the Test* name (see sibling above).
+    __test__ = False
+
+
+def _dsn_targets_same_db(test_url: str, prod_url: str) -> bool:
+    """True if two DSNs resolve to the same Postgres database — the collision
+    guard for get_test_conn() (CTK-215 + /code-review fold #3).
+
+    Cheap exact-string equality first (the common copy-paste footgun). Then a
+    normalized compare that catches Neon pooler-vs-direct forms of the SAME prod
+    DB: the pooled endpoint host carries a `-pooler` suffix
+    (`ep-x-pooler.<region>.aws.neon.tech`) the direct host lacks
+    (`ep-x.<region>.aws.neon.tech`) — different strings, identical database, so
+    string-equality alone would wave a pooler-form prod DSN through as a 'test'
+    target. Normalize each DSN to (host with the `-pooler` infix stripped,
+    dbname) and compare.
+
+    A malformed DSN can't be normalized; conninfo_to_dict raises ProgrammingError
+    there. The cheap check already established the raw strings differ, so we
+    report not-same and let psycopg.connect surface the malformed-DSN error
+    (scrubbed) on the real connect attempt — this guard never raises."""
+    if test_url == prod_url:
+        return True
+    try:
+        a = conninfo_to_dict(test_url)
+        b = conninfo_to_dict(prod_url)
+    except psycopg.ProgrammingError:
+        return False
+
+    def _norm(parts: dict) -> tuple[str, str]:
+        host = str(parts.get("host") or "")
+        # Strip the pooler infix only where it precedes the domain dot, so a
+        # real `-pooler` elsewhere in a host can't be over-stripped.
+        host = re.sub(r"-pooler(?=\.)", "", host)
+        return (host, str(parts.get("dbname") or ""))
+
+    return _norm(a) == _norm(b)
 
 
 def get_test_conn() -> psycopg.Connection:
@@ -181,13 +223,14 @@ def get_test_conn() -> psycopg.Connection:
       - TEST_DATABASE_URL == prod DSN  -> TestDatabasePointsAtProd (loud, every
                                           mode; never a skip)
 
-    The collision check is full-DSN string equality, NOT host comparison: a Neon
-    branch shares the prod host (only the endpoint id / branch differs), so a
-    host-compare would pass the branch AND fail to catch a prod-pointed test
-    target. Compare the exact connection strings — if they match byte-for-byte,
-    the test target IS prod. (A param-reordered-but-equivalent DSN isn't caught;
-    the realistic footgun is an identical copy-paste of the prod URL into
-    TEST_DATABASE_URL, which this does catch.)
+    The collision check (_dsn_targets_same_db) is exact-string-equality first,
+    then a normalized compare: NOT a bare host compare, which would false-fail a
+    legitimate Neon branch (it shares the prod host, only the endpoint id
+    differs). The normalized leg exists to catch Neon pooler-vs-direct forms of
+    the SAME prod DB (`-pooler` host infix) that are different strings — see
+    _dsn_targets_same_db. A param-reordered-but-otherwise-equivalent DSN past
+    those two legs isn't caught; the realistic footguns (identical copy-paste,
+    pooler/direct swap of prod) are.
 
     get_conn() (the prod path) is intentionally untouched and unaware of this
     function — production code never resolves TEST_DATABASE_URL. CTK-118
@@ -201,11 +244,12 @@ def get_test_conn() -> psycopg.Connection:
             "branch DSN (see CTK-215)."
         )
     prod_url = os.environ.get("NEON_DATABASE_URL")
-    if prod_url is not None and test_url == prod_url:
+    if prod_url is not None and _dsn_targets_same_db(test_url, prod_url):
         raise TestDatabasePointsAtProd(
-            "TEST_DATABASE_URL equals NEON_DATABASE_URL (prod); refusing to run "
-            "the test harness against the live catalog. Point TEST_DATABASE_URL "
-            "at a dedicated Neon branch, not prod (see CTK-215)."
+            "TEST_DATABASE_URL resolves to the same database as NEON_DATABASE_URL "
+            "(prod) — including pooler-vs-direct host forms of the same DB; "
+            "refusing to run the test harness against the live catalog. Point "
+            "TEST_DATABASE_URL at a dedicated Neon branch, not prod (see CTK-215)."
         )
     try:
         return psycopg.connect(test_url, autocommit=True, row_factory=dict_row)
