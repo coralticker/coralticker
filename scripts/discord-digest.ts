@@ -57,6 +57,18 @@ export interface DigestRow {
   // (migration 0030); the coral name becomes a markdown link to it. Nullable — a
   // row without a URL renders the name unlinked.
   product_url: string | null;
+  // CTK-213 follow-up — persisted CTK-198 bulk-dump flag, projected off
+  // vendor_listings (the RPC doesn't return it). Drives suppressBulkDump below.
+  bulk_cluster: boolean;
+}
+
+// CTK-213 follow-up — bare-/new parity, mirrored from lib/email/digest.ts so the
+// two channels stay row-identical. A bulk_cluster cold-start/relist dump emits one
+// just-listed lead-event per row; bare /new suppresses that cohort, so the digest
+// must too or it posts a vendor's entire onboarding catalog. Event-scoped: a
+// genuine back-in-stock of a once-dumped coral is a real restock and stays.
+export function suppressBulkDump(rows: DigestRow[]): DigestRow[] {
+  return rows.filter((r) => !(r.bulk_cluster && r.event === 'just-listed'));
 }
 
 const EMBED_DESCRIPTION_CAP = 4096; // Discord hard limit per embed description
@@ -277,12 +289,17 @@ async function fetchRows(): Promise<DigestRow[]> {
   // test runs (the pure builders above import clean with no env).
   const { getNeonSql } = await import('../lib/db/neon.ts');
   const sql = getNeonSql();
+  // Mirror lib/email/digest.ts fetchRows: join vendor_listings for bulk_cluster +
+  // the bare-/new equipment exclusion in SQL, bulk_cluster suppression in TS.
   const rows = await sql`
-    SELECT id, raw_title, current_price, compare_at_price, prior_price,
-           event, event_at, first_seen_at, vendor_display_name, product_url
-    FROM get_listing_lead_event(NULL, 24, NULL, NULL)
+    SELECT le.id, le.raw_title, le.current_price, le.compare_at_price, le.prior_price,
+           le.event, le.event_at, le.first_seen_at, le.vendor_display_name, le.product_url,
+           vl.bulk_cluster
+    FROM get_listing_lead_event(NULL, 24, NULL, NULL) le
+    JOIN vendor_listings vl ON vl.id = le.id
+    WHERE vl.category IS DISTINCT FROM 'equipment'
   `;
-  return rows as unknown as DigestRow[];
+  return suppressBulkDump(rows as unknown as DigestRow[]);
 }
 
 async function main(): Promise<number> {

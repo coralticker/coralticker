@@ -9,6 +9,7 @@ import {
   groupByVendor,
   htmlEscape,
   listUnsubscribeHeaders,
+  suppressBulkDump,
   wrapDigestDoc,
   type DigestRow,
 } from './digest.ts';
@@ -27,9 +28,27 @@ function row(overrides: Partial<DigestRow>): DigestRow {
     first_seen_at: '2026-06-09T10:00:00Z',
     vendor_display_name: 'WWC',
     product_url: null,
+    bulk_cluster: false,
     ...overrides,
   };
 }
+
+// CTK-213 follow-up — bulk_cluster just-listed dump suppressed from the payload,
+// bulk_cluster back-in-stock kept. The (b) PRESENT leg is the one that fails if
+// the predicate is widened to a blanket `r.bulk_cluster` drop — it proves the
+// suppression is event-scoped, not a bulk blanket. The (a) ABSENT leg fails if
+// the filter is removed; deleting suppressBulkDump fails the import.
+test('suppressBulkDump: drops bulk_cluster just-listed, keeps bulk_cluster back-in-stock', () => {
+  const rows = [
+    row({ id: 1, raw_title: 'Bulk Dump Coral', event: 'just-listed', bulk_cluster: true }),
+    row({ id: 2, raw_title: 'Restocked Dump Coral', event: 'back-in-stock', bulk_cluster: true }),
+    row({ id: 3, raw_title: 'Organic Arrival', event: 'just-listed', bulk_cluster: false }),
+  ];
+  const html = buildListingsHtml(suppressBulkDump(rows), NOW);
+  assert.ok(!html.includes('Bulk Dump Coral'), 'bulk_cluster just-listed must be ABSENT from the payload');
+  assert.ok(html.includes('Restocked Dump Coral'), 'bulk_cluster back-in-stock must be PRESENT (event-scoped)');
+  assert.ok(html.includes('Organic Arrival'), 'non-bulk just-listed must be PRESENT');
+});
 
 test('just-listed line: bold name + bare Price + Listed relative-time', () => {
   assert.equal(

@@ -16,6 +16,7 @@ import {
   buildTitle,
   escapeDiscordMd,
   groupByVendor,
+  suppressBulkDump,
   type DigestRow,
 } from './discord-digest.ts';
 
@@ -33,9 +34,25 @@ function row(overrides: Partial<DigestRow>): DigestRow {
     first_seen_at: '2026-06-04T10:21:00Z',
     vendor_display_name: 'WWC',
     product_url: null,
+    bulk_cluster: false,
     ...overrides,
   };
 }
+
+// CTK-213 follow-up — channel parity with the email digest. Same guarantee:
+// bulk_cluster just-listed dump ABSENT, bulk_cluster back-in-stock PRESENT (the
+// event-scoped leg that fails if the predicate is widened to a blanket drop).
+test('suppressBulkDump: drops bulk_cluster just-listed, keeps bulk_cluster back-in-stock', () => {
+  const rows = [
+    row({ id: 1, raw_title: 'Bulk Dump Coral', event: 'just-listed', bulk_cluster: true }),
+    row({ id: 2, raw_title: 'Restocked Dump Coral', event: 'back-in-stock', bulk_cluster: true }),
+    row({ id: 3, raw_title: 'Organic Arrival', event: 'just-listed', bulk_cluster: false }),
+  ];
+  const desc = buildDescription(suppressBulkDump(rows), NOW);
+  assert.ok(!desc.includes('Bulk Dump Coral'), 'bulk_cluster just-listed must be ABSENT from the payload');
+  assert.ok(desc.includes('Restocked Dump Coral'), 'bulk_cluster back-in-stock must be PRESENT (event-scoped)');
+  assert.ok(desc.includes('Organic Arrival'), 'non-bulk just-listed must be PRESENT');
+});
 
 test('just-listed line: bold name + bare Price + Listed relative-time', () => {
   assert.equal(

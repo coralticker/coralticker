@@ -39,6 +39,21 @@ export interface DigestRow {
   // The vendor's product page (the buy link); the coral name links to it.
   // Nullable — a row without a URL renders the name unlinked (graceful fallback).
   product_url: string | null;
+  // CTK-213 follow-up — the persisted CTK-198 bulk-dump flag, projected off
+  // vendor_listings (the RPC doesn't return it). Drives suppressBulkDump below
+  // for bare-/new channel parity.
+  bulk_cluster: boolean;
+}
+
+// CTK-213 follow-up — bare-/new parity. A bulk_cluster cold-start/relist dump
+// emits one just-listed lead-event per row, and bare /new already suppresses that
+// cohort (lib/queries/listings.ts suppressBulkClusterJustListed). The digest reads
+// get_listing_lead_event raw, so without this it emails a vendor's entire
+// onboarding catalog (CTK-209 Coral Stop: 883 just-listed in one 24h window).
+// Event-scoped on purpose: a genuine back-in-stock of a once-dumped coral is a
+// real restock and stays — only the just-listed dump cohort is dropped.
+export function suppressBulkDump(rows: DigestRow[]): DigestRow[] {
+  return rows.filter((r) => !(r.bulk_cluster && r.event === 'just-listed'));
 }
 
 export interface Recipient {
@@ -341,12 +356,20 @@ export function wrapDigestDoc(listingsHtml: string, footerHtml: string, subject:
 async function fetchRows(): Promise<DigestRow[]> {
   const { getNeonSql } = await import('../db/neon.ts');
   const sql = getNeonSql();
+  // Join vendor_listings back for bulk_cluster (the RPC doesn't project it) and
+  // apply the SAME equipment exclusion bare /new uses (listings.ts) — the RPC
+  // doesn't filter equipment internally, so the join-filter is real parity, not
+  // redundant. bulk_cluster suppression happens in TS (suppressBulkDump) so the
+  // guarantee is unit-testable without a prod-hitting requires_db run.
   const rows = await sql`
-    SELECT id, raw_title, current_price, compare_at_price, prior_price,
-           event, event_at, first_seen_at, vendor_display_name, product_url
-    FROM get_listing_lead_event(NULL, 24, NULL, NULL)
+    SELECT le.id, le.raw_title, le.current_price, le.compare_at_price, le.prior_price,
+           le.event, le.event_at, le.first_seen_at, le.vendor_display_name, le.product_url,
+           vl.bulk_cluster
+    FROM get_listing_lead_event(NULL, 24, NULL, NULL) le
+    JOIN vendor_listings vl ON vl.id = le.id
+    WHERE vl.category IS DISTINCT FROM 'equipment'
   `;
-  return rows as unknown as DigestRow[];
+  return suppressBulkDump(rows as unknown as DigestRow[]);
 }
 
 async function fetchRecipients(): Promise<Recipient[]> {
