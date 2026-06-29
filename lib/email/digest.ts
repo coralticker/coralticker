@@ -25,6 +25,10 @@ import { formatDataRow } from '../format/data-row.ts';
 import type { DataRowField } from '@/components/ui/data-row';
 import { unsubscribeUrl } from './token.ts';
 import { FROM } from './from.ts';
+// Bare-node-safe leaf (no next/* or @/) — see lib/queries/category-exclusion.ts.
+// Importing the shared denylist from lib/queries/listings.ts instead would drag
+// next/cache + @/ into this strip-types cron graph and break the digest.
+import { EXCLUDED_CATEGORIES } from '../queries/category-exclusion.ts';
 
 export interface DigestRow {
   id: number;
@@ -357,17 +361,19 @@ async function fetchRows(): Promise<DigestRow[]> {
   const { getNeonSql } = await import('../db/neon.ts');
   const sql = getNeonSql();
   // Join vendor_listings back for bulk_cluster (the RPC doesn't project it) and
-  // apply the SAME equipment exclusion bare /new uses (listings.ts) — the RPC
-  // doesn't filter equipment internally, so the join-filter is real parity, not
-  // redundant. bulk_cluster suppression happens in TS (suppressBulkDump) so the
-  // guarantee is unit-testable without a prod-hitting requires_db run.
+  // apply the SAME hidden-category exclusion bare /new uses — the RPC doesn't
+  // filter category internally, so the join-filter is real parity, not redundant.
+  // CTK-212: consumes the shared EXCLUDED_CATEGORIES set ({equipment, invert}) in
+  // the NULL-safe form (IS NULL arm keeps NULL-category corals) so the digest stays
+  // in lockstep with the next hidden category. bulk_cluster suppression happens in
+  // TS (suppressBulkDump) so that guarantee is unit-testable without a requires_db run.
   const rows = await sql`
     SELECT le.id, le.raw_title, le.current_price, le.compare_at_price, le.prior_price,
            le.event, le.event_at, le.first_seen_at, le.vendor_display_name, le.product_url,
            vl.bulk_cluster
     FROM get_listing_lead_event(NULL, 24, NULL, NULL) le
     JOIN vendor_listings vl ON vl.id = le.id
-    WHERE vl.category IS DISTINCT FROM 'equipment'
+    WHERE (vl.category IS NULL OR vl.category <> ALL(${EXCLUDED_CATEGORIES}::text[]))
   `;
   return suppressBulkDump(rows as unknown as DigestRow[]);
 }
