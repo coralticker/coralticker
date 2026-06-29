@@ -74,10 +74,12 @@ try:
     @pytest.fixture(scope="module")
     def fleet_cadence():
         """Module-scoped: sweep the fleet once for all Scope-B assertions. Opens its
-        own short-lived connection (independent of the function-scoped conn fixture)."""
-        if not os.environ.get("NEON_DATABASE_URL"):
-            pytest.skip("NEON_DATABASE_URL not set — live-DB test")
-        with db.get_conn() as conn:
+        own short-lived connection (independent of the function-scoped conn fixture).
+        CTK-215: targets the TEST branch via get_test_conn; the skip gate keys off
+        TEST_DATABASE_URL to match (NEON_DATABASE_URL is prod, never the test target)."""
+        if not os.environ.get("TEST_DATABASE_URL"):
+            pytest.skip("TEST_DATABASE_URL not set — live-DB test")
+        with db.get_test_conn() as conn:
             return _fleet_cadence(conn)
 except ImportError:
     pass
@@ -154,7 +156,7 @@ def test_drop_cadence_dow_buckets_sum(fleet_cadence):
 
 
 def main() -> int:
-    with db.get_conn() as conn:
+    with db.get_test_conn() as conn:
         cadence = _fleet_cadence(conn)
         checks = [
             ("test_recent_drops_feed_ordered_and_inv_clean", lambda: test_recent_drops_feed_ordered_and_inv_clean(conn)),

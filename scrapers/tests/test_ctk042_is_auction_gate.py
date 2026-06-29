@@ -291,7 +291,7 @@ def main() -> int:
             print(f"  [FAIL] {fn.__name__}: {e}")
             failures.append((fn.__name__, str(e)))
 
-    with db.get_conn() as conn:
+    with db.get_test_conn() as conn:
         vendor = _setup_test_vendor(conn)
         print(f"test vendor: id={vendor['id']} slug={vendor['slug']}")
         for fn in db_tests:

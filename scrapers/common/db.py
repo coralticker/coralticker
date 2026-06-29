@@ -156,6 +156,63 @@ def get_conn() -> psycopg.Connection:
         raise type(e)(_scrub_conninfo(str(e), conninfo)) from None
 
 
+class TestDatabaseNotConfigured(RuntimeError):
+    """TEST_DATABASE_URL is unset. The live-DB test harness fails closed rather
+    than fall back to NEON_DATABASE_URL (prod) — that silent fallback is exactly
+    how CTK-213's ~2,500 test rows landed in the live catalog. Pytest converts
+    this into a clean SKIP (preserving CTK-208 bare-`pytest scrapers/tests/`
+    = 0-errors); script-mode main() catches it, prints the reason, and exits
+    nonzero (exit-0 would be the "silently passed without touching a DB" trap)."""
+
+
+class TestDatabasePointsAtProd(RuntimeError):
+    """TEST_DATABASE_URL resolves to the SAME DSN as NEON_DATABASE_URL. Raised
+    loud in EVERY mode — pytest and script-mode alike — and never converted to a
+    skip. A test target equal to prod is the corruption path CTK-215 exists to
+    close; failing closed here, including in CI, is the whole point."""
+
+
+def get_test_conn() -> psycopg.Connection:
+    """Open a connection to the dedicated TEST database (a long-lived Neon
+    branch), for the requires_db / live-DB test suites (CTK-215). Fails closed:
+
+      - TEST_DATABASE_URL unset        -> TestDatabaseNotConfigured (pytest SKIP
+                                          / script-mode nonzero-with-message)
+      - TEST_DATABASE_URL == prod DSN  -> TestDatabasePointsAtProd (loud, every
+                                          mode; never a skip)
+
+    The collision check is full-DSN string equality, NOT host comparison: a Neon
+    branch shares the prod host (only the endpoint id / branch differs), so a
+    host-compare would pass the branch AND fail to catch a prod-pointed test
+    target. Compare the exact connection strings — if they match byte-for-byte,
+    the test target IS prod. (A param-reordered-but-equivalent DSN isn't caught;
+    the realistic footgun is an identical copy-paste of the prod URL into
+    TEST_DATABASE_URL, which this does catch.)
+
+    get_conn() (the prod path) is intentionally untouched and unaware of this
+    function — production code never resolves TEST_DATABASE_URL. CTK-118
+    _scrub_conninfo is preserved on the connect-error re-raise, identical to
+    get_conn(), so a malformed TEST DSN can't leak into an Actions log."""
+    test_url = os.environ.get("TEST_DATABASE_URL")
+    if not test_url:
+        raise TestDatabaseNotConfigured(
+            "TEST_DATABASE_URL is not set; refusing to run live-DB tests against "
+            "NEON_DATABASE_URL (prod). Set TEST_DATABASE_URL to a dedicated Neon "
+            "branch DSN (see CTK-215)."
+        )
+    prod_url = os.environ.get("NEON_DATABASE_URL")
+    if prod_url is not None and test_url == prod_url:
+        raise TestDatabasePointsAtProd(
+            "TEST_DATABASE_URL equals NEON_DATABASE_URL (prod); refusing to run "
+            "the test harness against the live catalog. Point TEST_DATABASE_URL "
+            "at a dedicated Neon branch, not prod (see CTK-215)."
+        )
+    try:
+        return psycopg.connect(test_url, autocommit=True, row_factory=dict_row)
+    except (psycopg.OperationalError, psycopg.ProgrammingError) as e:
+        raise type(e)(_scrub_conninfo(str(e), test_url)) from None
+
+
 def fetch_vendor(conn: psycopg.Connection, slug: str) -> dict:
     """Stage 1 (Config) — load vendors row by slug. Raises if not present;
     matches plan task 'Verify Pacific East vendors row present from CTK-028

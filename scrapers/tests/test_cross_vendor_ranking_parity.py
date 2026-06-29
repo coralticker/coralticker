@@ -126,7 +126,7 @@ def test_sql_pure_ranking_parity(conn) -> None:
 def _run_all() -> int:
     try:
         from scrapers.common import db
-        conn = db.get_conn()
+        conn = db.get_test_conn()
     except Exception as e:  # noqa: BLE001 — no DB reachable -> skip, not fail
         print(f"SKIP test_cross_vendor_ranking_parity: no DB ({type(e).__name__}: {e})")
         return 0

@@ -23,6 +23,10 @@
 
 import { formatDataRow } from '../format/data-row.ts';
 import type { DataRowField } from '@/components/ui/data-row';
+// Type-only (erased under --experimental-strip-types, no runtime import): types
+// the fetchRows DB-injection seam so a test can pass a fake tagged-template `sql`
+// and exercise the post-query wiring without a live DB (CTK-215).
+import type { NeonQueryFunction } from '@neondatabase/serverless';
 import { unsubscribeUrl } from './token.ts';
 import { FROM } from './from.ts';
 
@@ -353,9 +357,16 @@ export function wrapDigestDoc(listingsHtml: string, footerHtml: string, subject:
 // getResend() is call-time, so importing this file is env-clean. None of the
 // below runs under `node --test`.
 
-async function fetchRows(): Promise<DigestRow[]> {
-  const { getNeonSql } = await import('../db/neon.ts');
-  const sql = getNeonSql();
+// Exported + injectable (CTK-215): with no arg, dynamically imports getNeonSql so
+// neon.ts's module-scope env throw stays out of test runs (the import only happens
+// on the prod path). A test passes a fake tagged-template `sql` to exercise the
+// post-query wiring — specifically that the SQL result flows through
+// suppressBulkDump — without a live DB. The SQL itself (the JOIN + equipment
+// filter) is not DB-free testable and is out of this test's scope.
+export async function fetchRows(
+  injectedSql?: NeonQueryFunction<false, false>,
+): Promise<DigestRow[]> {
+  const sql = injectedSql ?? (await import('../db/neon.ts')).getNeonSql();
   // Join vendor_listings back for bulk_cluster (the RPC doesn't project it) and
   // apply the SAME equipment exclusion bare /new uses (listings.ts) — the RPC
   // doesn't filter equipment internally, so the join-filter is real parity, not

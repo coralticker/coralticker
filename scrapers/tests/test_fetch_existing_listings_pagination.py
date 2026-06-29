@@ -302,7 +302,7 @@ def test_sanity_check_raises_on_count_mismatch(conn, vendor):
 
 
 def main() -> int:
-    conn = db.get_conn()
+    conn = db.get_test_conn()
     vendor = _setup_test_vendor(conn)
     print(f"test vendor: id={vendor['id']} slug={vendor['slug']}")
 

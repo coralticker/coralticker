@@ -211,7 +211,7 @@ def test_velocity_query(conn) -> None:
 def _run_all() -> int:
     try:
         from scrapers.common import db
-        conn = db.get_conn()
+        conn = db.get_test_conn()
     except Exception as e:  # noqa: BLE001 — no DB reachable -> skip, not fail
         print(f"SKIP test_velocity_query: no DB ({type(e).__name__}: {e})")
         return 0
