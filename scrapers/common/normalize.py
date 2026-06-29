@@ -212,17 +212,38 @@ _WHITESPACE_RUN = re.compile(r"\s+")
 # the live 480-product Jason Fox catalog (the only vendor that pervasively carries
 # "fox"). Latent + empirically clean; flip to a title-only match for fox only if a
 # future re-audit surfaces a real cross-tag FP.
+# CTK-212 (Biota onboarding) — TWO precedence/token changes, one fleet-general pass:
+#   (1) CLAM RELOCATED to the tail (… fish, invert, clam, equipment). Biota tags
+#       every clam AND every invert with the shared tag "Cultured Clams &
+#       Invertebrates", so `\bclams?\b` fired on the tag for every shrimp/crab/
+#       urchin/snail/nudibranch and — with clam previously above invert — stole
+#       all 13 real inverts into `clam` (crabs/shrimp showing under the clam
+#       filter on live traffic). The fix is to RELOCATE CLAM, not lift invert:
+#       lifting invert above the coral patterns would let a bare invert-token in a
+#       coral trade name ("Fiddler Crab Zoa") steal corals into invert. With clam
+#       last among livestock, a real clam ("Derasa Clam", tag carries "Clams")
+#       still floors to clam (no earlier pattern matches it), while a real invert
+#       ("Arrow Crab", same tag) now matches invert FIRST on its title token.
+#       Bidirectional audit (CTK-212 results.md): 0 real coral flips to invert,
+#       0 real clam flips to a coral category, across the 15,769 distinct
+#       persisted raw_titles (OLD-order vs NEW-order, same input).
+#   (2) invert += nudibranch / sea slug (Biota's Berghia/Spurilla nudibranchs +
+#       Lettuce Sea Slug — the 3 untokened inverts that would otherwise NULL after
+#       the relocation); softie += sea fan / nephthea / tree coral (Finding C —
+#       Biota gorgonian sea fans, Spaghetti Nephthea, Strawberry Tree Coral, the
+#       NULL-category corals over the kept set). Phrase/whole-word anchored per the
+#       trap-token convention; FP-clean over the fleet titles (0 coral mis-tags).
 _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("chalice",  re.compile(r"\bchalices?\b|\bechinophyllia\b|\bmycedium\b|\boxypora\b", re.I)),
     ("anemone",  re.compile(r"\banemones?\b|\bbta\b|\brbta\b|\bcondy\b", re.I)),
-    ("clam",     re.compile(r"\bclams?\b|\btridacna\b", re.I)),
     ("mushroom", re.compile(r"\bmushrooms?\b|\brhodactis\b|\bdiscosoma\b|\bricordea\b", re.I)),
     ("zoa",      re.compile(r"\bzoa(?:nthid)?s?\b|\bpaly", re.I)),
-    ("softie",   re.compile(r"\bsofties?\b|\bsofty\b|\bleather\b|\btoadstool\b|\bkenya\b|\bsinularia\b|\bsarcophyton\b|\bcloves?\b|\bgorgonian|\bxenia\b|\bcespitularia\b|\bstar\s+polyps?\b|\banthelia\b|\bdaisy\s+polyps?\b|\bpipe\s+organ\b|\btubipora\b|\bsympodium\b", re.I)),
+    ("softie",   re.compile(r"\bsofties?\b|\bsofty\b|\bleather\b|\btoadstool\b|\bkenya\b|\bsinularia\b|\bsarcophyton\b|\bcloves?\b|\bgorgonian|\bxenia\b|\bcespitularia\b|\bstar\s+polyps?\b|\banthelia\b|\bdaisy\s+polyps?\b|\bpipe\s+organ\b|\btubipora\b|\bsympodium\b|\bsea\s+fans?\b|\bnephthea\b|\btree\s+coral\b", re.I)),
     ("sps",      re.compile(r"\bsps\b|\bacropora\b|\bmontipora\b|\bstylophora\b|\bseriatopora\b|\bpocillopora\b|\bmonti|\bacro\b|\bmilli\b|\bmillie|\bmillepora\b|\bdigi\b|\bdigitata\b|\bstylo|\banacro|\bpsamm[oa]cora\b|\bstag(?:horn)?\b|\bbird'?s?\s*nest\b|\btenuis\b|\bmille\b|\bmili\b|\btort\b|\btortuosa\b|\bslimer\b|\bpavona\b|\bsetosa\b", re.I)),
     ("lps",      re.compile(r"\blps\b|\beuphyllia\b|\btorch\b|\bhammer\b|\bfrogspawn\b|\bacanthophyllia\b|\btrachyphyllias?\b|\bcynarina\b|\bsymphyllia\b|\bfavia\b|\bfavites\b|\bmicromussa\b|\bacan\b|\bacantho|\bblasto|\bduncan|\blobo|\bscoly|\bpectinia\b|\bpectina\b|\bfungia|\bbowerbanki\b|\bgoni|\balveopora\b|\bgalaxea\b|\belegance\b|\baustralomussa\b|\bleptoseris\b|\bleptastrea\b|\bcyphastrea\b|\bcaulastrea\b|\bcandy\s+cane\b|\blithophyllon\b|\blitho\b|\bindophyllia\b|\btrumpet\b|\bbubble\s+coral\b|\bdiaseris\b|\bplate\s+coral\b|\bhydnophora\b|\bhydno\b|\bastreopora\b|\blepto\b|\bechinata\b|\bgalaxia\b|\bplatygyra\b|\bheliofungia\b|\bscroll\s+coral\b|\bturbinaria\b|\bwar\s+coral\b|\bmaze\s+brain\b|\balveo\b|\bfox\s+corals?\b", re.I)),
     ("fish",     re.compile(r"\bfish\b|\bwrasse\b|\btang\b|\bgoby\b|\bclownfish\b|\bblenny\b", re.I)),
-    ("invert",   re.compile(r"\bsnails?\b|\bshrimp\b|\bcrabs?\b|\burchin\b|\bstarfish\b|\bcucumber\b", re.I)),
+    ("invert",   re.compile(r"\bsnails?\b|\bshrimp\b|\bcrabs?\b|\burchin\b|\bstarfish\b|\bcucumber\b|\bnudibranch\b|\bsea\s+slug\b", re.I)),
+    ("clam",     re.compile(r"\bclams?\b|\btridacna\b", re.I)),
     ("equipment",re.compile(r"\bpumps?\b|\bskimmers?\b|\breactors?\b|\bheaters?\b|\bcontrollers?\b|\bfilters?\b", re.I)),
 )
 

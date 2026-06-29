@@ -292,3 +292,46 @@ def test_ctk199_round3_bare_phrase_traps_stay_none():
     assert infer_category(_p("Scroll Saw Frag Rack")) is None            # "scroll" alone -> None
     assert infer_category(_p("Amazing Maze Runner")) is None             # "maze" alone -> None
     assert infer_category(_p("Brain Freeze Stunner")) is None            # bare "brain" must not -> lps
+
+
+def test_ctk212_clam_relocation_and_tokens():
+    # CTK-212 (Biota onboarding) — two precedence/token changes, fleet-general:
+    #
+    # (1) CLAM RELOCATED to the tail (… fish, invert, CLAM, equipment). Biota tags
+    #     every clam AND every invert with the shared tag "Cultured Clams &
+    #     Invertebrates", so `\bclams?\b` fired on the tag and (clam-above-invert)
+    #     stole every shrimp/crab/urchin/snail into `clam`. The fix RELOCATES CLAM,
+    #     it does NOT lift invert — lifting invert above the coral patterns would let
+    #     a bare invert-token in a coral trade name steal corals into invert.
+    #
+    # An invert carrying the shared clam tag now classifies invert (its title token
+    # wins before clam):
+    assert infer_category(_p("Arrow Crab", tags=["Cultured Clams & Invertebrates"])) == "invert"
+    assert infer_category(_p("Peppermint Shrimp", tags=["Cultured Clams & Invertebrates"])) == "invert"
+    assert infer_category(_p("White Urchin", tags=["Cultured Clams & Invertebrates"])) == "invert"
+    # A real clam carrying the SAME tag still floors to clam (no coral/invert token
+    # in its title to steal it) — relocation correctness, both directions:
+    assert infer_category(_p("Derasa Clam", tags=["Cultured Clams & Invertebrates"])) == "clam"
+    assert infer_category(_p("Maxima Clam", tags=["Cultured Clams & Invertebrates"])) == "clam"
+    # CRITICAL precedence guard — clam moved DOWN, invert did NOT move up: a coral
+    # trade name with a bare invert token keeps its CORAL category.
+    assert infer_category(_p("Fiddler Crab Zoa")) == "zoa"
+    assert infer_category(_p("Crab Claw Acropora")) == "sps"
+    #
+    # (2) invert += nudibranch / sea slug (Biota's Berghia/Spurilla nudibranchs +
+    #     Lettuce Sea Slug). Each FAILS if its token is removed.
+    assert infer_category(_p("Berghia Nudibranch")) == "invert"
+    assert infer_category(_p("Spurilla Nudibranch - Aiptasia Eater")) == "invert"
+    assert infer_category(_p("Lettuce Sea Slug")) == "invert"
+
+
+def test_ctk212_softie_coverage_adds():
+    # CTK-212 Finding C — softie token adds for Biota's NULL-category corals.
+    # Each positive assert FAILS if its term is removed from _CATEGORY_PATTERNS.
+    assert infer_category(_p("Net Sea Fan Panama")) == "softie"       # \bsea fans?
+    assert infer_category(_p("Yellow Mopsella Sea Fan")) == "softie"
+    assert infer_category(_p("Spaghetti Nephthea")) == "softie"       # \bnephthea
+    assert infer_category(_p("Green Strawberry Tree Coral")) == "softie"  # \btree coral
+    # FP boundary — the tokens are phrase/whole-word, never bare "fan"/"tree".
+    assert infer_category(_p("Cooling Fan Mount")) is None            # bare "fan" must not -> softie
+    assert infer_category(_p("Family Tree Acropora")) == "sps"        # \bacropora wins; bare "tree" inert

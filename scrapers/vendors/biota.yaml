@@ -1,0 +1,147 @@
+# Biota (The Biota Group) scraper config (CTK-212 Session 1).
+#
+# Authoritative platform/method fields live on the vendors row (migration
+# 0065_add_biota_vendor.sql, vendor_id=65). YAML carries scrape-tuning per arch
+# §2.3 — values that may change without a code edit (delay, page size, max pages,
+# hash anchor, originator prefix, category filter, cohort-OOS). DB row wins on
+# conflict.
+#
+# Config clone of the Shopify fleet (PE/WWC/TSA/JF/Battlecorals/Unique Corals/
+# Vivid/Reef Chasers/POTO/Cornbred/Williamson's/Reef Regeneration/AAF/RUTR/Coral
+# Stop): parse_shopify carries the whole fetch/parse path. NOT a pure config-clone
+# though — see the category_filter note (hybrid allowlist + "" empty-bucket +
+# title_denylist) and the CTK-212 normalize._CATEGORY_PATTERNS change (clam
+# relocated below invert + invert/softie token adds; fleet-general, in normalize.py).
+
+slug: biota
+platform: shopify
+base_url: https://shop.thebiotagroup.com
+
+# Domain note (CTK-212 pre-flight): shop.thebiotagroup.com is the live store;
+# thebiotagroup.com 301-redirects to it; backend is biotagroup.myshopify.com
+# (shopId 42144956567). biotaaquariums.com and biota.com are PARKED/dead
+# (NamePros catch-all, every path 200) — NEVER point the scraper at either.
+#
+# Standard Shopify endpoint; five-signal re-confirm at build 2026-06-29:
+#   (1) Shopify.theme + cdn.shopify.com images + myshopify backend.
+#   (2) Shopify robots.txt; /products.json not disallowed (Allow: /; the bot
+#       restrictions are scoped to automated checkout/payment UCP/MCP, agents.md —
+#       out of our read-only path, we never transact).
+#   (3) no platform-deviation headers (standard Shopify storefront).
+#   (4) /products.json HTTP 200 + canonical products array with the 13-key
+#       first-product shape (body_html / created_at / handle / id / images /
+#       options / product_type / published_at / tags / title / updated_at /
+#       variants / vendor) matching the Shopify-fleet empirical anchor.
+#   (5) read-only catalog crawl of /products.json only; never cart/checkout/UCP
+#       (arch §2.5, no new ToS risk).
+products_path: /products.json
+
+# Page size at Shopify's max (250). Full-catalog walk 2026-06-29: 615 products
+# across 3 pages (250/250/115; page 4 not needed — short-page terminator on page
+# 3). vendor field uniformly "The Biota Group". 100%-aquacultured livestock vendor:
+# corals (sps/lps/zoa/chalice/mushroom/softie/clam/anemone) + a ~30-row invert
+# tail + Cultured Fish (211) / Feeds (32) / merch (~40) the allowlist excludes.
+page_size: 250
+
+# Inherits the fleet empirical request_delay_sec=2 lock. 615 products / 250 per
+# page = 3 pages x 2s = ~6s of inter-page delay; trivial fetch time. Bump to 3-4s
+# per arch §2.4 retry-policy outcome only if 429s appear.
+request_delay_sec: 2
+
+# Small/mid catalog (615 rows / 3 pages) -> 5-cap (RUTR/Williamson's/RR small-
+# catalog posture; NOT AAF's 15-cap for its 2300-row catalog, nor Coral Stop's
+# 8-cap for 939 rows). 3 pages today; 5 leaves headroom to ~1250 rows before a
+# re-tune and absorbs a drop-spike without truncating the walk.
+max_pages: 5
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object. Same
+# hash_anchor + same 13-key empirical anchor as the rest of the Shopify fleet
+# (parse_shopify.py shape stability). Empirical anchor (Session 1 walk 2026-06-29):
+# 13 keys = body_html, created_at, handle, id, images, options, product_type,
+# published_at, tags, title, updated_at, variants, vendor.
+hash_anchor: first_product_keys
+
+# originator_prefix=null per the small/no-prefix fleet precedent (Reef Chasers
+# CTK-086 / Cornbred CTK-142 / RR CTK-148 / AAF CTK-149 / RUTR CTK-207 / Coral Stop
+# CTK-209). Biota's own-brand Palau trade names ("Slime Mold", "Pastel Goth",
+# "Royal Boba") are NOT in the seed-list (grep 2026-06-29: ZERO Biota-attributed
+# canonical entries), so matcher §3.4 stage-3 synthesis would be a no-op. null is
+# correct; flip only on a future seed-list expansion attributing canonicals to Biota.
+originator_prefix: null
+
+# cohort_oos_at_persist: true — trust-floor parity (CTK-105 D-4 lineage) + the
+# fleet-wide default as of 2026-06-04. Net-new vendor, zero prior vendor_listings
+# (migration 0065 lands the row in the same CTK), so the first scrape has no prior
+# cohort -> zero would-flip rows (expected listings_oos ~0 on first scrape). The C2
+# first-scrape check is Δ catalog (0->320 kept) ≈ listings_new (320). Also
+# auto-enrolls Biota in the health-digest cohort-OOS section (health_digest.py globs
+# vendors/*.yaml and keys on this flag).
+cohort_oos_at_persist: true
+
+# auction_detection: OMITTED (None = no-op, parse_shopify.py permissive default).
+# INV-05 is NOT triggered for Biota. FULL-catalog walk 2026-06-29 (615 rows / 3
+# pages — the FULL catalog, not a page-1 sample, per CTK-142 lesson +
+# feedback_absence_diag_full_catalog_sweep) found ZERO auction signal: no
+# wk_end_auction tag, no auc/bid tag substring, no product_type:Auction, no
+# 'auction' in any title/handle. Biota is fixed-price retail. Re-confirm at any
+# future re-walk; flip to an auction_detection block + flag /lead-backend if a
+# wk_end_auction-style surface ever appears.
+
+# category_filter — HYBRID (CTK-212 #A): product_type_allowlist + the "" empty
+# bucket + a title_denylist. NOT a pure 4-type allowlist. Rationale, grounded in
+# the full-catalog walk (the page-1 pre-flight that read "249/250 cleanly tagged"
+# MISSED the 27-row empty-product_type tail — the recurring page-1 blind spot):
+#   - The 4 named livestock product_types (Aquacultured Corals 252 / Cultured Coral
+#     18 / Maricultured Corals 6 / Aquacultured Invertebrates 30) are the bulk of
+#     the catalog. The 4th (Aquacultured Invertebrates) is REQUIRED — without it the
+#     ~30 inverts/clams/anemones that sit in that product_type silently drop.
+#   - The "" empty bucket (27 rows) holds 14 REAL Biota corals — 13 own-brand
+#     "Biota Palau ... Acropora Mini-colony" pieces (Biota's flagship cultured
+#     line) + "Shrek Lobo Devil's Hand Coral" — all tagged 'cultured coral'/'SPS'
+#     but with an EMPTY product_type. A pure 4-type allowlist drops every one of
+#     them (invisible-coral-out, the exact failure the no-allowlist fleet avoids).
+#     "" is added to keep them (JF CTK-037 empty-bucket precedent).
+#   - "" also admits 13 ∅ NON-corals (3 Sicce pumps, 2 acclimation boxes, an EZ
+#     feeder, a frozen-food, 2 gobies, + 4 "Biota Aquarium 2.0 / Reef-Ready Tank"
+#     livestock-bundle SETUPS — full tanks, not coral drops). The title_denylist
+#     below drops exactly those 13 with ZERO coral collateral (verified on the
+#     locked fixture: 333 kept under allowlist+"" -> 320 after denylist = the 13
+#     ∅ non-corals dropped, all 14 ∅ corals retained).
+#   - Failure asymmetry (CTK-148 #1 logic): a novel ∅ non-coral leaks VISIBLY (one
+#     wrong card, caught by eyeball / catalog-count drift watch, denylisted on
+#     sighting); a novel ∅ coral kept by "" shows correctly. Visible-junk-in beats
+#     invisible-coral-out for a coverage-moat product.
+#
+# Residual leak risk + backstop: with "" in the allowlist, ANY future ∅ non-coral
+# add leaks until denylisted. The backstop is scraper_runs.listings_seen catalog-
+# count drift watch + periodic re-walk (rotating-bucket posture,
+# feedback_rotating_bucket_allowlist). Fish (211, product_type 'Cultured Fish') /
+# Feeds (32) / merch (~40, Mug/Hats/Phone Case/etc.) all carry a NON-empty
+# non-allowlisted product_type and drop cleanly via the allowlist, no denylist needed.
+category_filter:
+  # product_type_allowlist: the 4 livestock types + the "" empty bucket (keeps the
+  # 14 ∅ Palau corals). Membership is exact per _should_keep (None/absent -> "").
+  product_type_allowlist:
+    - Aquacultured Corals        # 252 — sps/lps/zoa/chalice/mushroom/softie + clams/anemones mis-typed here
+    - Cultured Coral             # 18
+    - Maricultured Corals        # 6
+    - Aquacultured Invertebrates # 30 — inverts + clams + BTAs (classifier separates by title)
+    - ""                         # 27 empty-product_type bucket; 14 real Palau corals kept, 13 non-corals denylisted below
+  # title_denylist: case-insensitive substring per CTK-096 D-1. Drops exactly the
+  # 13 ∅ non-corals admitted by "". Phrase/brand-anchored per
+  # project_anchor_denylist_classifier_tokens (no bare coral-colliding words);
+  # fleet-audited on the locked fixture — 0 coral collateral.
+  title_denylist:
+    - Sicce              # 3 Sicce return/utility pumps (brand anchor)
+    - Acclimation        # Custom Biota + Tanklimate Acclimation Boxes
+    - EZ Feeder          # EZ Feeder - Eshopps
+    - Frozen Food        # Breeder's Blend Frozen Food
+    - Goby               # 2 ∅ gobies (Yellow Clown Goby, Cosmic Nano Goby); fish, no coral collision
+    - Reef Tank          # 3 "Biota Aquarium 2.0 - ... Reef Tank" livestock-bundle setups
+    - Reef-Ready Tank    # "Biota Custom Micro Reef-Ready Tank ... - with Livestock" setup
+    # Fleet-wide chaeto/macroalgae forward-bind (CTK-107 D-2-quater) — present on
+    # every Shopify config-clone; fires on 0 Biota rows today (forward-insurance
+    # against routine macroalgae/cleanup stock landing NULL-category).
+    - Chaeto             # canonical + Chaetomorpha substring catch
+    - Cheato             # POTO-style misspelling forward-bind (0 rows today)
+    - Macroalgae         # Dragon's Breath / Caulerpa / Gracilaria / etc.
