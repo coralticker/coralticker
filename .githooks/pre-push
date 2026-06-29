@@ -23,6 +23,27 @@
 
 set -euo pipefail
 
+# CTK-213 -- typecheck gate. A required-field addition to a shared type
+# (DigestRow.bulk_cluster, c852d2a) broke an un-imported consumer
+# (scripts/send_test_digest.ts) and failed the Vercel deploy. The wiring guard
+# below + CI's node --test both missed it -- neither runs tsc. `next build` runs a
+# full typecheck with no ignoreBuildErrors, so a type error reaches prod as a red
+# deploy. Run tsc --noEmit HERE, before the push, to catch it on the laptop.
+# Placed ahead of the pytest early-exit so it runs even when pytest is absent.
+if command -v npm >/dev/null 2>&1; then
+    echo "pre-push: running tsc --noEmit (typecheck)..."
+    if ! npm run --silent typecheck; then
+        echo ""
+        echo "pre-push BLOCKED: tsc --noEmit found type errors -- next build (no"
+        echo "ignoreBuildErrors) would fail the Vercel deploy. Fix them, or bypass"
+        echo "intentionally with:  git push --no-verify"
+        exit 1
+    fi
+    echo "pre-push: typecheck clean."
+else
+    echo "pre-push: npm not on PATH -- skipping typecheck gate."
+fi
+
 COVERAGE_TESTS=(
     "scrapers/tests/test_ig_spotlight.py"
     "scrapers/tests/test_run_load_yaml.py"
