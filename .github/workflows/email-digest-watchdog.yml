@@ -59,5 +59,5 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           curl -sS -X POST -H 'Content-Type: application/json' \
-            --data "{\"text\": \"email-digest-watchdog failed: ${RUN_URL}\"}" \
+            --data "{\"text\": \"🟠 WARNING — CoralTicker email-digest watchdog itself failed (could not check the digest): ${RUN_URL}\"}" \
             "${SLACK_WEBHOOK_URL}"

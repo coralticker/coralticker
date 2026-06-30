@@ -16,11 +16,14 @@ should exist. Absent row -> ping the operator channel.
 SELF-DISAMBIGUATION: the row is sent-only, so a legit zero-send day (no confirmed
 recipients, or zero qualifying drops in the 24h window) ALSO has no row. Rather than
 suppress those (which would re-open the silent-gap this ticket closes), the alert reports
-the day's qualifying-drops count so the operator can tell the two apart at a glance:
-  "no email_digest_runs row for 2026-06-30; qualifying drops today: 164"
-  -> 164 drops and no send = broken, go look.
-  "no email_digest_runs row for 2026-06-30; qualifying drops today: 0"
-  -> nothing to send = correctly quiet, no action.
+the day's qualifying-drops count AND branches the copy on it (leading color dot) so the
+operator can tell the two apart at a glance:
+  qualifying > 0 -> "🔴 WARNING — CoralTicker daily email digest did not send today
+    (2026-06-30 UTC). There were 164 coral drops that should have gone out ..."
+    (drops existed and no send = broken, go look at the discord-digest run + Resend).
+  qualifying == 0 -> "🟢 CoralTicker daily email digest: nothing sent today
+    (2026-06-30 UTC) — and there were 0 coral drops, so this is expected."
+    (nothing to send = correctly quiet, no action).
 
 The qualifying-drops count mirrors lib/email/digest.ts:fetchRows + suppressBulkDump
 (get_listing_lead_event 24h window, JOIN vendor_listings, exclude equipment/invert
@@ -98,9 +101,19 @@ def main() -> int:
             cur.execute(_QUALIFYING_DROPS_SQL, (_EXCLUDED_CATEGORIES,))
             qualifying = cur.fetchone()["n"]
 
-    message = (
-        f"no email_digest_runs row for {utc_date}; qualifying drops today: {qualifying}"
-    )
+    if qualifying > 0:
+        message = (
+            f"🔴 WARNING — CoralTicker daily email digest did not send today ({utc_date} UTC).\n"
+            f"There were {qualifying} coral drops that should have gone out, but no successful send was recorded — the digest likely didn't fire or failed silently, and subscribers probably missed today's email.\n"
+            f"What to check: the latest discord-digest workflow run + the Resend dashboard. To re-send: run scripts/run_email_digest.ts.\n"
+            f"(Automated email-digest watchdog — you only hear from it when something looks wrong.)"
+        )
+    else:
+        message = (
+            f"🟢 CoralTicker daily email digest: nothing sent today ({utc_date} UTC) — and there were 0 coral drops, so this is expected.\n"
+            f"No action needed. (If you did expect drops today, a scraper may be down — worth a glance.)\n"
+            f"(Automated email-digest watchdog.)"
+        )
     logger.warning(message)
     post_slack(message)
     return 0
