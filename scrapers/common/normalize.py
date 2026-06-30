@@ -278,13 +278,36 @@ _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 #     "kit" would false-fire on real coral names ("S[kit]tles").
 #   - FP check (final set): 0/237 matched corals (named_coral_id NOT NULL)
 #     carry a marker; all coral-categoried reroutes are genuinely non-coral.
+#
+# CTK-217 extension (size-suffix anchor, 2026-06-30) — extends the SAME guard,
+# not a parallel rule. "AF Zoa Food - 30g" (coralstop 190824) hit \bzoa\b and
+# leaked into the zoa type filter; it carried neither 'pellet' nor 'coral food',
+# so the existing markers missed it. The new marker is a weight/volume size
+# suffix: a coral is not sold by gram/ml/oz/kg/l, while a food/supplement is.
+#   - Leads on the size suffix, NOT a bare product noun. Bare 'food' stays
+#     DROPPED (see above) — reintroducing it re-opens the Battle Corals
+#     "Fairy Food" / "...steal my food" FP. 'supplement'/'additive' were
+#     evaluated against the live catalog and NOT added: the fleet sweep found 0
+#     coral-categoried SKUs that need them beyond what the size suffix already
+#     catches, so they would be latent-FP surface for no live gain.
+#   - The suffix STRUCTURALLY misses the named-coral FP set the broad sweep
+#     wrongly caught (Gorilla Glue, Top Fuel, Rocket Fuel, Firecracker, Dippin
+#     Dots, Fun Dip, Vitamin C Echinata, Mushroom Combo Rack) — none carry a
+#     `- <n><unit>` weight suffix. Leading `-\s*` requires the hyphen separator
+#     so a coral name merely CONTAINING a digit+letter run can't false-fire.
+#   - Python `re`: anchored with `\b`, never `\m\M` (Postgres POSIX; in Python
+#     `\m`/`\M` match literal 'm'/'M' — a silent bug).
+#   - FP check (CTK-217, 2026-06-30): 0 matched corals (named_coral_id NOT NULL)
+#     carry the size-suffix marker; the only NEW coral-categoried reroute is the
+#     AF Zoa Food leak itself.
 _CORAL_CATEGORIES = frozenset(
     {"sps", "lps", "softie", "zoa", "mushroom", "anemone", "clam", "chalice"}
 )
 _NONCORAL_TITLE_MARKERS = re.compile(
     r"\b(?:sticker|kit|probe|clipper|cartridge|earrings)s?\b"
     r"|pellets?\b"
-    r"|\bcoral\s+foods?\b",
+    r"|\bcoral\s+foods?\b"
+    r"|-\s*\d+\s*(?:g|ml|oz|kg|l)\b",
     re.I,
 )
 

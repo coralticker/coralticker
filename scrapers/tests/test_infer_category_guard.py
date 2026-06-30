@@ -103,3 +103,48 @@ def test_substring_marker_does_not_false_fire():
     # Word-boundary discipline: 'kits' matches (plural) but a coral name that
     # merely CONTAINS the letters must not. No standalone marker word here.
     assert infer_category(_p("Skittles Acropora", product_type="Acropora")) == "sps"
+
+
+# ─── CTK-217: size-suffix marker (weight/volume, e.g. "- 30g") ────────────────
+# Load-bearing reroutes — each FAILS if the size-suffix branch is removed from
+# _NONCORAL_TITLE_MARKERS. "AF Zoa Food - 30g" was the live leak (coralstop
+# 190824): it hit \bzoa\b but carried neither 'pellet' nor 'coral food'.
+
+def test_size_suffix_reroutes_zoa_food_to_equipment():
+    # The live leak. \bzoa\b wins; "- 30g" is the non-coral size suffix.
+    assert infer_category(_p("AF Zoa Food - 30g")) == "equipment"
+
+
+def test_size_suffix_variants_reroute():
+    # ml / oz / kg units, with and without a space before the unit. Each title
+    # carries a coral token (so a coral category wins) and ONLY the size suffix
+    # as a marker (no 'pellet' / 'coral food' overlap) — isolates the new branch.
+    assert infer_category(_p("Zoa Power Booster - 250ml")) == "equipment"
+    assert infer_category(_p("Acropora Amino Blend - 8 oz")) == "equipment"
+    assert infer_category(_p("LPS Power Pack Supplement - 2kg")) == "equipment"
+
+
+# ─── CTK-217 FP guard: the named-coral set must NOT reroute ───────────────────
+# These are real corals the broad bare-substring sweep wrongly caught. None
+# carries a `- <n><unit>` weight suffix, so the size-suffix marker structurally
+# misses them and they stay coral.
+
+def test_named_fp_set_not_rerouted_by_size_suffix():
+    assert infer_category(_p("WWC Gorilla Glue", product_type="Acropora")) == "sps"
+    assert infer_category(_p("Top Fuel", product_type="Acropora")) == "sps"
+    assert infer_category(_p("JF Firecracker", product_type="Acropora")) == "sps"
+    assert infer_category(_p("Dippin Dots", product_type="Zoanthid")) == "zoa"
+    assert infer_category(_p("Mushroom Combo Rack", product_type="Mushroom")) == "mushroom"
+
+
+def test_size_suffix_requires_hyphen_separator():
+    # A coral whose title merely contains a digit+unit run WITHOUT the leading
+    # hyphen separator must not flip. "30 Green Polyps" has no `- <n><unit>`.
+    assert infer_category(_p("Rainbow Acro 30 Green Polyps", product_type="Acropora")) == "sps"
+
+
+def test_size_suffix_does_not_match_non_weight_units():
+    # Frag sizes are inches / polyp counts, not g/ml/oz/kg/l. An inch-sized
+    # WYSIWYG frag must stay coral.
+    assert infer_category(_p('WYSIWYG Acropora - 2 inch', product_type="Acropora")) == "sps"
+    assert infer_category(_p('Torch Coral - 5 heads', tags=["lps"])) == "lps"
