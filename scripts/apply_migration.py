@@ -42,7 +42,7 @@ import sys
 import time
 from pathlib import Path
 
-from scrapers.common.db import get_conn
+from scrapers.common.db import get_conn, get_test_conn
 # Top-level import (CTK-208 /code-review #5): the hook module always ships, so a
 # BROKEN scripts/migration_verify.py must fail loudly here, not be swallowed as
 # "no hooks present" by a bare `except ImportError` around the import.
@@ -155,12 +155,23 @@ def main(argv: list[str] | None = None) -> int:
                     help="DROP SQL run before the body (re-runnable CREATE FUNCTION)")
     ap.add_argument("--expect-vendor", default=None,
                     help="JSON vendor-row expectation (must include slug)")
+    ap.add_argument("--test", action="store_true",
+                    help="apply to the TEST branch (get_test_conn / TEST_DATABASE_URL) "
+                         "instead of prod. Used by the CTK-219 ephemeral-branch CI lane "
+                         "and to bring a local test branch current. Fails closed if "
+                         "TEST_DATABASE_URL is unset or resolves to prod (get_test_conn "
+                         "raises) — never a silent prod fallback.")
     args = ap.parse_args(argv)
 
     path = _resolve(args.nn)
     sql = path.read_text(encoding="utf-8")
 
-    with get_conn() as conn:
+    # CTK-219: --test routes through get_test_conn (TEST_DATABASE_URL branch), which
+    # raises if the var is unset or equals prod. Default is the prod path, unchanged.
+    conn_factory = get_test_conn if args.test else get_conn
+    target = "TEST branch" if args.test else "prod"
+    print(f"target: {target}")
+    with conn_factory() as conn:
         with conn.cursor() as cur:
             print(f"executing: {path.name} ({len(sql)} bytes)...")
             t0 = time.monotonic()

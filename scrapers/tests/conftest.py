@@ -44,6 +44,42 @@ import pytest
 from scrapers.common import db
 
 
+# CTK-219 D2 — modules allowed to call db.get_conn (the PROD path) during a test.
+# test_db_conn_scrub deliberately drives the get_conn() re-raise/scrub path with
+# psycopg.connect mocked, so it never opens a real connection — its call must reach
+# the real wrapper. Matched on the bare module name (rsplit) so it holds whether
+# pytest collects the module as `test_db_conn_scrub` or `scrapers.tests.test_db_conn_scrub`.
+_PROD_CONN_ALLOWED_MODULES = frozenset({"test_db_conn_scrub"})
+
+
+@pytest.fixture(autouse=True)
+def _forbid_prod_get_conn(request, monkeypatch):
+    """CTK-219 D2 — non-bypassable prod-path guard. Every test runs with
+    scrapers.common.db.get_conn (the PROD connection) swapped for a raising stub,
+    so a test that reaches for prod fails loud instead of reading/writing the live
+    catalog (the CTK-213 corruption class that motivated CTK-215). Tests use
+    get_test_conn (the TEST_DATABASE_URL branch) via the `conn` fixture; that path
+    is untouched.
+
+    Allow-listed modules (_PROD_CONN_ALLOWED_MODULES) legitimately call get_conn
+    with psycopg.connect mocked and never open a real connection. The static
+    pre-push grep (scripts/ctk219_verify_no_prod_conn.py) is the belt to this
+    runtime suspenders: it also flags `from ...db import get_conn` direct-import
+    calls, which a module-attribute monkeypatch cannot intercept."""
+    if request.module.__name__.rsplit(".", 1)[-1] in _PROD_CONN_ALLOWED_MODULES:
+        return
+
+    def _raise(*args, **kwargs):
+        raise RuntimeError(
+            "CTK-219 D2: db.get_conn() (prod) called during a test. Live-DB tests must "
+            "use get_test_conn() (TEST_DATABASE_URL branch). If a call is intentional and "
+            "never opens a real connection (psycopg.connect mocked), allow-list the module "
+            "in conftest._PROD_CONN_ALLOWED_MODULES."
+        )
+
+    monkeypatch.setattr(db, "get_conn", _raise)
+
+
 def _have_test_db() -> bool:
     """CTK-215: the requires_db harness targets TEST_DATABASE_URL (a dedicated
     Neon branch), never NEON_DATABASE_URL (prod). The skip gate keys off the TEST

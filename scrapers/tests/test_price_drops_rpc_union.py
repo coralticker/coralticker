@@ -42,25 +42,37 @@ except ImportError:
     mark_requires_db = lambda f: f
 
 
-TEST_VENDOR_SLUG = "_ctk208_pricedrops_test"
+# CTK-219 Fix 2: a DEDICATED active=true, non-underscore vendor (was the
+# active=false '_ctk208_pricedrops_test'). get_recent_price_drops filters its
+# vendors JOIN on `v.active = true AND v.slug NOT LIKE '!_%' ESCAPE '!'`
+# (CTK-213), so the old seed vendor was filtered out of the RPC and every
+# union/INV-05 pin saw an empty result. Non-underscore + active=true so seeded
+# rows survive the filter; safe because CTK-215 scopes requires_db to a Neon
+# branch (TEST_DATABASE_URL), never prod /deals.
+TEST_VENDOR_SLUG = "ctk219-pricedrops-union"
+TEST_VENDOR_DISPLAY = "CTK-219 TEST pricedrops union — not a real vendor"
 WINDOW_DAYS = 7
 
 
 def _setup_test_vendor(conn) -> dict:
-    """Idempotent active=false test-vendor setup (conftest delegates `vendor` here)."""
-    with conn.cursor() as cur:
-        cur.execute("SELECT id, slug FROM vendors WHERE slug = %s", (TEST_VENDOR_SLUG,))
-        existing = cur.fetchall()
-    if existing:
-        return existing[0]
+    """Idempotent test-vendor setup, UPSERT-heal to active=true (CTK-219 Fix 2;
+    conftest delegates `vendor` here). active=true + non-underscore slug so
+    seeded rows survive the get_recent_price_drops vendors JOIN filter
+    (CTK-213). The unmistakable display_name flags the row as synthetic on the
+    branch's vendors table — the dropped '_' prefix no longer carries that
+    signal. No scrape workflow exists for this slug, so active=true never
+    triggers a cron."""
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO vendors "
             "(slug, display_name, base_url, platform, scrape_method, "
             "cadence_label, image_strategy, active) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id, slug",
-            (TEST_VENDOR_SLUG, "CTK-208 price-drops test vendor", "https://example.test",
-             "shopify", "products_json", "daily", "mirror", False),
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (slug) DO UPDATE SET "
+            "active = true, display_name = EXCLUDED.display_name "
+            "RETURNING id, slug",
+            (TEST_VENDOR_SLUG, TEST_VENDOR_DISPLAY, "https://example.test",
+             "shopify", "products_json", "daily", "mirror", True),
         )
         return cur.fetchone()
 

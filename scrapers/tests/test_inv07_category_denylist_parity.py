@@ -87,7 +87,12 @@ def test_inv07_functions_carry_canonical_denylist():
     """Every INV-07 content function's category denylist == CANONICAL_DENYLIST, in the
     NULL-safe form, with the old equipment-only literal gone. Fails loudly if a function
     omits a category, carries an extra one, drops NULL-safety, or reverts to the literal."""
-    with db.get_conn() as conn:
+    # CTK-219 D2: get_test_conn (TEST branch), not get_conn (prod). requires_db tests
+    # target TEST_DATABASE_URL per CTK-215 — this was the lone test still opening a prod
+    # connection. The "committed != applied" guarantee holds transitively: the branch is
+    # re-cut from / migrated to current with prod (D3 nightly), so the live branch bodies
+    # mirror prod's.
+    with db.get_test_conn() as conn:
         for fn in INV07_CONTENT_FUNCTIONS:
             body = _functiondef(conn, fn)
 
