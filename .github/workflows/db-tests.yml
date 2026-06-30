@@ -1,0 +1,180 @@
+name: db-tests
+
+# CTK-219 Deliverable 3 — the durable prevention for live-DB test rot.
+#
+# The requires_db suite is deselected in tests.yml (`-m "not requires_db"`), so
+# for months rot accumulated invisibly as prod data drifted (the 10 tests CTK-219
+# repaired). This lane runs the requires_db suite nightly against an EPHEMERAL Neon
+# branch re-cut from prod, so a fresh-schema, fresh-data run catches drift the
+# instant it appears — and the repaired tests stay honest (they own their fixture
+# data, so a green run here is the real proof they went data-independent).
+#
+# Topology: create branch from prod -> set TEST_DATABASE_URL from its DSN (masked,
+# never echoed) -> apply any pending migrations via apply_migration --test -> run
+# pytest -m requires_db -> delete the branch in an always() teardown. Failures post
+# to the Slack operator channel.
+#
+# REQUIRED SECRETS (set once, Jon-side, in repo settings — values never cross the
+# agent surface):
+#   NEON_API_KEY      neonctl auth for branch create/delete
+#   NEON_PROJECT_ID   the CoralTicker Neon project id
+#   SLACK_WEBHOOK_URL operator alert (already set; reused)
+# NEON_DATABASE_URL (prod) is deliberately NOT provided to this job — the suite
+# targets only the ephemeral branch via TEST_DATABASE_URL, and with prod absent the
+# get_test_conn collision guard simply has nothing to collide against.
+#
+# PROVE-ON-DISPATCH: the ${{ }} / neonctl / secret-masking path cannot be validated
+# locally (feedback_composite_action_manifest_local_proof_gap). Run one manual
+# workflow_dispatch and confirm green before treating D3 as landed.
+
+on:
+  schedule:
+    # 08:23 UTC nightly — off the top of the hour per the open-items top-of-hour
+    # cron-degradation discipline. Nightly (not pre-merge): solo cadence, and the
+    # rot it guards against accrues over days, not per-commit.
+    - cron: '23 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-tests
+  cancel-in-progress: false
+
+jobs:
+  requires-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements*.txt
+
+      - name: Install Python dependencies (prod + dev)
+        run: |
+          pip install -r scrapers/requirements.txt
+          pip install -r scrapers/requirements-dev.txt
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install neonctl
+        run: npm install -g neonctl
+
+      - name: Create ephemeral Neon branch from prod
+        run: |
+          set -euo pipefail
+          BRANCH_NAME="ci-ctk219-${GITHUB_RUN_ID}"
+          # Branch from the project's default (prod) branch -> current schema + data.
+          BRANCH_ID=$(neonctl branches create \
+            --project-id "${NEON_PROJECT_ID}" \
+            --name "${BRANCH_NAME}" \
+            --output json | python -c "import sys,json; print(json.load(sys.stdin)['branch']['id'])")
+          # CTK-219 /code-review F2: neonctl can return an empty id/DSN without a
+          # non-zero exit, which set -e won't catch — and an empty TEST_DATABASE_URL
+          # makes conftest SKIP every requires_db test so pytest exits 0 on a suite
+          # that tested NOTHING (false green, the exact drift D3 exists to catch).
+          # Fail loud at the source instead.
+          if [ -z "${BRANCH_ID}" ]; then
+            echo "FATAL: neonctl returned an empty branch id"; exit 1
+          fi
+          echo "BRANCH_ID=${BRANCH_ID}" >> "$GITHUB_ENV"
+          # Connection string for the new branch. Command-substituted (not printed);
+          # masked before it touches $GITHUB_ENV so it can never surface in a log.
+          DSN=$(neonctl connection-string "${BRANCH_ID}" \
+            --project-id "${NEON_PROJECT_ID}" \
+            --database-name neondb \
+            --role-name neondb_owner \
+            --pooled)
+          if [ -z "${DSN}" ]; then
+            echo "FATAL: neonctl returned an empty connection string"; exit 1
+          fi
+          echo "::add-mask::${DSN}"
+          echo "TEST_DATABASE_URL=${DSN}" >> "$GITHUB_ENV"
+          echo "created branch ${BRANCH_NAME} (${BRANCH_ID})"
+
+      - name: Apply pending migrations to the branch
+        # On main the branch is cut from prod (current), so PENDING_MIGRATIONS is
+        # normally empty. Populate it (space-separated numbers, e.g. "70 71") on a
+        # branch/PR that adds migrations not yet applied to prod, to test the suite
+        # against the NEW schema. apply_migration --test fails closed if
+        # TEST_DATABASE_URL is unset or resolves to prod.
+        env:
+          PENDING_MIGRATIONS: ''
+        run: |
+          set -euo pipefail
+          for nn in ${PENDING_MIGRATIONS}; do
+            echo "applying migration ${nn} to ephemeral branch..."
+            python -m scripts.apply_migration "${nn}" --test
+          done
+
+      - name: Scrub user PII from the ephemeral branch
+        # CTK-219 /code-review F5: the branch is cut from prod, so it carries a full
+        # copy of email_signups (real user emails + confirmation tokens). The repaired
+        # requires_db suite owns its seed data (data-independent), so it never reads
+        # this — TRUNCATE it to shrink where prod PII lives. CASCADE clears any
+        # FK-dependent rows; tests that need signup rows seed their own. Fails loud
+        # (no `|| true`) — a branch that couldn't be scrubbed shouldn't run the suite.
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from scrapers.common import db
+          with db.get_test_conn() as conn:
+              with conn.cursor() as cur:
+                  cur.execute("TRUNCATE email_signups CASCADE")
+          print("scrubbed email_signups (CASCADE) on the ephemeral branch")
+          PY
+
+      - name: Run requires_db suite against the ephemeral branch
+        run: |
+          set -euo pipefail
+          # CTK-219 /code-review F2 (belt to the create-step source guard): never let an
+          # empty TEST_DATABASE_URL reach pytest — conftest would skip every requires_db
+          # test and pytest would exit 0 on an unrun suite (false green).
+          if [ -z "${TEST_DATABASE_URL:-}" ]; then
+            echo "FATAL: TEST_DATABASE_URL is empty at the pytest step — refusing to report"
+            echo "green on a suite that would skip everything."; exit 1
+          fi
+          python -m pytest --strict-markers -m requires_db scrapers/tests/
+
+      - name: Delete ephemeral Neon branch
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          if [ -z "${BRANCH_ID:-}" ]; then
+            echo "no BRANCH_ID recorded — nothing to delete"
+            exit 0
+          fi
+          if neonctl branches delete "${BRANCH_ID}" --project-id "${NEON_PROJECT_ID}"; then
+            echo "deleted ephemeral branch ${BRANCH_ID}"
+            exit 0
+          fi
+          # CTK-219 /code-review F6: a swallowed delete failure leaves a branch (a prod
+          # copy) alive with no signal. Alert the operator instead so the straggler gets
+          # cleaned up manually. Don't fail the job on the alerting curl itself.
+          echo "branch delete FAILED for ${BRANCH_ID} — alerting operator"
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"db-tests: FAILED to delete ephemeral Neon branch ${BRANCH_ID} (a prod-data copy — delete it manually in the Neon console): ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}" || echo "Slack alert for the delete failure also failed; see the Neon console"
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"db-tests (requires_db nightly) failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"

@@ -24,11 +24,18 @@ Requires migration 0035 applied (floor + tiebreak live in the function
 body) — apply via `python -m scripts.apply_migration 35` (CTK-208 shared
 runner; the per-migration apply_migration_0035.py clone was removed).
 
-Test rows are seeded on the active=false '_ctk124_test' vendor with
-in_stock=true and an in-window onset, so they are RPC-visible for the
-seconds they exist (the function has no vendors.active predicate).
-Cleanup runs in finally; the live /deals ISR window (300s) makes a
-transient capture unlikely and self-healing.
+Test rows are seeded (in_stock=true, in-window onset) on a dedicated
+active=true, NON-underscore vendor 'ctk219-pricedrops-floor' so they
+survive get_recent_price_drops's final vendors JOIN filter
+(`v.active = true AND v.slug NOT LIKE '!_%' ESCAPE '!'`, CTK-213). The
+prior active=false, '_'-prefixed '_ctk124_test' was filtered out of the
+RPC entirely, so the membership pins could never see their own rows
+(CTK-219 Fix 2 — the original "no vendors.active predicate" diagnosis was
+disproven by the live function body). Safe because CTK-215 scopes
+requires_db to a Neon branch (TEST_DATABASE_URL), never prod /deals.
+Cleanup is the module-scoped autouse teardown below (the per-test
+finally-wipe in main() does NOT run under pytest, and the now-RPC-visible
+rows would otherwise accumulate on the branch).
 
 Hits live Neon Postgres via psycopg. Mirrors
 test_markdown_started_at_capture.py shape. Pytest-discovery requires a
@@ -41,6 +48,7 @@ Runnable as:
 
 from __future__ import annotations
 
+import os
 import sys
 import traceback
 from decimal import Decimal
@@ -54,7 +62,17 @@ except ImportError:
     mark_requires_db = lambda f: f
 
 
-TEST_VENDOR_SLUG = "_ctk124_test"
+# CTK-219 Fix 2: a DEDICATED active=true, non-underscore vendor (was the
+# active=false '_ctk124_test' shared with test_markdown_started_at_capture).
+# get_recent_price_drops filters its final vendors JOIN on
+# `v.active = true AND v.slug NOT LIKE '!_%' ESCAPE '!'` (CTK-213), so the
+# old seed vendor was filtered out of the RPC entirely and these floor pins
+# could never see their own rows. Non-underscore + active=true so seeded rows
+# survive the RPC filter; safe because CTK-215 scopes requires_db to a Neon
+# branch (TEST_DATABASE_URL), never prod /deals. The capture suite keeps
+# '_ctk124_test' (it never calls the RPC) — no longer shared.
+TEST_VENDOR_SLUG = "ctk219-pricedrops-floor"
+TEST_VENDOR_DISPLAY = "CTK-219 TEST pricedrops floor — not a real vendor"
 URL_EXACT_5PCT = "https://example.test/p/floor-pin-exact-5pct"
 URL_SUB_5PCT = "https://example.test/p/floor-pin-sub-5pct"
 URL_TIE_A = "https://example.test/p/tie-pin-a"
@@ -63,31 +81,30 @@ WINDOW_DAYS = 7
 
 
 def _setup_test_vendor(conn) -> dict:
-    """Idempotent test-vendor setup (shared slug with the capture pins)."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT id, slug FROM vendors WHERE slug = %s",
-            (TEST_VENDOR_SLUG,),
-        )
-        existing = cur.fetchall()
-    if existing:
-        return existing[0]
+    """Idempotent test-vendor setup, UPSERT-heal to active=true (CTK-219 Fix 2).
+    active=true + non-underscore slug so seeded rows survive the
+    get_recent_price_drops vendors JOIN filter (CTK-213). The unmistakable
+    display_name flags the row as synthetic for anyone scanning the branch's
+    vendors table — the dropped '_' prefix no longer carries that signal. No
+    scrape workflow exists for this slug, so active=true never triggers a cron."""
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO vendors "
             "(slug, display_name, base_url, platform, scrape_method, "
             "cadence_label, image_strategy, active) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (slug) DO UPDATE SET "
+            "active = true, display_name = EXCLUDED.display_name "
             "RETURNING id, slug",
             (
                 TEST_VENDOR_SLUG,
-                "CTK-124 test vendor",
+                TEST_VENDOR_DISPLAY,
                 "https://example.test",
                 "shopify",
                 "products_json",
                 "daily",
                 "mirror",
-                False,
+                True,
             ),
         )
         return cur.fetchone()
@@ -193,6 +210,32 @@ def test_tied_onset_orders_by_listing_id(conn, vendor):
     assert ids.index(lo) < ids.index(hi), (
         "tied-onset rows must order by listing_id ascending — tiebreak missing"
     )
+
+
+try:
+    import pytest as _pytest_cleanup
+
+    @_pytest_cleanup.fixture(scope="module", autouse=True)
+    def _module_cleanup():
+        """CTK-219 Fix 2 — wipe this vendor's listings after the suite. The
+        per-test finally-wipe in main() does NOT run under pytest, and the
+        vendor is now active=true / RPC-visible, so leaked seed rows would
+        otherwise accumulate on the branch (harmless — no /deals consumer on
+        the test branch — but hygiene; mirrors test_price_drops_rpc_union's
+        teardown). Keyed off TEST_DATABASE_URL so it no-ops with no test
+        target and never opens a prod connection to clean up."""
+        yield
+        if not os.environ.get("TEST_DATABASE_URL"):
+            return
+        with db.get_test_conn() as c:
+            with c.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM vendor_listings WHERE vendor_id IN "
+                    "(SELECT id FROM vendors WHERE slug = %s)",
+                    (TEST_VENDOR_SLUG,),
+                )
+except ImportError:
+    pass
 
 
 def main() -> int:

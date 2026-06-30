@@ -104,21 +104,25 @@ def _setup_test_vendor(conn) -> dict:
 
 
 def _setup_test_coral(conn, canonical: str, normalized: str, slug: str) -> dict:
-    """Idempotent test-coral setup. Returns {id, canonical_name}."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT id, canonical_name FROM named_corals WHERE slug = %s",
-            (slug,),
-        )
-        existing = cur.fetchall()
-    if existing:
-        return existing[0]
+    """Idempotent test-coral setup with active-heal. UPSERT shape mirroring
+    _setup_test_vendor:84-103 — flips active=true on every run.
+
+    CTK-219 Fix 1: the prior SELECT-by-slug-then-INSERT never healed active.
+    The ctk029 alpha/beta corals were stranded active=false by an earlier
+    session (named_coral_id=21 = alpha), so the SELECT branch returned that
+    stale inactive row and rematch_one raised "named_coral_id=21 not found
+    or inactive" (rematch._load_single_coral_cache filters
+    `WHERE id = %s AND active = TRUE`). ON CONFLICT (slug) DO UPDATE SET
+    active = true heals the flag without mutating canonical/normalized
+    identity. Returns {id, canonical_name}.
+    """
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO named_corals "
             "(canonical_name, normalized_name, slug, origin_vendor, "
             "coral_type, category, requires_vendor_prefix, active) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (slug) DO UPDATE SET active = true "
             "RETURNING id, canonical_name",
             (canonical, normalized, slug, "ctk029-test", "sps", 1, False, True),
         )

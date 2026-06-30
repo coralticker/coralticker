@@ -87,7 +87,18 @@ def test_inv07_functions_carry_canonical_denylist():
     """Every INV-07 content function's category denylist == CANONICAL_DENYLIST, in the
     NULL-safe form, with the old equipment-only literal gone. Fails loudly if a function
     omits a category, carries an extra one, drops NULL-safety, or reverts to the literal."""
-    with db.get_conn() as conn:
+    # CTK-219 D2: get_test_conn (TEST branch), not get_conn (prod). requires_db tests
+    # target TEST_DATABASE_URL per CTK-215 — this was the lone test still opening a prod
+    # connection. The "committed != applied" guarantee is now delivered by D3's NIGHTLY
+    # ephemeral lane (.github/workflows/db-tests.yml), which re-cuts the branch FROM prod
+    # each run: a forgotten prod migration leaves prod (and therefore the fresh re-cut)
+    # stale, so this test goes red there. CTK-219 /code-review F1 noted the residual:
+    # a LOCAL run against a persistent branch kept current via `apply_migration --test`
+    # could pass while prod is stale (the nightly lane is the backstop, not on-demand
+    # local runs). If on-demand local prod-parity is wanted, the one-edit pivot is to
+    # revert this to get_conn() as an explicit read-only exemption (allow-list it in
+    # conftest._PROD_CONN_ALLOWED_MODULES + the pre-push grep).
+    with db.get_test_conn() as conn:
         for fn in INV07_CONTENT_FUNCTIONS:
             body = _functiondef(conn, fn)
 

@@ -44,6 +44,24 @@ else
     echo "pre-push: npm not on PATH -- skipping typecheck gate."
 fi
 
+# CTK-219 D2 — prod-path guard. Static check (no DB, ~instant): no test under
+# scrapers/tests/ may call get_conn() (prod); live-DB tests use get_test_conn()
+# (the TEST_DATABASE_URL branch). Catches the direct-import call style the runtime
+# conftest guard cannot intercept. Placed ahead of the pytest section so it runs
+# even when pytest is absent.
+if [ -x ".venv/bin/python" ]; then
+    PROD_CONN_PY=".venv/bin/python"
+else
+    PROD_CONN_PY="python3"
+fi
+echo "pre-push: checking for prod get_conn() under scrapers/tests/..."
+if ! "$PROD_CONN_PY" scripts/ctk219_verify_no_prod_conn.py; then
+    echo ""
+    echo "pre-push BLOCKED: a test calls get_conn() (prod). Use get_test_conn(), or"
+    echo "allow-list it intentionally (see the script). Bypass:  git push --no-verify"
+    exit 1
+fi
+
 COVERAGE_TESTS=(
     "scrapers/tests/test_ig_spotlight.py"
     "scrapers/tests/test_run_load_yaml.py"
