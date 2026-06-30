@@ -42,6 +42,14 @@
 import { pathToFileURL } from 'node:url';
 import { formatDataRow } from '../lib/format/data-row.ts';
 import type { DataRowField } from '../components/ui/data-row';
+import {
+  NOW_TRACKING,
+  batchedHeadline,
+  classifyOnboarding,
+  collapseHeadline,
+  vendorPieces,
+  type OnboardingVendor,
+} from '../lib/format/onboarding-announcement.ts';
 
 export interface DigestRow {
   id: number;
@@ -237,7 +245,41 @@ function renderGroup(group: VendorGroup, now: Date, capped: boolean): string {
   return [header, ...lines].join('\n');
 }
 
-export function buildDescription(rows: DigestRow[], now: Date): string {
+// CTK-214 — the "now tracking" onboarding block (Discord markdown), prepended
+// ABOVE the per-vendor drop groups. Copy is canon (branding-guide §"now
+// tracking"); the tier classification + strings come from the shared leaf so
+// email / Discord / strip can't drift. Returns '' for an empty set. {N} is the
+// browseable catalog size, explicitly NOT "new arrivals".
+export function buildOnboardingBlock(onboarding: OnboardingVendor[]): string {
+  const block = classifyOnboarding(onboarding);
+  if (block.tier === 'none') return '';
+  // Bold vendor name (parity with the drop-group header); the raw name is
+  // vendor-controlled, so escape Discord metachars before the ** wrap.
+  const vendorRow = (v: OnboardingVendor) => vendorPieces(`**${escapeDiscordMd(v.displayName)}**`, v.n);
+
+  if (block.tier === 'single') {
+    return [NOW_TRACKING, vendorRow(block.vendor)].join('\n');
+  }
+  if (block.tier === 'batched') {
+    // pieces repeats per row by construction (RUTR).
+    return [NOW_TRACKING, batchedHeadline(block.count), ...block.vendors.map(vendorRow)].join('\n');
+  }
+  // Collapse (>=5): count headline + comma names, NO per-vendor counts.
+  const names = block.vendors.map((v) => escapeDiscordMd(v.displayName)).join(', ');
+  return [collapseHeadline(block.count), names].join('\n');
+}
+
+export function buildDescription(
+  rows: DigestRow[],
+  now: Date,
+  onboarding: OnboardingVendor[] = [],
+): string {
+  // Onboarding block rides ABOVE the drop groups, separated by a blank line. It's
+  // small (a handful of short lines), but its length counts against the 4096 cap,
+  // so the prefix is folded into every cap check below.
+  const onboardingBlock = buildOnboardingBlock(onboarding);
+  const prefix = onboardingBlock ? `${onboardingBlock}\n\n` : '';
+
   const groups = groupByVendor(rows);
   let rendered = groups.map((g) => renderGroup(g, now, false));
   let description = rendered.join('\n\n');
@@ -246,21 +288,22 @@ export function buildDescription(rows: DigestRow[], now: Date): string {
   // bulk-drop fleet expansion shouldn't 400 the POST or silently eat the
   // tail. Collapse quietest vendors (groups are busiest-first, so collapse
   // from the end) to header + honest full-count tail, loudly.
-  for (let i = groups.length - 1; description.length > EMBED_DESCRIPTION_CAP && i >= 0; i--) {
+  for (let i = groups.length - 1; (prefix + description).length > EMBED_DESCRIPTION_CAP && i >= 0; i--) {
     const group = groups[i];
     if (!group) continue; // noUncheckedIndexedAccess — unreachable within bounds
     console.log(
-      `digest: over ${EMBED_DESCRIPTION_CAP} chars (${description.length}); collapsing ${group.vendor} (${group.rows.length} rows) to header+tail`,
+      `digest: over ${EMBED_DESCRIPTION_CAP} chars (${(prefix + description).length}); collapsing ${group.vendor} (${group.rows.length} rows) to header+tail`,
     );
     rendered[i] = renderGroup(group, now, true);
     description = rendered.join('\n\n');
   }
-  if (description.length > EMBED_DESCRIPTION_CAP) {
+  let full = prefix + description;
+  if (full.length > EMBED_DESCRIPTION_CAP) {
     // Every group already collapsed and still over — truncate hard, loudly.
     console.log(`digest: still over cap after collapsing all groups; hard-truncating`);
-    description = `${description.slice(0, EMBED_DESCRIPTION_CAP - 1)}…`;
+    full = `${full.slice(0, EMBED_DESCRIPTION_CAP - 1)}…`;
   }
-  return description;
+  return full;
 }
 
 export function buildTitle(now: Date): string {
@@ -302,6 +345,37 @@ async function fetchRows(): Promise<DigestRow[]> {
   return suppressBulkDump(rows as unknown as DigestRow[]);
 }
 
+// CTK-214 — vendors pending a DISCORD onboarding announcement (channel-scoped,
+// migration 0069). Read-only; the stamp is a SEPARATE post-POST call so a
+// post-failure re-announces next digest (benign) rather than under-announcing.
+async function fetchPendingOnboarding(): Promise<OnboardingVendor[]> {
+  const { getNeonSql } = await import('../lib/db/neon.ts');
+  const sql = getNeonSql();
+  const rows = await sql`
+    SELECT vendor_slug, display_name, n
+    FROM get_pending_onboarding_announcements('discord')
+  `;
+  return (rows as unknown as { vendor_slug: string; display_name: string; n: number }[]).map((r) => ({
+    vendorSlug: r.vendor_slug,
+    displayName: r.display_name,
+    n: r.n,
+  }));
+}
+
+// CTK-214 — fire-once DISCORD stamp, called ONLY after a successful webhook POST.
+// Per-channel (0069), so it never blanks the email pending set — the two crons no
+// longer race. A dry-run never reaches here (no POST), so a local dry-run can't
+// stamp prod state.
+async function markOnboardingAnnounced(slugs: string[]): Promise<void> {
+  if (slugs.length === 0) return;
+  const { getNeonSql } = await import('../lib/db/neon.ts');
+  const sql = getNeonSql();
+  const stamped = await sql`
+    SELECT stamped_slug FROM mark_onboarding_announced(${slugs}::text[], 'discord'::text)
+  `;
+  console.log(`digest: stamped discord onboarding announce for ${stamped.length} vendor(s)`);
+}
+
 async function main(): Promise<number> {
   const dryRun = process.argv.includes('--dry-run');
   const now = new Date();
@@ -314,8 +388,13 @@ async function main(): Promise<number> {
     return 0;
   }
 
+  // CTK-214 — pending DISCORD onboarding announcements; the block renders above
+  // the drop groups (and rides the dry-run print for eyeball). The fire-once stamp
+  // is a SEPARATE post-POST call below, so it lands only after a successful post.
+  const onboarding = await fetchPendingOnboarding();
+
   const title = buildTitle(now);
-  const description = buildDescription(rows, now);
+  const description = buildDescription(rows, now, onboarding);
   console.log(
     `digest: ${rows.length} rows, ${new Set(rows.map((r) => r.vendor_display_name)).size} vendors, ${description.length} chars`,
   );
@@ -354,6 +433,10 @@ async function main(): Promise<number> {
   } else {
     console.log(`digest: posted (HTTP ${response.status}, no message body)`);
   }
+
+  // Post-POST success path ONLY — stamp the announced vendors fire-once (channel
+  // 'discord'). A stamp failure re-announces next digest (benign).
+  await markOnboardingAnnounced(onboarding.map((v) => v.vendorSlug));
   return 0;
 }
 

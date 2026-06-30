@@ -23,6 +23,14 @@
 
 import { formatDataRow } from '../format/data-row.ts';
 import type { DataRowField } from '@/components/ui/data-row';
+import {
+  NOW_TRACKING,
+  batchedHeadline,
+  classifyOnboarding,
+  collapseHeadline,
+  vendorPieces,
+  type OnboardingVendor,
+} from '../format/onboarding-announcement.ts';
 import { unsubscribeUrl } from './token.ts';
 import { FROM } from './from.ts';
 // Bare-node-safe leaf (no next/* or @/) — see lib/queries/category-exclusion.ts.
@@ -238,6 +246,41 @@ export function groupByVendor(rows: DigestRow[]): VendorGroup[] {
   );
 }
 
+// CTK-214 — the "now tracking" onboarding block, rendered ABOVE the per-vendor
+// drop groups in the recipient-independent body. Copy is canon (branding-guide
+// §"now tracking"); the tier classification + strings come from the shared leaf
+// so email / Discord / strip can't drift. HTML styling (bold vendor name, light
+// hairline-separated block — NO boxed banner per INV-02) lands here. Returns ''
+// for an empty set so buildListingsHtml stays byte-identical when nothing is
+// pending. {N} is the browseable catalog size, explicitly NOT "new arrivals".
+export function buildOnboardingHtml(onboarding: OnboardingVendor[]): string {
+  const block = classifyOnboarding(onboarding);
+  if (block.tier === 'none') return '';
+
+  const line = (html: string) =>
+    `<p style="margin:0 0 10px;font-family:${SANS};font-size:15px;line-height:1.5;color:${INK};">${html}</p>`;
+  // Bold vendor name (parity with the drop-group header's bolded vendor); the
+  // raw display name is vendor-controlled, so HTML-escape before <strong>.
+  const vendorRow = (v: OnboardingVendor) =>
+    line(vendorPieces(`<strong>${htmlEscape(v.displayName)}</strong>`, v.n));
+
+  let inner: string;
+  if (block.tier === 'single') {
+    inner = line(NOW_TRACKING) + vendorRow(block.vendor);
+  } else if (block.tier === 'batched') {
+    // pieces repeats per row by construction (RUTR) — vendorPieces bakes the noun.
+    inner = line(NOW_TRACKING) + line(batchedHeadline(block.count)) + block.vendors.map(vendorRow).join('');
+  } else {
+    // Collapse (>=5): count headline + comma names, NO per-vendor counts.
+    const names = block.vendors.map((v) => htmlEscape(v.displayName)).join(', ');
+    inner = line(collapseHeadline(block.count)) + line(names);
+  }
+
+  // Light block, hairline-separated from the drop groups below. The separation IS
+  // the honest framing — no boxed banner / card / badge / icon (INV-02 close).
+  return `<div style="margin-bottom:28px;padding-bottom:20px;border-bottom:1px solid ${LINE};">${inner}</div>`;
+}
+
 // The listings content block — the recipient-INDEPENDENT body, rendered once.
 // Email has no length ceiling, so every line renders: vendor header + one line
 // per listing. The field-level brand render (bold name, em-dash, struck/forest
@@ -246,9 +289,14 @@ export function groupByVendor(rows: DigestRow[]): VendorGroup[] {
 // (not MONO): formatDataRow() emits one channel-neutral string and re-segmenting
 // it to inject MONO would re-format, violating the wrap-don't-reformat lock
 // (INV-01).
-export function buildListingsHtml(rows: DigestRow[], now: Date): string {
+export function buildListingsHtml(
+  rows: DigestRow[],
+  now: Date,
+  onboarding: OnboardingVendor[] = [],
+): string {
+  const onboardingHtml = buildOnboardingHtml(onboarding);
   const groups = groupByVendor(rows);
-  return groups
+  const groupsHtml = groups
     .map((group) => {
       const n = group.rows.length;
       const header =
@@ -265,6 +313,7 @@ export function buildListingsHtml(rows: DigestRow[], now: Date): string {
       return `<div style="margin-bottom:28px;">${header}\n${lines}</div>`;
     })
     .join('\n');
+  return onboardingHtml + groupsHtml;
 }
 
 // CAN-SPAM footer: product-voice, FULL-INK (legally-required text must stay
@@ -378,6 +427,43 @@ async function fetchRows(): Promise<DigestRow[]> {
   return suppressBulkDump(rows as unknown as DigestRow[]);
 }
 
+// CTK-214 — vendors pending an EMAIL onboarding announcement (channel-scoped,
+// migration 0069). Read-only; the stamp is a SEPARATE post-send call so a
+// send-failure re-announces next digest (benign) rather than silently dropping a
+// vendor (under-announce). NEVER stamp in this fetch.
+async function fetchPendingOnboarding(): Promise<OnboardingVendor[]> {
+  const { getNeonSql } = await import('../db/neon.ts');
+  const sql = getNeonSql();
+  // The RPC already orders (n DESC, vendor_slug) and applies the CTK-213 belt +
+  // honest-framing in-stock count.
+  const rows = await sql`
+    SELECT vendor_slug, display_name, n
+    FROM get_pending_onboarding_announcements('email')
+  `;
+  return (rows as unknown as { vendor_slug: string; display_name: string; n: number }[]).map((r) => ({
+    vendorSlug: r.vendor_slug,
+    displayName: r.display_name,
+    n: r.n,
+  }));
+}
+
+// CTK-214 — fire-once per-channel stamp, called ONLY in the post-send success
+// path (after a real Resend send to >=1 recipient). Idempotent server-side (only
+// stamps rows still NULL). A run that did not actually deliver (no-events,
+// no-recipients, dry-run) must NOT reach here — stamping a non-send is the unsafe
+// under-announce direction, and would wrongly anchor LEAST(email, discord) on the
+// /new strip's onboarded_at. (/lead-backend confirm resolved: only an actual send
+// counts as "sent".)
+async function markOnboardingAnnounced(slugs: string[]): Promise<void> {
+  if (slugs.length === 0) return;
+  const { getNeonSql } = await import('../db/neon.ts');
+  const sql = getNeonSql();
+  const stamped = await sql`
+    SELECT stamped_slug FROM mark_onboarding_announced(${slugs}::text[], 'email'::text)
+  `;
+  console.log(`email-digest: stamped email onboarding announce for ${stamped.length} vendor(s)`);
+}
+
 async function fetchRecipients(): Promise<Recipient[]> {
   const { getNeonSql } = await import('../db/neon.ts');
   const sql = getNeonSql();
@@ -426,9 +512,15 @@ export async function runEmailDigest(now: Date): Promise<DigestResult> {
     return { status: 'no-recipients', rows: rows.length, recipients: 0, sent: 0 };
   }
 
+  // CTK-214 — pending EMAIL onboarding announcements (channel-scoped). Fetched
+  // here (read-only); the fire-once stamp is a SEPARATE post-send call below, so
+  // it lands only after a real send. The block renders above the drop groups in
+  // the recipient-independent body (and rides the dry-run envelope for eyeball).
+  const onboarding = await fetchPendingOnboarding();
+
   // Render the listings body ONCE (recipient-independent). The footer
   // unsubscribe link is the only per-recipient element.
-  const listingsHtml = buildListingsHtml(rows, now);
+  const listingsHtml = buildListingsHtml(rows, now, onboarding);
   const subject = buildSubject(now);
 
   // Keyless dry-run guard, mirroring lib/email/send.ts. Off-prod with no key:
@@ -476,5 +568,12 @@ export async function runEmailDigest(now: Date): Promise<DigestResult> {
   }
 
   console.log(`email-digest: sent ${sent} messages (${rows.length} listings)`);
+
+  // Post-send success path ONLY — the send completed to >=1 recipient. Stamp the
+  // announced vendors fire-once so the next digest's pending set excludes them.
+  // A stamp failure here re-announces next digest (benign double-announce) rather
+  // than the silent under-announce a pre-send stamp risks on send-failure.
+  await markOnboardingAnnounced(onboarding.map((v) => v.vendorSlug));
+
   return { status: 'sent', rows: rows.length, recipients: recipients.length, sent };
 }

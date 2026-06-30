@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { cache } from 'react';
 import { Suspense, type ReactNode } from 'react';
 import { ListingCard } from '@/components/listing-card';
+import { OnboardingStrip } from '@/components/onboarding-strip';
 import { GroupDivider } from '@/components/group-divider';
 import { DataRowSkeleton } from '@/components/ui/data-row-skeleton';
 import { PageEyebrow, PageEyebrowSkeleton } from '@/components/ui/page-eyebrow';
@@ -201,6 +202,14 @@ export default async function NewArrivalsPage({ searchParams }: PageProps) {
       <PageH1 className="mb-8">
         New arrivals.
       </PageH1>
+      {/* CTK-214 — onboarding strip ABOVE the controls, OUTSIDE ArrivalsFeed
+          (never inside arrivals.map). Its own query (get_onboarding_strip_state)
+          keeps the catalog-size {N} off the eyebrow's N ARRIVALS. Renders even
+          when arrivals.length === 0; null fallback — it's supplementary chrome,
+          a skeleton would falsely imply content. */}
+      <Suspense fallback={null}>
+        <OnboardingStrip />
+      </Suspense>
       {/* Two axes only — no INCLUDE OUT OF STOCK on feed surfaces
           (includeOOS omitted → axis not rendered). window passed so sort/category
           clicks preserve ?window=week (CTK-169); /vendor + /deals omit it. */}
