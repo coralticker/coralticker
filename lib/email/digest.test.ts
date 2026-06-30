@@ -7,6 +7,7 @@ import {
   buildListingsHtml,
   buildOnboardingHtml,
   buildSubject,
+  fetchRows,
   groupByVendor,
   htmlEscape,
   listUnsubscribeHeaders,
@@ -292,4 +293,26 @@ test('subject carries the US Eastern date', () => {
     buildSubject(new Date('2026-06-10T02:00:00Z')),
     'CoralTicker — daily drops 2026-06-09',
   );
+});
+
+// CTK-215: fetchRows DB-free wiring test. A fake tagged-template `sql` returns
+// canned rows (no DB), proving fetchRows pipes the query result through
+// suppressBulkDump. The assertion fails if that call is removed from fetchRows
+// (the bulk_cluster just-listed row would survive) — it exercises the guarantee,
+// not a tautology. The SQL (JOIN + equipment filter) is not DB-free testable and
+// is out of scope here; this guards only the post-query wiring.
+test('fetchRows: pipes the query result through suppressBulkDump (DB-free, injected sql)', async () => {
+  const canned: DigestRow[] = [
+    row({ id: 1, raw_title: 'Bulk Dump', event: 'just-listed', bulk_cluster: true }),
+    row({ id: 2, raw_title: 'Organic Arrival', event: 'just-listed', bulk_cluster: false }),
+    row({ id: 3, raw_title: 'Restocked Dump', event: 'back-in-stock', bulk_cluster: true }),
+  ];
+  // The fake only implements the tagged-template call path fetchRows uses; cast
+  // through the param type rather than reconstruct the full NeonQueryFunction.
+  const fakeSql = (() => Promise.resolve(canned)) as unknown as Parameters<typeof fetchRows>[0];
+  const out = await fetchRows(fakeSql);
+  const ids = out.map((r) => r.id).sort((a, b) => a - b);
+  // id 1 (bulk_cluster just-listed) dropped; id 2 (organic just-listed) and
+  // id 3 (bulk_cluster back-in-stock) kept — suppression is event-scoped.
+  assert.deepEqual(ids, [2, 3]);
 });

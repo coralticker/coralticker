@@ -166,7 +166,7 @@ def test_get_recent_cohort_absent_hashes_order_exclude_null(conn, vendor):
 
 
 def main() -> int:
-    conn = db.get_conn()
+    conn = db.get_test_conn()
     vendor = _setup_test_vendor(conn)
     print(f"test vendor: id={vendor['id']} slug={vendor['slug']}")
 

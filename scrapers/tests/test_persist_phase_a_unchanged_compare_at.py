@@ -278,7 +278,7 @@ def test_unchanged_path_writes_none_when_no_markdown(conn, vendor):
 
 
 def main() -> int:
-    with db.get_conn() as conn:
+    with db.get_test_conn() as conn:
         vendor = _setup_test_vendor(conn)
         print(f"test vendor: id={vendor['id']} slug={vendor['slug']}")
 

@@ -196,7 +196,7 @@ def test_tied_onset_orders_by_listing_id(conn, vendor):
 
 
 def main() -> int:
-    with db.get_conn() as conn:
+    with db.get_test_conn() as conn:
         vendor = _setup_test_vendor(conn)
         print(f"test vendor: id={vendor['id']} slug={vendor['slug']}")
 

@@ -297,7 +297,7 @@ def test_last_seen_at_7d_window_skips_dormant(conn, vendor, coral_alpha, coral_b
 
 
 def main() -> int:
-    with db.get_conn() as conn:
+    with db.get_test_conn() as conn:
         vendor = _setup_test_vendor(conn)
         coral_alpha = _setup_test_coral(
             conn, TEST_CORAL_ALPHA_CANONICAL,

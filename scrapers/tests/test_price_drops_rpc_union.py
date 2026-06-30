@@ -215,9 +215,12 @@ try:
         on _ctk208_pricedrops_test would survive into the global get_recent_price_drops
         output and red the test_price_drops_rpc_floor determinism test."""
         yield
-        if not os.environ.get("NEON_DATABASE_URL"):
+        # CTK-215: this teardown DELETEs on the TEST branch via get_test_conn; key the
+        # guard off TEST_DATABASE_URL so it no-ops when there is no test target (and
+        # never opens a prod connection to clean up — NEON_DATABASE_URL is prod).
+        if not os.environ.get("TEST_DATABASE_URL"):
             return
-        with db.get_conn() as c:
+        with db.get_test_conn() as c:
             with c.cursor() as cur:
                 cur.execute(
                     "DELETE FROM vendor_listings WHERE vendor_id IN "
@@ -229,7 +232,7 @@ except ImportError:
 
 
 def main() -> int:
-    with db.get_conn() as conn:
+    with db.get_test_conn() as conn:
         vendor = _setup_test_vendor(conn)
         print(f"test vendor: id={vendor['id']} slug={vendor['slug']}")
         tests = [

@@ -209,10 +209,15 @@ def test_velocity_query(conn) -> None:
 
 
 def _run_all() -> int:
+    from scrapers.common import db
     try:
-        from scrapers.common import db
-        conn = db.get_conn()
-    except Exception as e:  # noqa: BLE001 — no DB reachable -> skip, not fail
+        conn = db.get_test_conn()
+    except db.TestDatabasePointsAtProd:
+        # CTK-215 fail-closed: the prod-collision must NEVER be swallowed into a
+        # skip. Re-raise it (loud, nonzero exit) ahead of the broad no-DB catch
+        # below. The exception message carries no DSN value, so this is leak-safe.
+        raise
+    except Exception as e:  # noqa: BLE001 — unset / no DB reachable -> skip, not fail
         print(f"SKIP test_velocity_query: no DB ({type(e).__name__}: {e})")
         return 0
 

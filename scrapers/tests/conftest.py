@@ -44,18 +44,26 @@ import pytest
 from scrapers.common import db
 
 
-def _have_db() -> bool:
-    return bool(os.environ.get("NEON_DATABASE_URL"))
+def _have_test_db() -> bool:
+    """CTK-215: the requires_db harness targets TEST_DATABASE_URL (a dedicated
+    Neon branch), never NEON_DATABASE_URL (prod). The skip gate keys off the TEST
+    var's presence — absent means no test target, so live-DB tests skip cleanly.
+    Presence does NOT mean "safe to run": get_test_conn() still raises loud if the
+    TEST DSN equals prod (that case must error, never skip)."""
+    return bool(os.environ.get("TEST_DATABASE_URL"))
 
 
 def pytest_collection_modifyitems(config, items):
     """Turn the would-be live-DB connect ERROR into a clean SKIP when there is no
-    NEON_DATABASE_URL. Every live-DB test is marked requires_db (via @mark_requires_db
+    TEST_DATABASE_URL. Every live-DB test is marked requires_db (via @mark_requires_db
     or module-level pytestmark); CI already deselects them with -m "not requires_db",
-    and this covers a bare local run with no .env."""
-    if _have_db():
+    and this covers a bare local run with no test branch configured — preserving
+    CTK-208's bare-`pytest scrapers/tests/` = 0-errors. The TEST_DATABASE_URL==prod
+    case is deliberately NOT skipped here: it has a test target, so its tests run and
+    get_test_conn() fails them loud (CTK-215 fail-closed contract)."""
+    if _have_test_db():
         return
-    skip_db = pytest.mark.skip(reason="NEON_DATABASE_URL not set — live-DB (requires_db) test")
+    skip_db = pytest.mark.skip(reason="TEST_DATABASE_URL not set — live-DB (requires_db) test")
     for item in items:
         if "requires_db" in item.keywords:
             item.add_marker(skip_db)
@@ -63,13 +71,15 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture
 def conn():
-    """Fresh live psycopg connection per test (autocommit + dict_row per
-    scrapers.common.db). Function-scoped so no single connection is held long enough
-    for Neon to drop it mid-suite. Skips if NEON_DATABASE_URL is absent —
-    belt-and-suspenders with the marker gate above."""
-    if not _have_db():
-        pytest.skip("NEON_DATABASE_URL not set — live-DB test")
-    with db.get_conn() as c:
+    """Fresh psycopg connection to the TEST branch per test (autocommit + dict_row per
+    scrapers.common.db, via get_test_conn). Function-scoped so no single connection is
+    held long enough for Neon to drop it mid-suite. Skips if TEST_DATABASE_URL is absent
+    — belt-and-suspenders with the marker gate above. If TEST_DATABASE_URL equals prod,
+    get_test_conn() raises (loud), which surfaces as an error here, not a skip — by
+    design (CTK-215)."""
+    if not _have_test_db():
+        pytest.skip("TEST_DATABASE_URL not set — live-DB test")
+    with db.get_test_conn() as c:
         yield c
 
 
