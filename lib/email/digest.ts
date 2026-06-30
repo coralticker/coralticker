@@ -498,17 +498,65 @@ function chunk<T>(items: T[], size: number): T[][] {
 }
 
 export interface DigestResult {
-  status: 'sent' | 'no-events' | 'no-recipients' | 'dry-run';
+  status: 'sent' | 'no-events' | 'no-recipients' | 'dry-run' | 'already-sent';
   rows: number;
   recipients: number;
   sent: number;
+}
+
+// CTK-218 idempotency. The UTC calendar date is the fire-once key (matches the
+// 13:00 UTC cron fire). toISOString() is always UTC -> 'YYYY-MM-DD'.
+function utcDateKey(now: Date): string {
+  return now.toISOString().slice(0, 10);
+}
+
+// Has a successful send already been recorded for this UTC date? Reuses the same
+// dynamic-import seam as fetchRows so neon.ts's module-scope env throw stays out of
+// test runs. Returns the recorded sent_count, or null when no row exists yet today.
+async function fetchTodayRunCount(now: Date): Promise<number | null> {
+  const { getNeonSql } = await import('../db/neon.ts');
+  const sql = getNeonSql();
+  const rows = await sql`
+    SELECT sent_count FROM email_digest_runs WHERE sent_date = ${utcDateKey(now)}::date
+  `;
+  const [first] = rows as unknown as { sent_count: number }[];
+  return first ? Number(first.sent_count) : null;
+}
+
+// Record the fire-once row for this UTC date. ON CONFLICT DO NOTHING keeps it a true
+// once-per-day write even if two runs slip past the entry guard and both reach here.
+async function recordRun(now: Date, sentCount: number): Promise<void> {
+  const { getNeonSql } = await import('../db/neon.ts');
+  const sql = getNeonSql();
+  await sql`
+    INSERT INTO email_digest_runs (sent_date, sent_count)
+    VALUES (${utcDateKey(now)}::date, ${sentCount})
+    ON CONFLICT (sent_date) DO NOTHING
+  `;
 }
 
 // Orchestrator the cron route calls inside its try/catch. Throws on any send
 // failure (prod-keyless, Resend in-band error) so the route alerts the operator
 // channel and returns 500 — loud failure, no silent partial send. The 0-event
 // and 0-recipient no-ops return normally (route -> 200).
-export async function runEmailDigest(now: Date): Promise<DigestResult> {
+export async function runEmailDigest(
+  now: Date,
+  opts: { force?: boolean } = {},
+): Promise<DigestResult> {
+  // CTK-218 fire-once guard: a successful send already recorded for this UTC date
+  // -> no-op. Catches a missed-cron manual re-fire racing a recovered cron, or two
+  // workflow_dispatches landing together. --force (run_email_digest.ts) bypasses for
+  // the legitimate "cron missed, re-fire today" case.
+  if (!opts.force) {
+    const already = await fetchTodayRunCount(now);
+    if (already !== null) {
+      console.log(
+        `email-digest: already sent ${already} message(s) for ${utcDateKey(now)} (UTC); skipping. Use --force to re-send.`,
+      );
+      return { status: 'already-sent', rows: 0, recipients: 0, sent: already };
+    }
+  }
+
   const rows = await fetchRows();
   if (rows.length === 0) {
     // Near-impossible across 11 hourly-scraped vendors; if it happens, skip
@@ -558,6 +606,18 @@ export async function runEmailDigest(now: Date): Promise<DigestResult> {
   const resend = getResend();
 
   let sent = 0;
+  const idempotencyDate = utcDateKey(now);
+  // CTK-218 F1 — a forced re-send must actually deliver. The non-force key
+  // (email-digest-{date}-{n}) is exactly what makes a same-day re-dispatch dedup at
+  // Resend (24h window) — correct for the cron path. But --force exists for the legit
+  // "cron missed, re-fire today" case, and with the SAME key Resend would dedup the
+  // re-send too: status:'sent' with a count, zero delivered. So under force, append a
+  // per-RUN nonce (derived once from `now`, shared by every batch this run, distinct
+  // across runs since each invocation's `now` differs) — Resend sees a new request and
+  // sends, while two batches in one run still differ by index. The non-force key is
+  // untouched.
+  const forceNonce = opts.force ? `-f${now.getTime().toString(36)}` : '';
+  let batchIndex = 0;
   for (const batch of chunk(recipients, BATCH_SIZE)) {
     const messages = batch.map((r) => ({
       from: FROM,
@@ -571,12 +631,35 @@ export async function runEmailDigest(now: Date): Promise<DigestResult> {
     // swallowed. Across MULTIPLE batches (>100 recipients) this is NOT atomic:
     // a throw on batch N leaves batches 1..N-1 already sent with no resume
     // cursor. Moot at v1's single chunk; no continuation built.
-    const { error } = await resend.batch.send(messages);
+    //
+    // CTK-218 — the Resend Idempotency-Key closes the Resend-side double-send
+    // window (24h dedup). Keyed by UTC date + batch index: a same-day re-fire
+    // regenerates the identical key per batch so Resend dedups, WHILE distinct
+    // indices keep multi-batch from deduping batch 2 against batch 1 (a bare
+    // date-only key would under-send the second chunk). The directive key was
+    // email-digest-{utc-date}; the -{index} suffix preserves that intent and keeps
+    // the unbuilt multi-batch path correct if it is ever exercised. forceNonce is ''
+    // on the cron path (dedup intact) and a per-run suffix under --force (F1: the
+    // re-send actually delivers instead of deduping against the original).
+    const { error } = await resend.batch.send(messages, {
+      idempotencyKey: `email-digest-${idempotencyDate}-${batchIndex}${forceNonce}`,
+    });
     if (error) {
       throw new Error(`Resend batch error: ${error.name}: ${error.message}`);
     }
     sent += messages.length;
+    batchIndex += 1;
   }
+
+  // CTK-218 — record the fire-once row IMMEDIATELY after the send succeeds, before
+  // any other bookkeeping. Double-send (user-visible) is the worst failure direction,
+  // so the idempotency row is written ahead of markOnboardingAnnounced: if the
+  // onboarding stamp later throws, the day is already recorded sent (a re-fire no-ops)
+  // and the only fallout is a benign re-announce next digest. ON CONFLICT DO NOTHING
+  // in recordRun keeps it once-per-day under a race. The double-send risk is MINIMIZED,
+  // not eliminated — a crash between Resend's 200 and this commit leaves the residual
+  // to the Resend key above.
+  await recordRun(now, sent);
 
   console.log(`email-digest: sent ${sent} messages (${rows.length} listings)`);
 

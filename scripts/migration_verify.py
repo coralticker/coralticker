@@ -31,6 +31,43 @@ Example shape (do not uncomment — illustrative):
 from __future__ import annotations
 
 
+def verify_0071(conn):
+    """CTK-218 -- confirm the email_digest_runs idempotency table landed live with the
+    expected column shape (committed != applied, feedback_migration_committed_not_applied).
+    Live-DB-only: table + column presence. Behavioral guarantees (entry no-op, sent-only
+    write ordering) live in the TS digest path, not here."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT column_name, data_type FROM information_schema.columns "
+            "WHERE table_name = 'email_digest_runs'"
+        )
+        cols = {r["column_name"]: r["data_type"] for r in cur.fetchall()}
+        if not cols:
+            raise AssertionError("0071 verify: email_digest_runs table missing after apply")
+        expected = {"sent_date": "date", "sent_count": "integer", "sent_at": "timestamp with time zone"}
+        for name, want in expected.items():
+            got = cols.get(name)
+            if got is None:
+                raise AssertionError(f"0071 verify: email_digest_runs missing column {name!r}")
+            if got != want:
+                raise AssertionError(
+                    f"0071 verify: email_digest_runs.{name} is {got!r}, expected {want!r}"
+                )
+
+        # sent_date must be the PRIMARY KEY (the fire-once key). A table created without
+        # the PK constraint would silently allow duplicate same-day rows.
+        cur.execute(
+            "SELECT a.attname FROM pg_index i "
+            "JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) "
+            "WHERE i.indrelid = 'email_digest_runs'::regclass AND i.indisprimary"
+        )
+        pk_cols = {r["attname"] for r in cur.fetchall()}
+        if pk_cols != {"sent_date"}:
+            raise AssertionError(
+                f"0071 verify: email_digest_runs primary key is {sorted(pk_cols)}, expected ['sent_date']"
+            )
+
+
 def verify_0069(conn):
     """CTK-214 Discord-parity — confirm the per-channel split landed live: both channel
     columns present, the old single column GONE, the channel-param functions callable,

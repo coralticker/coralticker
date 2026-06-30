@@ -1,0 +1,63 @@
+name: email-digest-watchdog
+
+# CTK-218 no-send heartbeat for the daily email digest. INDEPENDENT trigger by
+# design — must NOT share the digest's failure mode (which rides discord-digest.yml).
+# A successful send writes one email_digest_runs row per UTC date; this checks for
+# today's row and pings the operator channel (Slack) if it is absent, self-
+# disambiguating with the day's qualifying-drops count (scripts/email_digest_watchdog.py).
+on:
+  schedule:
+    # 18:00 UTC = 5h after the 13:00 UTC digest fire, so a healthy send has written
+    # today's row by now. Top-of-hour slot is acceptable here (the open-items.md
+    # top-of-hour cron-degradation discipline is waived): the watchdog only needs to
+    # land sometime after the digest window — best-effort GH cron lateness is fine.
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: email-digest-watchdog
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Preflight NEON_DATABASE_URL
+        uses: ./.github/actions/preflight-neon-secret
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+      - name: Check email digest heartbeat
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python -m scripts.email_digest_watchdog
+
+      # The watchdog exits 0 on a healthy-OR-missing-row check (the missing-row
+      # ping IS the signal). A non-zero exit means the watchdog ITSELF failed (DB
+      # unreachable, webhook non-2xx) — surface that distinctly so it isn't read as
+      # "digest healthy".
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"email-digest-watchdog failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"
