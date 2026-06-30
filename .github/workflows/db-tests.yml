@@ -79,6 +79,14 @@ jobs:
             --project-id "${NEON_PROJECT_ID}" \
             --name "${BRANCH_NAME}" \
             --output json | python -c "import sys,json; print(json.load(sys.stdin)['branch']['id'])")
+          # CTK-219 /code-review F2: neonctl can return an empty id/DSN without a
+          # non-zero exit, which set -e won't catch — and an empty TEST_DATABASE_URL
+          # makes conftest SKIP every requires_db test so pytest exits 0 on a suite
+          # that tested NOTHING (false green, the exact drift D3 exists to catch).
+          # Fail loud at the source instead.
+          if [ -z "${BRANCH_ID}" ]; then
+            echo "FATAL: neonctl returned an empty branch id"; exit 1
+          fi
           echo "BRANCH_ID=${BRANCH_ID}" >> "$GITHUB_ENV"
           # Connection string for the new branch. Command-substituted (not printed);
           # masked before it touches $GITHUB_ENV so it can never surface in a log.
@@ -87,6 +95,9 @@ jobs:
             --database-name neondb \
             --role-name neondb_owner \
             --pooled)
+          if [ -z "${DSN}" ]; then
+            echo "FATAL: neonctl returned an empty connection string"; exit 1
+          fi
           echo "::add-mask::${DSN}"
           echo "TEST_DATABASE_URL=${DSN}" >> "$GITHUB_ENV"
           echo "created branch ${BRANCH_NAME} (${BRANCH_ID})"
@@ -106,19 +117,57 @@ jobs:
             python -m scripts.apply_migration "${nn}" --test
           done
 
+      - name: Scrub user PII from the ephemeral branch
+        # CTK-219 /code-review F5: the branch is cut from prod, so it carries a full
+        # copy of email_signups (real user emails + confirmation tokens). The repaired
+        # requires_db suite owns its seed data (data-independent), so it never reads
+        # this — TRUNCATE it to shrink where prod PII lives. CASCADE clears any
+        # FK-dependent rows; tests that need signup rows seed their own. Fails loud
+        # (no `|| true`) — a branch that couldn't be scrubbed shouldn't run the suite.
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from scrapers.common import db
+          with db.get_test_conn() as conn:
+              with conn.cursor() as cur:
+                  cur.execute("TRUNCATE email_signups CASCADE")
+          print("scrubbed email_signups (CASCADE) on the ephemeral branch")
+          PY
+
       - name: Run requires_db suite against the ephemeral branch
-        run: python -m pytest --strict-markers -m requires_db scrapers/tests/
+        run: |
+          set -euo pipefail
+          # CTK-219 /code-review F2 (belt to the create-step source guard): never let an
+          # empty TEST_DATABASE_URL reach pytest — conftest would skip every requires_db
+          # test and pytest would exit 0 on an unrun suite (false green).
+          if [ -z "${TEST_DATABASE_URL:-}" ]; then
+            echo "FATAL: TEST_DATABASE_URL is empty at the pytest step — refusing to report"
+            echo "green on a suite that would skip everything."; exit 1
+          fi
+          python -m pytest --strict-markers -m requires_db scrapers/tests/
 
       - name: Delete ephemeral Neon branch
         if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -uo pipefail
-          if [ -n "${BRANCH_ID:-}" ]; then
-            neonctl branches delete "${BRANCH_ID}" --project-id "${NEON_PROJECT_ID}" \
-              || echo "branch delete failed (non-fatal — clean up stragglers in the Neon console)"
-          else
+          if [ -z "${BRANCH_ID:-}" ]; then
             echo "no BRANCH_ID recorded — nothing to delete"
+            exit 0
           fi
+          if neonctl branches delete "${BRANCH_ID}" --project-id "${NEON_PROJECT_ID}"; then
+            echo "deleted ephemeral branch ${BRANCH_ID}"
+            exit 0
+          fi
+          # CTK-219 /code-review F6: a swallowed delete failure leaves a branch (a prod
+          # copy) alive with no signal. Alert the operator instead so the straggler gets
+          # cleaned up manually. Don't fail the job on the alerting curl itself.
+          echo "branch delete FAILED for ${BRANCH_ID} — alerting operator"
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"db-tests: FAILED to delete ephemeral Neon branch ${BRANCH_ID} (a prod-data copy — delete it manually in the Neon console): ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}" || echo "Slack alert for the delete failure also failed; see the Neon console"
 
       - name: Slack alert on failure
         if: failure()

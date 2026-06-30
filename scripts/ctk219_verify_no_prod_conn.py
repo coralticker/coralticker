@@ -49,7 +49,12 @@ def _get_conn_call_lines(tree: ast.AST) -> list[int]:
 
 def main() -> int:
     offenders: list[str] = []
-    for path in sorted(TESTS_DIR.glob("*.py")):
+    # rglob (recursive) — a test module in a subdir of scrapers/tests/ (an
+    # integration/ suite, a helpers package) must not slip past the guard. The
+    # direct-import call form it might use is also the one the conftest
+    # module-attribute monkeypatch cannot intercept, so this static pass is the
+    # only net under it. (CTK-219 /code-review F3.)
+    for path in sorted(TESTS_DIR.rglob("*.py")):
         if path.name in _ALLOWED_FILES:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
