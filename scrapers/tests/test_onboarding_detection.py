@@ -43,10 +43,8 @@ import sys
 import traceback
 
 import psycopg
-from psycopg.rows import dict_row
 
-from scrapers.common import bulk_cluster
-from scrapers.common import db  # noqa: F401 — import side-effect loads NEON_DATABASE_URL from .env
+from scrapers.common import bulk_cluster, db
 
 try:
     import pytest
@@ -140,8 +138,15 @@ def _first_organic(cur, vendor_id: int):
 # ---------------------------------------------------------------------------
 
 def _open_iso_conn() -> psycopg.Connection:
-    url = os.environ["NEON_DATABASE_URL"]
-    return psycopg.connect(url, autocommit=False, row_factory=dict_row)
+    # CTK-219: open via get_test_conn (TEST_DATABASE_URL branch; fails closed on an
+    # unset/prod DSN per CTK-215) instead of raw psycopg.connect(NEON_DATABASE_URL),
+    # which targeted prod directly and skipped on the D3 CI lane (prod omitted there).
+    # get_test_conn returns an autocommit connection; flip to non-autocommit so the
+    # per-test rollback-in-teardown isolation still holds (no write reaches the branch).
+    # dict_row row_factory is already set by get_test_conn.
+    conn = db.get_test_conn()
+    conn.autocommit = False
+    return conn
 
 
 try:
@@ -151,8 +156,8 @@ try:
     def iso_conn():
         """Non-autocommit connection; every test's writes ROLL BACK in teardown —
         nothing reaches the live DB."""
-        if not os.environ.get("NEON_DATABASE_URL"):
-            pytest.skip("NEON_DATABASE_URL not set — live-DB test")
+        if not os.environ.get("TEST_DATABASE_URL"):
+            pytest.skip("TEST_DATABASE_URL not set — live-DB test")
         conn = _open_iso_conn()
         try:
             yield conn
@@ -365,8 +370,8 @@ def test_organic_stamp_fire_once(iso_conn):
 # ---------------------------------------------------------------------------
 
 def main() -> int:
-    if not os.environ.get("NEON_DATABASE_URL"):
-        print("NEON_DATABASE_URL not set — skipping live-DB suite")
+    if not os.environ.get("TEST_DATABASE_URL"):
+        print("TEST_DATABASE_URL not set — skipping live-DB suite")
         return 0
     checks = [
         test_pending_n_is_browseable_in_stock,
