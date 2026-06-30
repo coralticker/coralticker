@@ -293,8 +293,14 @@ _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 #   - The suffix STRUCTURALLY misses the named-coral FP set the broad sweep
 #     wrongly caught (Gorilla Glue, Top Fuel, Rocket Fuel, Firecracker, Dippin
 #     Dots, Fun Dip, Vitamin C Echinata, Mushroom Combo Rack) — none carry a
-#     `- <n><unit>` weight suffix. Leading `-\s*` requires the hyphen separator
-#     so a coral name merely CONTAINING a digit+letter run can't false-fire.
+#     `<dash> <n><unit>` weight suffix. A leading DASH is required so a coral
+#     name merely CONTAINING a digit+unit run (no separator) can't false-fire.
+#   - /code-review fold F2: the separator is a dash CLASS, not bare ASCII '-'.
+#     Real vendor titles use the U+2010 hyphen, U+2013 en-dash, and U+2014
+#     em-dash (em-dash already appears in fixtures); a hard ASCII '-' would let
+#     "AF Zoa Food — 30g" leak. The class is [ASCII-hyphen, U+2010, U+2013,
+#     U+2014]. mg/lb/gal units and decimal sizes are 0-live-SKU speculative
+#     coverage — deferred (Tier 4), same discipline as the supplement skip.
 #   - Python `re`: anchored with `\b`, never `\m\M` (Postgres POSIX; in Python
 #     `\m`/`\M` match literal 'm'/'M' — a silent bug).
 #   - FP check (CTK-217, 2026-06-30): 0 matched corals (named_coral_id NOT NULL)
@@ -307,7 +313,7 @@ _NONCORAL_TITLE_MARKERS = re.compile(
     r"\b(?:sticker|kit|probe|clipper|cartridge|earrings)s?\b"
     r"|pellets?\b"
     r"|\bcoral\s+foods?\b"
-    r"|-\s*\d+\s*(?:g|ml|oz|kg|l)\b",
+    r"|[-‐–—]\s*\d+\s*(?:g|ml|oz|kg|l)\b",
     re.I,
 )
 

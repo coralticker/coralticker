@@ -115,6 +115,13 @@ def test_size_suffix_reroutes_zoa_food_to_equipment():
     assert infer_category(_p("AF Zoa Food - 30g")) == "equipment"
 
 
+def test_size_suffix_em_dash_reroutes_to_equipment():
+    # /code-review fold F2: the separator is a dash CLASS, not bare ASCII '-'.
+    # An em-dash (U+2014, already seen in fixtures) must reroute too. Fails if
+    # the dash class is narrowed back to a hard ASCII '-'.
+    assert infer_category(_p("AF Zoa Food — 30g")) == "equipment"
+
+
 def test_size_suffix_variants_reroute():
     # ml / oz / kg units, with and without a space before the unit. Each title
     # carries a coral token (so a coral category wins) and ONLY the size suffix
@@ -137,10 +144,12 @@ def test_named_fp_set_not_rerouted_by_size_suffix():
     assert infer_category(_p("Mushroom Combo Rack", product_type="Mushroom")) == "mushroom"
 
 
-def test_size_suffix_requires_hyphen_separator():
-    # A coral whose title merely contains a digit+unit run WITHOUT the leading
-    # hyphen separator must not flip. "30 Green Polyps" has no `- <n><unit>`.
-    assert infer_category(_p("Rainbow Acro 30 Green Polyps", product_type="Acropora")) == "sps"
+def test_size_suffix_requires_dash_separator():
+    # /code-review fold F5: a real \d+ + unit run with NO leading dash must NOT
+    # flip — this is what proves the dash anchor is load-bearing. "30g" here
+    # carries a genuine unit; only the absent dash keeps it coral. If the leading
+    # dash class is dropped from the marker, this test FAILS (it would reroute).
+    assert infer_category(_p("Rainbow Acro 30g Colony", product_type="Acropora")) == "sps"
 
 
 def test_size_suffix_does_not_match_non_weight_units():
