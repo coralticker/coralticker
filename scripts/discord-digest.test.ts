@@ -13,14 +13,20 @@ import {
   buildEmbed,
   buildFields,
   buildLine,
+  buildOnboardingBlock,
   buildTitle,
   escapeDiscordMd,
   groupByVendor,
   suppressBulkDump,
   type DigestRow,
 } from './discord-digest.ts';
+import type { OnboardingVendor } from '../lib/format/onboarding-announcement.ts';
 
 const NOW = new Date('2026-06-04T13:21:00Z');
+
+function onboard(displayName: string, n: number, vendorSlug = displayName.toLowerCase()): OnboardingVendor {
+  return { vendorSlug, displayName, n };
+}
 
 function row(overrides: Partial<DigestRow>): DigestRow {
   return {
@@ -52,6 +58,46 @@ test('suppressBulkDump: drops bulk_cluster just-listed, keeps bulk_cluster back-
   assert.ok(!desc.includes('Bulk Dump Coral'), 'bulk_cluster just-listed must be ABSENT from the payload');
   assert.ok(desc.includes('Restocked Dump Coral'), 'bulk_cluster back-in-stock must be PRESENT (event-scoped)');
   assert.ok(desc.includes('Organic Arrival'), 'non-bulk just-listed must be PRESENT');
+});
+
+// ---- CTK-214 onboarding block --------------------------------------------
+
+test('onboarding single: Now tracking. + **Vendor** — N pieces (escaped)', () => {
+  const block = buildOnboardingBlock([onboard('Biota', 276)]);
+  assert.equal(block, 'Now tracking.\n**Biota** — 276 pieces');
+});
+
+test('onboarding batched (2-4): K new vendors + pieces repeats EVERY row (RUTR)', () => {
+  const block = buildOnboardingBlock([onboard('Biota', 276), onboard('Coral Stop', 824)]);
+  assert.equal(block, 'Now tracking.\n2 new vendors:\n**Biota** — 276 pieces\n**Coral Stop** — 824 pieces');
+  assert.equal((block.match(/ pieces/g) ?? []).length, 2);
+});
+
+test('onboarding collapse (>=5): count headline + comma names, NO counts', () => {
+  const block = buildOnboardingBlock(Array.from({ length: 5 }, (_, i) => onboard(`V${i}`, (i + 1) * 10)));
+  assert.equal(block, 'Now tracking 5 new vendors:\nV0, V1, V2, V3, V4');
+  assert.ok(!/ pieces/.test(block), 'collapse drops per-vendor counts entirely');
+});
+
+test('onboarding none: empty set renders nothing', () => {
+  assert.equal(buildOnboardingBlock([]), '');
+});
+
+test('onboarding escapes Discord metachars in vendor names', () => {
+  assert.equal(buildOnboardingBlock([onboard('Reef_Stop*', 12)]), 'Now tracking.\n**Reef\\_Stop\\*** — 12 pieces');
+});
+
+test('buildDescription: onboarding block precedes the drop groups, blank-line separated', () => {
+  const desc = buildDescription([row({})], NOW, [onboard('Biota', 276)]);
+  assert.ok(desc.startsWith('Now tracking.\n**Biota** — 276 pieces\n\n'), 'onboarding rides above the groups');
+  const onboardingAt = desc.indexOf('Now tracking.');
+  const groupAt = desc.indexOf('**WWC** — 1 drop');
+  assert.ok(onboardingAt >= 0 && groupAt > onboardingAt, 'drop group follows the onboarding block');
+});
+
+test('buildDescription: no onboarding -> drop body byte-identical', () => {
+  assert.equal(buildDescription([row({})], NOW), buildDescription([row({})], NOW, []));
+  assert.ok(!buildDescription([row({})], NOW).includes('Now tracking'));
 });
 
 test('just-listed line: bold name + bare Price + Listed relative-time', () => {

@@ -4,6 +4,7 @@
 
 import { unstable_cache } from 'next/cache';
 import { getNeonSql } from '@/lib/db/neon';
+import { EXCLUDED_CATEGORIES } from './category-exclusion';
 
 // Named constants keep literal sites grep-able back to their spec source.
 const PAGE_SIZE = 50; // vendor-inventory pagination chunk.
@@ -38,6 +39,15 @@ export const DEALS_WINDOW_DAYS: number = 7;
 // stays drops.length.
 export const DEALS_PAGE_CAP = 250;
 export const MS_PER_DAY = 86_400_000;
+
+// EXCLUDED_CATEGORIES — the hidden-category denylist HIDDEN from every public feed
+// (/new, /deals, /vendor/[slug], homepage strip). Canonical definition + the full
+// NULL-safe-consumption rationale now live in ./category-exclusion (a dependency-free
+// leaf so the bare-node digest cron can import the same constant — moving it out of
+// this Next-coupled module was required to keep the digest in lockstep; see that file
+// + memory project_bare_node_import_graph). Re-exported here so existing importers and
+// every `${EXCLUDED_CATEGORIES}` call site below resolve unchanged.
+export { EXCLUDED_CATEGORIES };
 
 export interface Listing {
   id: number;
@@ -231,7 +241,7 @@ export async function getRecentDrops(limit = 10): Promise<Listing[]> {
     LEFT JOIN named_corals nc ON nc.id = vl.named_coral_id
     WHERE vl.in_stock = true
       AND vl.first_seen_at > ${sevenDaysAgo}
-      AND vl.category IS DISTINCT FROM 'equipment'
+      AND (vl.category IS NULL OR vl.category <> ALL(${EXCLUDED_CATEGORIES}::text[]))
       AND vl.bulk_cluster = false
     ORDER BY vl.first_seen_at DESC
     LIMIT ${overFetch}
@@ -484,7 +494,7 @@ export async function getVendorInventory(
               AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
               AND (${includeOOSParam}::boolean OR vl.in_stock = true)
               AND vl.is_auction = false
-              AND vl.category IS DISTINCT FROM 'equipment'
+              AND (vl.category IS NULL OR vl.category <> ALL(${EXCLUDED_CATEGORIES}::text[]))
             ORDER BY vl.current_price ASC NULLS LAST, vl.first_seen_at DESC, vl.id
             LIMIT ${PAGE_SIZE} OFFSET ${offset}
           `;
@@ -507,7 +517,7 @@ export async function getVendorInventory(
               AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
               AND (${includeOOSParam}::boolean OR vl.in_stock = true)
               AND vl.is_auction = false
-              AND vl.category IS DISTINCT FROM 'equipment'
+              AND (vl.category IS NULL OR vl.category <> ALL(${EXCLUDED_CATEGORIES}::text[]))
             ORDER BY vl.current_price DESC NULLS LAST, vl.first_seen_at DESC, vl.id
             LIMIT ${PAGE_SIZE} OFFSET ${offset}
           `;
@@ -530,7 +540,7 @@ export async function getVendorInventory(
             AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
             AND (${includeOOSParam}::boolean OR vl.in_stock = true)
             AND vl.is_auction = false
-            AND vl.category IS DISTINCT FROM 'equipment'
+            AND (vl.category IS NULL OR vl.category <> ALL(${EXCLUDED_CATEGORIES}::text[]))
           ORDER BY vl.bulk_cluster ASC, vl.first_seen_at DESC, vl.id
           LIMIT ${PAGE_SIZE} OFFSET ${offset}
         `;
@@ -564,7 +574,12 @@ export async function getVendorInventory(
       // a vl.id tail — order shifts within same-price ties, so cached arrays carry
       // the old within-tie order; bump forces a clean re-query. Still order-only
       // (row set identical) → getVendorInventoryTotal stays unbumped.
-      'getVendorInventoryV9',
+      // V10 (CTK-212): the single-literal equipment exclusion becomes the shared
+      // EXCLUDED_CATEGORIES list (+'invert') — the served SET narrows again (motile
+      // inverts gated out). Lockstep with getVendorInventoryTotalV5 (count must drop
+      // the same rows or phantom pages); stale entries would serve inverts for up to
+      // 300s post-deploy without the bump.
+      'getVendorInventoryV10',
       String(vendorId),
       String(page),
       sort,
@@ -606,7 +621,7 @@ export async function getVendorInventoryTotal(
           AND (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
           AND (${includeOOSParam}::boolean OR vl.in_stock = true)
           AND vl.is_auction = false
-          AND vl.category IS DISTINCT FROM 'equipment'
+          AND (vl.category IS NULL OR vl.category <> ALL(${EXCLUDED_CATEGORIES}::text[]))
       `) as unknown as { total: number | string }[];
       const first = rows[0];
       return first ? Number(first.total) : 0;
@@ -621,7 +636,11 @@ export async function getVendorInventoryTotal(
       // V4 (CTK-186 step 2): count narrows again — equipment rows gated out.
       // Lockstep with getVendorInventoryV7 (same predicate); a mismatch reintro-
       // duces phantom pages (count includes equipment the row feed now omits).
-      'getVendorInventoryTotalV4',
+      // V5 (CTK-212): count narrows again — EXCLUDED_CATEGORIES adds 'invert'.
+      // Lockstep with getVendorInventoryV10 (same shared predicate); without it the
+      // count keeps including the ~15 Biota inverts the row feed now omits → phantom
+      // pages, the exact failure mode the V3/V4 comments above call out.
+      'getVendorInventoryTotalV5',
       String(vendorId),
       category ?? '_',
       includeOOS ? '1' : '0',
@@ -777,9 +796,10 @@ async function orderedEventRows(
     : '';
   if (sort === 'newest' && categoryParam === null) {
     // Bare branch (default /new + /deals). The category-filter JOIN is skipped,
-    // but the equipment exclusion (CTK-186 step 2) needs the same vendor_listings
-    // join — `IS DISTINCT FROM` is NULL-safe so the reclassified None corals pass
-    // while category='equipment' rows drop. SELECT e.* keeps the projection event-
+    // but the hidden-category exclusion (EXCLUDED_CATEGORIES — CTK-186 equipment +
+    // CTK-212 invert) needs the same vendor_listings join. The `(category IS NULL OR
+    // … <> ALL)` form is NULL-safe so reclassified None corals pass while equipment
+    // / invert rows drop. SELECT e.* keeps the projection event-
     // only (vl is join-for-filter, 1:1 on e.id). The wrapper still owns the total
     // order on every path: the arrivals RPC's internal ORDER BY carries no id
     // tiebreak, so "function-internal order" was never contractual here.
@@ -787,23 +807,23 @@ async function orderedEventRows(
       SELECT e.*
       FROM ${sql.unsafe(fnCall)} e
       JOIN vendor_listings vl ON vl.id = e.id
-      WHERE vl.category IS DISTINCT FROM 'equipment'
+      WHERE (vl.category IS NULL OR vl.category <> ALL(${EXCLUDED_CATEGORIES}::text[]))
         ${sql.unsafe(bulkClusterClause)}
       ORDER BY ${sql.unsafe(EVENT_ORDER_LADDER.newest)}
       LIMIT ${capParam}
     `;
   }
   // JOIN branch (sorted/filtered /new + /deals). Category filter folds via NULL
-  // constant-folding; the equipment exclusion ANDs on unconditionally — NULL-safe
-  // so reclassified None corals survive (a plain <> would drop them). When a
-  // category filter IS set, vl.category = <cat> already excludes equipment and
-  // the extra predicate is harmless.
+  // constant-folding; the hidden-category exclusion (EXCLUDED_CATEGORIES) ANDs on
+  // unconditionally — NULL-safe so reclassified None corals survive (a bare
+  // <> ALL would drop them). When a category filter IS set, vl.category = <cat>
+  // already excludes equipment/invert and the extra predicate is harmless.
   return sql`
     SELECT e.*
     FROM ${sql.unsafe(fnCall)} e
     JOIN vendor_listings vl ON vl.id = e.id
     WHERE (${categoryParam}::text IS NULL OR vl.category = ${categoryParam})
-      AND vl.category IS DISTINCT FROM 'equipment'
+      AND (vl.category IS NULL OR vl.category <> ALL(${EXCLUDED_CATEGORIES}::text[]))
       ${sql.unsafe(bulkClusterClause)}
     ORDER BY ${sql.unsafe(EVENT_ORDER_LADDER[sort])}
     LIMIT ${capParam}
@@ -835,7 +855,9 @@ export async function getRecentPriceDrops(
       // shape/scope for up to 300s otherwise.
       // V4 (CTK-186 step 2): served set narrows — orderedEventRows now excludes
       // category='equipment' on both branches.
-      'getRecentPriceDropsV4',
+      // V5 (CTK-212): served set narrows again — orderedEventRows' shared
+      // EXCLUDED_CATEGORIES predicate now also drops 'invert' on both branches.
+      'getRecentPriceDropsV5',
       sort,
       category ?? '_',
     ],
@@ -869,7 +891,10 @@ export async function getLatestPriceDropAt(
     // V2 (CTK-186 step 2): the latest-drop source reads through orderedEventRows,
     // which now excludes category='equipment' — the eyebrow timestamp must not be
     // sourced from an equipment drop. Bump so the value isn't served stale 300s.
-    ['getLatestPriceDropAtV2', category ?? '_'],
+    // V3 (CTK-212): the shared EXCLUDED_CATEGORIES predicate now also drops
+    // 'invert' — the eyebrow must not source its LATEST timestamp from an invert
+    // drop. Same deploy-not-revalidate bump rationale.
+    ['getLatestPriceDropAtV3', category ?? '_'],
     {
       revalidate: 300,
       tags: [`latest-price-drop-${category ?? '_'}`],
@@ -958,10 +983,18 @@ function rpcRowToArrival(row: RpcArrivalRow): ArrivalListing {
 //     base CTE (CTK-186 denylist predicate, migration 0054), so the IG cover and
 //     this feed count ONE coral-only population — the feed reconciles to the
 //     cover's uncapped true_count BY CONSTRUCTION, not coincidence.
-//     NOTE: orderedEventRows still applies its own equipment exclusion (CTK-186) to
-//     both branches; for the week branch that's now redundant-but-harmless (the
-//     guard already excluded equipment). Leave it — the DAY branch reads
-//     get_listing_lead_event (not the guard), so it still needs that filter.
+//     NOTE: orderedEventRows applies the shared EXCLUDED_CATEGORIES exclusion to
+//     both branches. For 'equipment' that's redundant-but-harmless on the week
+//     branch (the guard already drops it at the base CTE). For 'invert' (CTK-212)
+//     it is NOT redundant — the guard's denylist (migration 0054) drops equipment
+//     only, so the wrapper is the ONLY thing hiding inverts on the week feed. This
+//     re-opens a cover/feed COUNT gap: get_f7_arrivals_guarded (what the F7 IG
+//     cover counts) still includes freshly-listed inverts, while this feed now
+//     excludes them — so the week feed can render N fewer than the cover claims.
+//     Closing that is a backend change (add 'invert' to the guard's denylist),
+//     flagged to /lead-backend; out of this frontend ticket's scope.
+//     The DAY branch reads get_listing_lead_event (not the guard), so it needs the
+//     wrapper filter for both categories regardless.
 // Both fnCall strings stay constants-only (WINDOW.*.hours values are module
 // constants, the event-filter is a string literal) per the sql.unsafe invariant
 // — `window` never reaches fnCall as a bind.
@@ -1017,7 +1050,13 @@ export async function getRecentArrivals(
       // entries would keep serving the padded just-listed dumps for up to 300s
       // post-deploy, so the key MUST bump. Week branch shares the key (already
       // guarded at the SQL layer, but the bump is correct for both).
-      'getRecentArrivalsV6',
+      // V7 (CTK-212): BOTH branches narrow — orderedEventRows' shared
+      // EXCLUDED_CATEGORIES predicate now also drops 'invert'. Unlike equipment
+      // (already excluded at the week branch's get_f7_arrivals_guarded base CTE),
+      // the guard does NOT drop invert, so the wrapper predicate is the ONLY thing
+      // hiding inverts on the week feed — load-bearing, not redundant. See the
+      // cover/feed-count flag in the function header.
+      'getRecentArrivalsV7',
       window,
       sort,
       category ?? '_',

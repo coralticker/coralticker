@@ -330,7 +330,8 @@ def test_ctk212_softie_coverage_adds():
     # Each positive assert FAILS if its term is removed from _CATEGORY_PATTERNS.
     assert infer_category(_p("Net Sea Fan Panama")) == "softie"       # \bsea fans?
     assert infer_category(_p("Yellow Mopsella Sea Fan")) == "softie"
-    assert infer_category(_p("Spaghetti Nephthea")) == "softie"       # \bnephthea
+    assert infer_category(_p("Spaghetti Nephthea")) == "softie"       # \bnephth[ey]a
+    assert infer_category(_p("Spaghetti Nephthya")) == "softie"       # /code-review fold: the -ya genus spelling
     assert infer_category(_p("Green Strawberry Tree Coral")) == "softie"  # \btree coral
     # FP boundary — the tokens are phrase/whole-word, never bare "fan"/"tree".
     assert infer_category(_p("Cooling Fan Mount")) is None            # bare "fan" must not -> softie

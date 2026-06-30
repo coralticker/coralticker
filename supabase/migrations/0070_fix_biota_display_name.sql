@@ -1,0 +1,23 @@
+-- CTK-214 pre-apply blocker (Tier 1A-class brand-canon data fix) -- correct biota's
+-- vendors.display_name from the wrong "The Biota Group" to the brand-canon shorthand
+-- "Biota".
+--
+-- display_name IS the render resolver (there is no mapping layer): /vendor/biota, its OG
+-- tags, and the CTK-214 onboarding announcement all read vendors.display_name directly,
+-- so the wrong value has been live on real traffic since CTK-212 onboarded biota.
+-- Migration 0065 set the canonical name to "The Biota Group" (0065:27/38/61) -- that was
+-- incorrect. Brand canon is the single token "Biota" per branding-guide.md:270
+-- §vendor-shorthand (+ :285 "Shorthand Biota is the distinctive single token").
+--
+-- SCOPE -- one row, collateral-free: the join identity is slug/id, never the literal.
+-- /lead-backend's pre-apply audit found "The Biota Group" ONLY as this display_name +
+-- source-data/comments; no denylist/config/matcher keys off the literal. The scraper's
+-- listing-level vendor attribution ("The Biota Group" in biota.yaml / the fixture /
+-- the vendor_listings raw vendor field) is a SEPARATE source-data field and is
+-- deliberately LEFT AS-IS -- no render-side mapping layer is added (display_name is the
+-- resolver).
+--
+-- Apply: python -m scripts.apply_migration 70 --expect-vendor '{"slug":"biota","display_name":"Biota"}'
+-- Verify (committed != applied, feedback_migration_committed_not_applied):
+--   SELECT display_name FROM vendors WHERE slug='biota'  ->  'Biota'.
+UPDATE vendors SET display_name = 'Biota' WHERE slug = 'biota';

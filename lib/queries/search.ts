@@ -23,6 +23,7 @@
 // per-q pollutes the Data Cache for one-shot reads. Direct per-request SQL.
 
 import { getNeonSql } from '@/lib/db/neon';
+import { EXCLUDED_CATEGORIES } from '@/lib/queries/category-exclusion';
 import { buildIlikePatterns } from '@/lib/queries/listing-params';
 import {
   mergeDropContext,
@@ -206,10 +207,12 @@ export interface ListingSearchResult {
 // in_stock = true + active vendor (the OOS story lives one click behind the
 // dictionary class). Sentinel-slug vendor guard matches the vendors class —
 // sentinel rows are test fixtures. first_seen_at DESC; LIMIT cap + 1 drives the
-// overflow flag. category IS DISTINCT FROM 'equipment' (CTK-186 step 2) gives the
-// discovery surface parity with the feed reads — searching "adapter"/"neptune"
-// must not surface equipment the /new + /vendor feeds now exclude. NULL-safe so
-// reclassified None corals stay searchable.
+// overflow flag. The shared EXCLUDED_CATEGORIES denylist (CTK-186 'equipment' +
+// CTK-212 'invert', from ./category-exclusion) gives the discovery surface parity
+// with the feed reads — searching "adapter"/"neptune" must not surface equipment,
+// nor "shrimp"/"crab"/"urchin" Biota's motile inverts, the /new + /vendor feeds
+// now exclude. The (category IS NULL OR … <> ALL) form is NULL-safe so reclassified
+// None corals stay searchable.
 //
 // CT-observed drop context merges MARKERS ONLY: priorPrice + priceDropObservedAt
 // populate so the struck-price Price field and the Q3 lead promotion render with
@@ -248,7 +251,7 @@ export async function searchListings(
     LEFT JOIN named_corals nc ON nc.id = vl.named_coral_id
     WHERE vl.in_stock = true
       AND vl.is_auction = false
-      AND vl.category IS DISTINCT FROM 'equipment'
+      AND (vl.category IS NULL OR vl.category <> ALL(${EXCLUDED_CATEGORIES}::text[]))
       AND v.active = true
       AND v.slug NOT LIKE '!_%' ESCAPE '!'
       AND (${p1}::text IS NULL OR vl.normalized_title ILIKE ${p1} ESCAPE '!')

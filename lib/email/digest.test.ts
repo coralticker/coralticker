@@ -5,6 +5,7 @@ import {
   buildFooter,
   buildLine,
   buildListingsHtml,
+  buildOnboardingHtml,
   buildSubject,
   fetchRows,
   groupByVendor,
@@ -14,6 +15,11 @@ import {
   wrapDigestDoc,
   type DigestRow,
 } from './digest.ts';
+import type { OnboardingVendor } from '../format/onboarding-announcement.ts';
+
+function onboard(displayName: string, n: number, vendorSlug = displayName.toLowerCase()): OnboardingVendor {
+  return { vendorSlug, displayName, n };
+}
 
 const NOW = new Date('2026-06-09T13:00:00Z');
 
@@ -46,6 +52,8 @@ test('suppressBulkDump: drops bulk_cluster just-listed, keeps bulk_cluster back-
     row({ id: 3, raw_title: 'Organic Arrival', event: 'just-listed', bulk_cluster: false }),
   ];
   const html = buildListingsHtml(suppressBulkDump(rows), NOW);
+  assert.ok(html.startsWith('<div'), 'no-onboarding default keeps the drop body byte-identical (no onboarding block)');
+  assert.ok(!html.includes('Now tracking'), 'no onboarding block when none passed');
   assert.ok(!html.includes('Bulk Dump Coral'), 'bulk_cluster just-listed must be ABSENT from the payload');
   assert.ok(html.includes('Restocked Dump Coral'), 'bulk_cluster back-in-stock must be PRESENT (event-scoped)');
   assert.ok(html.includes('Organic Arrival'), 'non-bulk just-listed must be PRESENT');
@@ -182,6 +190,57 @@ test('single-drop vendor header is singular', () => {
 
 test('empty rows produce empty listings html (caller skips the send)', () => {
   assert.equal(buildListingsHtml([], NOW), '');
+});
+
+// ---- CTK-214 onboarding block --------------------------------------------
+
+test('onboarding single: Now tracking. + {Vendor} — {N} pieces, bold escaped name', () => {
+  const html = buildOnboardingHtml([onboard('Biota', 276)]);
+  assert.match(html, /Now tracking\./);
+  assert.match(html, /<strong>Biota<\/strong> — 276 pieces/);
+  // Light block, NOT a boxed banner: hairline border-bottom, no background fill.
+  assert.match(html, /border-bottom:1px solid/);
+  assert.ok(!/background/i.test(html), 'no boxed/filled banner (INV-02)');
+});
+
+test('onboarding batched (2-4): K new vendors + pieces repeats EVERY row (RUTR)', () => {
+  const html = buildOnboardingHtml([
+    onboard('Biota', 276),
+    onboard('Coral Stop', 824),
+    onboard('Austin Aqua Farms', 132),
+  ]);
+  assert.match(html, /Now tracking\./);
+  assert.match(html, /3 new vendors:/);
+  // pieces repeats per row — the noun is NEVER dropped (re-opens the misread).
+  assert.equal((html.match(/ pieces/g) ?? []).length, 3);
+  assert.match(html, /<strong>Coral Stop<\/strong> — 824 pieces/);
+});
+
+test('onboarding collapse (>=5): count headline + comma names, NO per-vendor counts', () => {
+  const html = buildOnboardingHtml(
+    Array.from({ length: 6 }, (_, i) => onboard(`Vendor ${i}`, (i + 1) * 10)),
+  );
+  assert.match(html, /Now tracking 6 new vendors:/);
+  // No bare per-vendor number -> no arrivals misread; the noun never appears.
+  assert.ok(!/ pieces/.test(html), 'collapse form drops per-vendor counts entirely');
+  assert.match(html, /Vendor 0, Vendor 1, Vendor 2, Vendor 3, Vendor 4, Vendor 5/);
+});
+
+test('onboarding none: empty set renders nothing', () => {
+  assert.equal(buildOnboardingHtml([]), '');
+});
+
+test('onboarding block renders ABOVE the per-vendor drop groups in buildListingsHtml', () => {
+  const html = buildListingsHtml([row({})], NOW, [onboard('Biota', 276)]);
+  const onboardingAt = html.indexOf('Now tracking.');
+  const dropGroupAt = html.indexOf('<span style="font-weight:700;">WWC</span>');
+  assert.ok(onboardingAt >= 0 && dropGroupAt >= 0);
+  assert.ok(onboardingAt < dropGroupAt, 'onboarding block precedes the drop groups');
+});
+
+test('honest-framing: onboarding {N} is "pieces", never "arrivals"', () => {
+  const html = buildOnboardingHtml([onboard('Biota', 276)]);
+  assert.ok(!/arrival/i.test(html), 'onboarding count is catalog size, never labeled arrivals');
 });
 
 test('footer: subjectless why-line + per-recipient one-click unsub + postal address + disclaimer', () => {

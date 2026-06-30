@@ -15,6 +15,7 @@ from typing import Iterable, Literal
 import psycopg
 
 from scrapers.common import bulk_cluster
+from scrapers.common import first_organic_drop
 from scrapers.common import images as image_pipeline
 from scrapers.common.matcher import MatchResult
 
@@ -582,6 +583,41 @@ def persist_phase_a(
                 "CTK-198 bulk_cluster write-time hook failed for vendor_id=%s "
                 "(%s: %s) — nightly audit will reconcile.",
                 vendor_id, type(exc).__name__, exc,
+            )
+
+        # CTK-214 — first_organic_drop_at stamp. INSIDE the new-decision gate (same as
+        # the bulk_cluster flip) and AFTER it, so this run's onboarding flood is already
+        # flagged bulk_cluster=true before the organic check reads it. Gating on a new
+        # decision preserves the "empty decisions = zero writes" contract
+        # (test_canary_gates_persist.py::test_persist_phase_a_empty_decisions_no_writes)
+        # — an empty/degraded scrape must touch nothing. The lagging case (a survivor
+        # that pre-exists this run, e.g. an organic drop in the pre-announce gap) is NOT
+        # lost: that survivor stays kept in the guarded window, so the NEXT scrape with
+        # any new row catches it; the frontend 7-day cap backstops a vendor that then
+        # goes fully quiet. The whole gate (announced AND not-stamped AND has-survivor)
+        # lives in the SQL function; this is the cheap fail-soft trigger. Best-effort,
+        # like the bulk_cluster hook: a missed stamp self-heals on the next qualifying
+        # scrape (the gate is idempotent on first_organic_drop_at IS NULL), so the
+        # scrape must not fail here.
+        #
+        # APPLY-ORDER (committed != applied, same contract as the bulk_cluster hook):
+        # migration 0068 must be applied BEFORE this hook deploys. Until then the
+        # stamp_first_organic_drop_at function is undefined, the except below swallows
+        # the error, and every new-decision scrape logs the warning -- no scrape fails,
+        # but no stamp lands either (/code-review CTK-214 [5]).
+        try:
+            stamp = first_organic_drop.stamp_first_organic_drop(conn, vendor_row["slug"])
+            if stamp is not None:
+                log.info(
+                    "CTK-214 first_organic_drop: vendor=%s first_organic_drop_at=%s "
+                    "(guarded-just-listed survivor present) — onboarding strip can retire.",
+                    vendor_row["slug"], stamp,
+                )
+        except Exception as exc:  # noqa: BLE001 — best-effort; next scrape re-checks
+            log.warning(
+                "CTK-214 first_organic_drop stamp failed for vendor=%s (%s: %s) — "
+                "next scrape will re-check.",
+                vendor_row["slug"], type(exc).__name__, exc,
             )
 
     log.info(
