@@ -1,0 +1,82 @@
+name: barrier_reef
+
+on:
+  schedule:
+    # CTK-151 cadence lock per arch §2.7 decision #15 + open-items.md off-minute
+    # discipline.
+    #
+    # 39 * * * * UTC = every hour at :39 past — off-minute lock per the
+    # top-of-hour degradation discipline (:00 cron slots silently degrade under
+    # GH Actions free-tier scheduled-workflow load peaks; empirical evidence in
+    # open-items.md). :39 is free across the fleet (taken minutes: :00/:02/:07/
+    # :11/:12/:13/:17/:19/:21/:23/:25/:29/:31/:33/:37/:41/:43/:47/:49/:51/:53/:57),
+    # mid-hour and well clear of the top-of-hour cluster.
+    #
+    # Hourly cadence: Barrier Reef is an active WYSIWYG LFS — standing stock turns
+    # over and sold rows must flip OOS promptly to avoid the availability-staleness
+    # trust-floor (feedback_aggregator_staleness_tier_floor). Hourly is the fleet
+    # default and the floor this vendor's WYSIWYG cadence needs.
+    - cron: '39 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Concurrency: queue (don't cancel) per the fleet shape. An operator-trigger
+# landing during an in-flight cron fire queues behind the running fire;
+# cancelling would risk truncating a running Phase B mirror loop mid-write
+# (vendor_listings / price_history / R2 image-mirror double-write avoidance).
+concurrency:
+  group: barrier_reef-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # 60-min cap inherits the Shopify-fleet carve-out. Barrier Reef keeps ~779
+    # corals from a ~1,722-row catalog; first cold-start image mirror (~500-600ms
+    # per new row) absorbs cleanly inside a single fire, steady-state hourly fires
+    # finish in a couple minutes. Substantial headroom inside the 60-min ceiling.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Preflight NEON_DATABASE_URL
+        uses: ./.github/actions/preflight-neon-secret
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+      - name: Run Barrier Reef Aquariums scraper
+        id: scrape
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: python -m scrapers.common.run barrier_reef
+
+      - name: Cleanup stale running rows
+        if: always()
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python -m scrapers.common.run barrier_reef --cleanup
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"barrier_reef scraper failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"

@@ -1,0 +1,56 @@
+-- CTK-151 Session 1 — Barrier Reef Aquariums vendors row (Phase 2 vendor wave,
+-- R2R sponsor-roster mine; Renton WA full reef LFS).
+--
+-- Closes the data-side prerequisite for the Barrier Reef scraper landing in the
+-- same CTK: scrapers/common/run.py db.fetch_vendor() reads this row at stage 1
+-- (Config) of the arch §2.1 lifecycle, then merges with
+-- scrapers/vendors/barrier_reef.yaml per arch §2.3 (DB row wins on conflict).
+-- Without this row the scraper fails fast at stage 1 — the right shape;
+-- loud-failure-not-silent-skip.
+--
+-- id disposition: NO explicit id (Cherry CTK-143 idiom — the current fleet
+-- default). The smallserial default assigns nextval(vendors_id_seq). Live
+-- sequence state 2026-07-01: MAX(id)=169 (test rows hold the sequence above the
+-- real-vendor block), so this INSERT takes the next serial value. Sequence-
+-- assigned, not a hand-picked low gap. FK joins on vendor_listings.vendor_id =
+-- vendors.id are id-value-agnostic. Any literal hardcode of Barrier Reef's id in
+-- matcher/notifier/analytics fires the open-items.md L25 vendor-ID stability watch.
+--
+-- Slug canon (CTK-044 / CTK-095): public URLs kebab; DB / YAML / R2 paths snake.
+-- Barrier Reef is a two-word vendor, so the DB/YAML slug is snake 'barrier_reef'
+-- and the public URL is kebab '/vendor/barrier-reef' — the lib/queries/vendors.ts
+-- seam converts (slug.replaceAll('-','_') on read, '_'->'-' on emit), same shape
+-- as pacific_east / tidal_gardens. The slug matches scrapers/vendors/
+-- barrier_reef.yaml `slug:` + the .github/workflows/barrier_reef.yml
+-- `python -m scrapers.common.run barrier_reef` CLI arg in lock-step.
+--
+-- vendors-row columns (per supabase/migrations/0001_init.sql schema):
+--   - id                    smallserial; sequence-assigned (see id disposition).
+--   - slug = 'barrier_reef' matches barrier_reef.yaml slug + workflow CLI arg.
+--   - display_name = 'Barrier Reef Aquariums'  Renton WA full reef LFS; R2R
+--                           sponsor-roster mine (next-scrape-list.md 2026-06-12).
+--   - base_url = 'https://barrierreefaquariums.com'  canonical public domain
+--                           (five-signal re-confirm 2026-07-01; cite-back in the YAML).
+--   - platform = 'shopify'         five-signal re-confirm 2026-07-01.
+--   - scrape_method = 'products_json'  canonical Shopify endpoint shape.
+--   - cadence_label = 'hourly'     arch §2.7 decision #15 + Phase 2 vendor-wave
+--                                   default (39 * * * * UTC, off-minute per
+--                                   open-items.md off-minute discipline). Active
+--                                   WYSIWYG LFS — hourly keeps availability fresh
+--                                   (feedback_aggregator_staleness_tier_floor).
+--   - image_strategy = 'mirror'    default per arch §1.3 + CTK-019 #52;
+--                                   runtime-flippable to 'hotlink' via UPDATE.
+--   - active = true                workflow_dispatch fires immediately; first
+--                                   scheduled cron at the next :39 boundary.
+--
+-- Idempotent re-application: ON CONFLICT (slug) DO NOTHING preserves the row
+-- across migration re-runs + supabase db reset cycles.
+--
+-- seed.sql parity note: supabase/seed.sql carries Phase 1 vendors 1-4 only per
+-- CTK-028 D3 sub-option (a); this migration is the canonical add-path for Barrier
+-- Reef.
+
+INSERT INTO vendors (slug, display_name, base_url, platform, scrape_method, cadence_label, image_strategy, active)
+VALUES
+  ('barrier_reef', 'Barrier Reef Aquariums', 'https://barrierreefaquariums.com', 'shopify', 'products_json', 'hourly', 'mirror', true)
+ON CONFLICT (slug) DO NOTHING;

@@ -1,0 +1,192 @@
+# Barrier Reef Aquariums scraper config (CTK-151 Session 1).
+#
+# Authoritative platform/method fields live on the vendors row (migration
+# 0073_add_barrier_reef_vendor.sql). YAML carries scrape-tuning per arch §2.3 —
+# values that may change without a code edit (delay, page size, max pages, hash
+# anchor, originator prefix, category filter, cohort-OOS). DB row wins on conflict.
+#
+# Config clone of the Shopify fleet: parse_shopify carries the whole fetch/parse
+# path. NO shared-code (parser) edit — tag_allowlist is an already-supported
+# category_filter axis (_should_keep L547-550). NO normalize.py classifier edit
+# either: corals-only ruling this session (see the invert note).
+#
+# ── SHAPE: THE FLEET'S FIRST CORAL-MINORITY tag_allowlist STORE ───────────────
+# This vendor is NOT Cherry/Coral Stop (empty-product_type, no-allowlist,
+# title_denylist-only). It is a full reef LFS where CORALS ARE THE MINORITY:
+# the 2026-07-01 full-catalog walk found 1,722 products spanning fish (~165),
+# inverts (~79), and hundreds of dry-goods / equipment / used-gear / additives /
+# apparel / swag-sticker rows (Coralvue alone = 176). product_type is blank on
+# 1,561/1,722, so a product_type_allowlist (Biota's mechanism) can't discriminate
+# either.
+#
+# FAILURE-ASYMMETRY FLIP (the load-bearing decision — CTK-151 Q1, Jon +
+# /lead-backend ratified 2026-07-01). The no-allowlist posture (Cherry/Coral Stop)
+# rests on failure asymmetry: with no allowlist, novel non-coral junk leaks
+# VISIBLY (one wrong card, caught on eyeball, denylisted on sighting) while an
+# allowlist drops novel coral INVISIBLY — so for a coral-MAJORITY store,
+# visible-junk-in beats invisible-coral-out and you take no allowlist. That
+# asymmetry INVERTS for a coral-MINORITY store: no-allowlist here renders
+# /vendor/barrier-reef as majority fish-and-pumps (catastrophic-junk-in, not a
+# small visible tail), and denylisting ~950 non-coral rows across a dozen classes
+# is unmaintainable. So the posture flips to a tag_allowlist keyed on the clean
+# coral category tags the catalog already carries.
+#
+# THE NEXT LIVESTOCK-STORE CLONE: apply the coral-MINORITY test, do not clone
+# Cherry's no-allowlist logic. Rule of thumb: is the coral share of the catalog a
+# minority, AND are the corals cleanly category-tagged? If yes -> tag_allowlist
+# (this file). If the store is coral-dominant with a small non-coral tail ->
+# no-allowlist + title_denylist (Cherry/Coral Stop). If product_type is a real
+# coral taxonomy -> product_type_allowlist (Biota).
+#
+# THE ONE COST — DRIFT-WATCH BACKSTOP. A tag_allowlist reintroduces
+# invisible-coral-out: a coral the vendor ships under a NEW category tag not in
+# the allowlist (or with no tag at all) drops SILENTLY. This is the single
+# structural cost of the allowlist and it is real. Mitigation
+# (feedback_rotating_bucket_allowlist): scraper_runs.listings_seen catalog-count
+# drift watch + periodic full-catalog re-walk. A re-walk re-audits the tag census
+# for new coral tags and recovers any silently-dropped coral (incl. the accepted
+# single miss below). This backstop is load-bearing, not decorative — the
+# allowlist trades a maintenance-visible drift signal for the majority-junk /vendor
+# page a no-allowlist would produce.
+#
+# ACCEPTED SINGLE MISS (logged for re-walk recovery): "Space Invader Chalice" —
+# a real coral carrying ZERO tags, so the tag_allowlist drops it. The only other
+# zero-tag rows are 5 non-corals (aqua tongs, a fuel surcharge), so the "" empty-
+# tag bucket (JF CTK-037 mechanism) would drag in 5 non-corals to rescue 1 coral —
+# a bad trade, REJECTED. One invisible miss is the accepted cost; the drift-watch
+# re-walk recovers it if it persists / recurs.
+
+slug: barrier_reef
+platform: shopify
+base_url: https://barrierreefaquariums.com
+
+# Standard Shopify endpoint; five-signal re-confirm at build 2026-07-01:
+#   (1) cdn.shopify.com storefront + Shopify theme markup.
+#   (2) Shopify robots.txt; /products.json not disallowed.
+#   (3) no platform-deviation headers (standard Shopify storefront).
+#   (4) /products.json HTTP 200 + canonical products array with the 13-key
+#       first-product shape (body_html / created_at / handle / id / images /
+#       options / product_type / published_at / tags / title / updated_at /
+#       variants / vendor) matching the Shopify-fleet empirical anchor.
+#   (5) read-only catalog crawl of /products.json only; never cart/checkout
+#       (arch §2.5, no new ToS risk vs. the rest of the fleet).
+products_path: /products.json
+
+# Page size at Shopify's max (250). Full-catalog walk 2026-07-01: 1,722 products
+# across 7 pages (250 x6 + 222; page 7 under-full -> short-page terminator).
+# vendor field is HETEROGENEOUS (69 distinct values: 'Barrier Reef Aquariums' 437,
+# 'Coralvue' 176, 'UWW' 98, 'ECC' 88, 'ORA' 79, personal consignor names, ...) —
+# a full LFS reselling many brands, NOT a single-house catalog. That is exactly
+# why this is coral-minority (see the SHAPE block).
+page_size: 250
+
+# Inherits the fleet empirical request_delay_sec=2 lock. 1,722 products / 250 per
+# page = 7 pages x 2s = ~14s of inter-page delay; trivial fetch time. Bump to 3-4s
+# per arch §2.4 retry-policy outcome only if 429s appear.
+request_delay_sec: 2
+
+# Deep, active full-LFS catalog (1,722 rows / 7 pages) -> 12-cap. Above Cherry's
+# 10-cap (1,272/6pp) and below AAF's 15-cap (2,300/10pp). 7 pages today; 12 leaves
+# headroom to ~3,000 rows before a re-tune — deliberately generous because this is
+# a growing general reef store (the FULL catalog is walked, not just the kept
+# coral set, so max_pages must cover the whole non-coral catalog + growth).
+max_pages: 12
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object. Same
+# hash_anchor + same 13-key empirical anchor as the rest of the Shopify fleet
+# (parse_shopify.py shape stability). Empirical anchor (Session 1 walk 2026-07-01):
+# 13 keys = body_html, created_at, handle, id, images, options, product_type,
+# published_at, tags, title, updated_at, variants, vendor.
+hash_anchor: first_product_keys
+
+# originator_prefix=null per the reseller/no-prefix fleet precedent (Reef Chasers /
+# Cornbred / RR / AAF / RUTR / Coral Stop / Biota). Barrier Reef is a full LFS /
+# multi-brand reseller, not a named-coral originator house whose trade names the
+# seed-list attributes. The seed-list (.claude/research/named-coral-seed-list.md)
+# has ZERO Barrier-Reef-attributed canonical entries (grep 2026-07-01), so matcher
+# §3.4 stage-3 synthesis would be a no-op. null is correct; flip only on a future
+# seed-list expansion that attributes canonicals to Barrier Reef.
+originator_prefix: null
+
+# cohort_oos_at_persist: true — trust-floor parity (CTK-105 D-4 lineage) + the
+# fleet-wide default. Net-new vendor, zero prior vendor_listings (migration 0073
+# lands the row in the same CTK), so the first scrape has no prior cohort -> zero
+# would-flip rows (expected listings_oos ~0 on first scrape; the kept live-OOS
+# rows persist as new+OOS, not flips). The C2 first-scrape check is Δ catalog
+# (0 -> kept) ≈ listings_new. Also auto-enrolls Barrier Reef in the health-digest
+# cohort-OOS section (health_digest.py globs vendors/*.yaml and keys on this flag).
+cohort_oos_at_persist: true
+
+# auction_detection: OMITTED (None = no-op, parse_shopify.py permissive default).
+# INV-05 is NOT triggered for Barrier Reef. FULL-catalog walk 2026-07-01 (1,722
+# rows / 7 pages — the FULL catalog, not a page-1 sample, per CTK-142 lesson +
+# feedback_absence_diag_full_catalog_sweep) found ZERO auction signal: no
+# auction/bid/wk_end tag, no product_type:Auction, no auction handle. This is a
+# fixed-price retail LFS (WYSIWYG standing stock, not a bid engine). Two rows
+# tripped the auction-hint substring sweep and are BOTH FALSE POSITIVES, noted so
+# a re-walk does not re-flag them:
+#   - 'Purple "Fauchea" Algae'  (matched "auc" inside "Fauchea"; a macroalgae)
+#   - 'Fauna Marin Elementals Trace Rubidium (RB) 250ml'  (a trace-element additive)
+# Re-confirm at any future re-walk; flip to an auction_detection block + flag
+# /lead-backend if an auction surface ever appears.
+
+# category_filter — tag_allowlist (CTK-151 Q1; the coral-minority posture — see the
+# SHAPE / failure-asymmetry block at the top of this file). NOT a product_type_
+# allowlist (product_type blank on 1,561/1,722) and NOT a no-allowlist title_denylist
+# (coral is the minority; a denylist would have to name ~950 non-coral rows).
+#
+# The 10 allowlist tags are the coral category tags carried by the catalog, from
+# the 2026-07-01 tag census. Case-insensitive membership per _should_keep L547-550
+# (so lowercase 'sps' matches 'SPS'). Keep-set on the locked fixture: 779 corals,
+# ZERO non-coral leak (the 12 keyword-"leak" candidates were hand-audited — all real
+# corals: "Glowlight Torch", "Shattered Light Leptoseris", "TSA Frozen Apple Zoa",
+# etc.; the FISHY keyword-substrings hit coral trade names, not fish). Fish /
+# equipment / apparel / swag / used-gear are excluded BY OMISSION — no denylist to
+# maintain.
+#
+#   Coral WYSIWYG  367   the master WYSIWYG coral tag (distinct from 'SW Fish
+#                        WYSIWYG'; exact tag match, so fish WYSIWYG does NOT leak)
+#   LPS            270
+#   SPS            244
+#   Zoa            127
+#   Soft Coral      38
+#   Mushroom        33
+#   Torch           15   Euphyllia torches (coral-only in this catalog)
+#   ORA Hard        73   ORA aquacultured hard corals (SPS/LPS)
+#   ORA Soft         9   ORA soft corals
+#   $10 Value       20   budget-frag tag; +11 corals NOT otherwise coral-tagged
+#                        (Monti Digitata, Xenia, Paly, Anacropora, Stylocoeniella...),
+#                        all hand-audited real corals, 0 non-coral. A PRICE tag not
+#                        a category tag, so it is the highest drift-risk entry — a
+#                        future $10 non-coral would leak VISIBLY (drift-watch catch).
+#                        Kept per the coral-minority failure asymmetry.
+#
+# INVERT DISPOSITION (CTK-151 Q2 — Jon ruling (a) corals-only, 2026-07-01). The 74
+# pure-invert rows (Marine Snail/Anemone/Misc Invert/Marine Crab/Marine Shrimp/Clam/
+# Sea Star tags) drop BY OMISSION — their tags are not in the allowlist. NOT
+# denylisted; simply not allowed in. The 5 clams/anemones the VENDOR itself tagged
+# 'Coral WYSIWYG' (ORA Gold/Blue Maxima Clams, Nexus Burst BTA, Holy Grail BTA, Ultra
+# Rock Flower Anemone) ride along on that coral tag and classify category='clam' /
+# 'anemone' via normalize._CATEGORY_PATTERNS (\bclams?\b|\btridacna\b ; \banemones?\b|
+# \bbta\b) — Biota-consistent (clams/anemones are displayed coral-adjacent categories,
+# NOT the INV-07-hidden 'invert' bucket for snails/shrimp/crabs). Carrying the full
+# 74-row invert catalog would require a fleet-general normalize.py classifier change
+# (snail/crab/shrimp/sea-star patterns, fleet blast radius) — deliberately OUT of this
+# coral-coverage ship; a fast-follow if Jon wants invert breadth.
+category_filter:
+  # tag_allowlist: the 10 coral category tags. Membership is case-insensitive exact
+  # per _should_keep. NO title_denylist / product_type_allowlist / tag_denylist:
+  # the allowlist admits only coral-tagged rows, so there is nothing non-coral to
+  # deny (the fleet-wide chaeto/macroalgae forward-bind is a no-op here — macroalgae
+  # never carries a coral tag — and is omitted rather than added as dead config).
+  tag_allowlist:
+    - Coral WYSIWYG
+    - LPS
+    - SPS
+    - Zoa
+    - Soft Coral
+    - Mushroom
+    - Torch
+    - ORA Hard
+    - ORA Soft
+    - $10 Value

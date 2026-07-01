@@ -185,6 +185,13 @@ VENDOR_IG: dict[str, VendorIG] = {
     # forward-link is broken. Shorthand "Cherry Corals" (CC reads generic in plain
     # prose). Canon row in branding-guide.md §Usage-rules IG-handle table. No hashtag.
     "cherry":          VendorIG("Cherry Corals",  "@cherrycorals",                None),
+    # CTK-151 — barrier_reef active. Handle confirmed canon 2026-07-01: @barrierreefaq.
+    # FORWARD-link path (strongest, same as RUTR/CoralStop/Biota): the live storefront
+    # (barrierreefaquariums.com) exposes the IG link directly (instagram.com/BarrierReefAq)
+    # in its markup. Handle is @barrierreefaq (abbreviated), NOT @barrierreefaquariums —
+    # the bare-domain guess would be wrong. Shorthand "Barrier Reef". Canon row in
+    # branding-guide.md §Usage-rules IG-handle table. No branded hashtag.
+    "barrier_reef":    VendorIG("Barrier Reef",   "@barrierreefaq",               None),
 }
 
 # Lead-event arm -> canon event verb (rev4 L45-48; cross-channel verb canon).
