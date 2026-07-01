@@ -1,9 +1,16 @@
-"""scrapers/tests/test_health_digest.py — CTK-097 digest-assembly tests.
+"""scrapers/tests/test_health_digest.py — CTK-097 + CTK-221 digest tests.
 
 Pure-function tests against in-memory fixtures (no DB, no network) per plan
 §Implementation plan #9 digest-assembly list + the 2026-06-04 review-fold
-([INACTIVE] line). Reuses the run-703-shaped baseline from
-test_cohort_signal so digest and ping suites pin the same world.
+([INACTIVE] line). Reuses the run-703-shaped baseline from test_cohort_signal
+so digest and ping suites pin the same world.
+
+CTK-221 reshaped the render layer for operator legibility: a react/no-react
+top verdict, per-line severity emoji (🔴/🟠/🟢), duration-in-days on the
+react lines, plain-English nouns, and a trend-noise floor. The bucket
+classifier (classify_for_digest) and the I/O shell are untouched, so the
+bucket-classification tests below are unchanged; the render/verdict tests
+pin the new shape and fail on a format regression.
 
 Runnable as:
   python -m scrapers.tests.test_health_digest
@@ -17,8 +24,12 @@ from datetime import datetime, timezone
 
 from scrapers.common.cohort_signal import DEFAULT_THRESHOLDS
 from scrapers.common.health_digest import (
+    SEV_AMBER,
+    SEV_GREEN,
+    SEV_RED,
     build_cohort_section,
     build_digest,
+    build_verdict,
     classify_for_digest,
     render_vendor_lines,
     slot_for,
@@ -27,6 +38,9 @@ from scrapers.tests.test_cohort_signal import baseline_counts, make_runs, window
 
 UTC = timezone.utc
 EXPECTED_MIN = 3  # aquasd.yaml expected_min_per_category
+# Fixed digest-fire instant, same UTC day as the newest fixture run
+# (2026-06-04 09:51) so duration-in-days reads are deterministic.
+NOW = datetime(2026, 6, 4, 17, 11, tzinfo=UTC)
 
 
 def entry(slug="aquasd", active=True, runs=None):
@@ -43,19 +57,21 @@ def classify(runs):
     return classify_for_digest(runs, DEFAULT_THRESHOLDS, EXPECTED_MIN)
 
 
+def render(slug, runs, buckets=None):
+    return render_vendor_lines(slug, runs, buckets or classify(runs), DEFAULT_THRESHOLDS, now=NOW)
+
+
 # ---------------------------------------------------------------------------
-# Bucket classification
+# Bucket classification (classify_for_digest — untouched by CTK-221)
 # ---------------------------------------------------------------------------
 
 
-def test_healthy_collapse_to_count_no_itemized_lines():
-    runs = make_runs([baseline_counts()] * 14)
-    buckets = classify(runs)
+def test_healthy_buckets():
+    buckets = classify(make_runs([baseline_counts()] * 14))
     assert len(buckets["healthy"]) == 15
-    lines = render_vendor_lines("aquasd", runs, buckets, DEFAULT_THRESHOLDS)
-    assert lines[1].startswith("  15 healthy | 1 sparse (/cynarinas/=1) | 5 curator-empty | 0 WARN")
-    # No per-path line for any healthy path.
-    assert all("/acropora/" not in line for line in lines)
+    assert buckets["sparse"] == [("/cynarinas/", 1)]
+    assert buckets["warn"] == []
+    assert buckets["pinged"] == []
 
 
 def test_curator_empty_labeled_not_warned():
@@ -66,142 +82,238 @@ def test_curator_empty_labeled_not_warned():
     assert buckets["warn"] == []
 
 
-def test_sparse_not_warned():
-    buckets = classify(make_runs([baseline_counts()] * 14))
-    assert buckets["sparse"] == [("/cynarinas/", 1)]
-    assert buckets["warn"] == []
-
-
-def test_below_threshold_streak_renders_warn_line():
-    runs = window(2)  # /montipora/ zero for 2 scrapes — below ping threshold
-    buckets = classify(runs)
-    assert buckets["warn"] == [("/montipora/", 2)]
-    lines = render_vendor_lines("aquasd", runs, buckets, DEFAULT_THRESHOLDS)
-    assert any(line.startswith("  [WARN] /montipora/: 0 cards, 2 scrape(s) running") for line in lines)
-
-
-def test_pinged_cross_reference_with_threshold_slot():
-    runs = window(3)  # threshold crossed at streak 3 — newest run 2026-06-04 09:51 -> slot 10:11
-    buckets = classify(runs)
+def test_pinged_bucket_keeps_streak_and_threshold_slot():
+    # classify still computes threshold_slot even though the render layer now
+    # ignores it (duration is measured from the streak START instead).
+    buckets = classify(window(3))
     assert len(buckets["pinged"]) == 1
     path, streak, threshold_slot = buckets["pinged"][0]
     assert (path, streak) == ("/montipora/", 3)
     assert threshold_slot == datetime(2026, 6, 4, 10, 11, tzinfo=UTC)
-    lines = render_vendor_lines("aquasd", runs, buckets, DEFAULT_THRESHOLDS)
-    assert any(
-        line == (
-            "  [PING-DUE] /montipora/: 0x3 scrapes — real-time ping threshold crossed "
-            "2026-06-04 10:11 UTC; poller best-effort, that slot may have been dropped"
-        )
-        for line in lines
+
+
+# ---------------------------------------------------------------------------
+# Render layer (CTK-221) — severity, duration, plain English
+# ---------------------------------------------------------------------------
+
+
+def test_healthy_summary_is_green_and_plain_english():
+    lines = render("aquasd", make_runs([baseline_counts()] * 14))
+    summary = lines[0]
+    assert summary.startswith(SEV_GREEN)
+    assert summary == (
+        f"{SEV_GREEN} aquasd (run 731): 15 categories healthy, "
+        "1 sparse (/cynarinas/: 1 card), 5 empty categories we track (nothing in stock)"
     )
+    # No operator jargon leaks into the summary.
+    for jargon in ("curator-empty", "WARN", "|"):
+        assert jargon not in summary
 
 
-def test_pinged_line_does_not_assert_a_ping_fired():
-    # The defect that reopened the verify window: the digest computes the
-    # slot from streak arithmetic alone and has no ping-state table (D-5),
-    # so it must never claim a ping "fired" — GH drops poller slots, and a
-    # false "already alerted" read makes the operator dismiss the condition.
-    for n in (3, 8):  # normal and saturate (broken-detection) wordings
-        runs = window(n)
-        lines = render_vendor_lines("aquasd", runs, classify(runs), DEFAULT_THRESHOLDS)
-        pinged = [ln for ln in lines if "[PING-DUE]" in ln]
-        assert len(pinged) == 1
-        line = pinged[0]
-        assert "fired" not in line  # no fired-ping assertion, either wording
-        assert "[PINGED]" not in line  # the past-tense marker is gone
-        assert "best-effort" in line and "may have been dropped" in line
+def test_warn_line_is_amber_and_counts_scrapes():
+    lines = render("aquasd", window(2))
+    warn = [ln for ln in lines if ln.startswith(SEV_AMBER)]
+    assert warn == [
+        f"{SEV_AMBER} /montipora/ (aquasd): 2 scrapes in a row with zero cards (reacts at 3)"
+    ]
+    assert all("0x" not in ln for ln in lines)
 
 
-def test_pinged_streak_5_threshold_slot_points_at_completing_run():
-    # Streak 5: the threshold was crossed two runs ago (streak hit 3 on 2026-06-02 09:51).
-    runs = window(5)
-    buckets = classify(runs)
-    _, streak, threshold_slot = buckets["pinged"][0]
-    assert streak == 5
-    assert threshold_slot == datetime(2026, 6, 2, 10, 11, tzinfo=UTC)
+def test_pinged_line_is_red_with_duration_in_days():
+    # streak 3: oldest zero is runs[2] @ 2026-06-02 09:51; NOW - that = 2 days.
+    lines = render("aquasd", window(3))
+    red = [ln for ln in lines if ln.startswith(SEV_RED)]
+    assert red == [
+        f"{SEV_RED} /montipora/ (aquasd): no cards for 2 days (3 scrapes) — "
+        "could be a sellout or the scraper's category mapping broke; check the page"
+    ]
 
 
-def test_saturate_state_renders_broken_detection_wording():
-    runs = window(8)
-    lines = render_vendor_lines("aquasd", runs, classify(runs), DEFAULT_THRESHOLDS)
-    assert any("broken-detection candidate" in line for line in lines)
+def test_duration_measured_from_streak_start_not_threshold_slot():
+    # streak 8: streak START is runs[7] @ 2026-05-28 -> 7 days. The later
+    # threshold-slot crossing (2026-05-30 10:11) would read only 5 days; the
+    # render must use the earlier, larger number (CTK-221 deliverable #3).
+    line = [ln for ln in render("aquasd", window(8)) if ln.startswith(SEV_RED)][0]
+    assert "no cards for 7 days" in line
+    assert "5 days" not in line
 
 
-def test_saturate_exact_line_and_streak_7_8_boundary():
-    # /code-review fold (CTK-097 S4): the saturate branch S4 reworded
-    # ([PINGED]/"fired" -> [PING-DUE]/"threshold crossed") was only substring-
-    # pinned, and the streak >= days + 5 cutover had no boundary test. Lock
-    # both: streak 7 keeps the NORMAL wording, streak 8 is the FIRST saturate
-    # ("broken-detection") line — guarding the cutover against an off-by-one —
-    # and pin the saturate line exactly so a wrong path/streak/threshold-slot
-    # interpolation can't slip past the substring check above.
-    normal = render_vendor_lines("aquasd", window(7), classify(window(7)), DEFAULT_THRESHOLDS)
-    assert any(
-        line == (
-            "  [PING-DUE] /montipora/: 0x7 scrapes — real-time ping threshold crossed "
-            "2026-05-31 10:11 UTC; poller best-effort, that slot may have been dropped"
-        )
-        for line in normal
-    )
-    assert all("broken-detection candidate" not in line for line in normal)
-
-    saturate = render_vendor_lines("aquasd", window(8), classify(window(8)), DEFAULT_THRESHOLDS)
-    assert any(
-        line == (
-            "  [PING-DUE] /montipora/: 0x8 scrapes — broken-detection candidate; "
-            "real-time ping threshold crossed 2026-05-30 10:11 UTC; poller best-effort, "
-            "that slot may have been dropped"
-        )
-        for line in saturate
-    )
+def test_render_no_longer_asserts_broken_or_leaks_stamps():
+    for n in (3, 8):  # normal + former-saturate streaks
+        line = [ln for ln in render("aquasd", window(n)) if ln.startswith(SEV_RED)][0]
+        for banned in (
+            "broken-detection",
+            "threshold crossed",
+            "PING-DUE",
+            "fired",
+            "UTC",
+            "best-effort",
+        ):
+            assert banned not in line
+        assert "check the page" in line
 
 
-def test_trend_marker_only_past_50pct_deviation():
-    # /acropora/ sags 355 -> 120 (-66% vs median 355): trend line renders.
-    # /euphyllia/ 87 -> 60 (-31%): no trend line.
-    sag = baseline_counts(**{"/acropora/": 120, "/euphyllia/": 60})
+def test_scraper_down_renders_red_line():
+    # Active vendor, zero successful runs in the window -> scraper likely down.
+    lines = render_vendor_lines("aquasd", [], {}, DEFAULT_THRESHOLDS, now=NOW)
+    assert lines == [
+        f"{SEV_RED} aquasd: no successful scrapes in the window — the scraper may be down, check it"
+    ]
+
+
+def test_trend_line_kept_above_median_floor():
+    # /acropora/ 355 -> 120 (-66% vs median 355): median >> floor, line renders.
+    sag = baseline_counts(**{"/acropora/": 120})
     runs = make_runs([sag] + [baseline_counts()] * 6)
+    lines = render("aquasd", runs)
+    trend = [ln for ln in lines if "7-day median" in ln]
+    assert trend == [
+        f"{SEV_AMBER} /acropora/ (aquasd): 120 cards vs its 7-day median of 355 (-66%, down)"
+    ]
+
+
+def test_trend_noise_floor_suppresses_tiny_median():
+    # /scolys/ median 1 (below the 5-card floor) swings +200% -> suppressed.
+    # /montipora/ median 170 (above the floor) swings -73% -> kept. classify
+    # flags BOTH (it owns only the deviation gate); the render floor drops
+    # the noisy one (CTK-221 deliverable #6).
+    scolys = [3, 1, 1, 1, 1, 1, 1, 1]
+    monti = [46, 170, 170, 170, 170, 170, 170, 170]
+    counts = [
+        baseline_counts(**{"/scolys/": scolys[i], "/montipora/": monti[i]}) for i in range(8)
+    ]
+    runs = make_runs(counts)
     buckets = classify(runs)
-    assert [(p, c) for p, c, _ in buckets["trend"]] == [("/acropora/", 120)]
-    lines = render_vendor_lines("aquasd", runs, buckets, DEFAULT_THRESHOLDS)
-    assert any(line.startswith("  trend: /acropora/: 120 cards vs 7d median 355 (-66%)") for line in lines)
+    trend_paths = {p for p, _, _ in buckets["trend"]}
+    assert {"/scolys/", "/montipora/"} <= trend_paths  # classify keeps both
+
+    lines = render("aquasd", runs, buckets)
+    trend_lines = [ln for ln in lines if "7-day median" in ln]
+    assert any("/montipora/" in ln for ln in trend_lines)  # kept
+    assert all("/scolys/" not in ln for ln in trend_lines)  # dropped by the floor
 
 
 # ---------------------------------------------------------------------------
-# Section + digest assembly
+# Verdict + section + digest assembly (CTK-221)
 # ---------------------------------------------------------------------------
 
 
-def test_inactive_vendor_renders_inactive_line():
-    # Review-fold 2026-06-04: the poller quiet-skips inactive vendors; the
-    # digest is where the pause stays visible.
-    section = build_cohort_section([entry(active=False, runs=[])], [])
-    assert section == (
-        "[INACTIVE] aquasd — vendors.active=false; cohort poll skipped (operator pause?)"
+def test_verdict_green_when_all_healthy():
+    section = build_cohort_section([entry()], [], now=NOW)
+    assert build_verdict([section]) == f"{SEV_GREEN} all healthy — no action"
+
+
+def test_verdict_amber_counts_categories_worth_a_look():
+    section = build_cohort_section(
+        [entry(slug="aquasd", runs=window(2)), entry(slug="poto", runs=window(2))], [], now=NOW
     )
+    assert build_verdict([section]) == f"{SEV_AMBER} 2 categories worth a look"
 
 
-def test_no_runs_renders_no_runs_line():
-    section = build_cohort_section([entry(runs=[])], [])
-    assert section == "per-category cohort (aquasd): no successful runs in window"
+def test_verdict_amber_singular():
+    section = build_cohort_section([entry(runs=window(2))], [], now=NOW)
+    assert build_verdict([section]) == f"{SEV_AMBER} 1 category worth a look"
 
 
-def test_cohort_oos_tail_line():
-    section = build_cohort_section([entry()], [("aquasd", 12), ("poto", 4), ("tidal_gardens", 0)])
-    assert section.splitlines()[-1] == "cohort-OOS last 24h: aquasd 12, poto 4, tidal_gardens 0"
+def test_verdict_red_headlines_longest_empty_category():
+    section = build_cohort_section([entry(runs=window(8))], [], now=NOW)
+    assert build_verdict([section]) == f"{SEV_RED} react: /montipora/ empty 7 days"
 
 
-def test_build_digest_header_and_empty_section_omitted():
-    now = datetime(2026, 6, 4, 17, 11, tzinfo=UTC)
-    message = build_digest(now, ["section one", "", "section two"])
+def test_verdict_red_falls_back_when_no_day_count():
+    # Whole-scraper-down red line carries no "N days" -> generic react headline.
+    section = build_cohort_section([entry(runs=[])], [], now=NOW)
+    assert build_verdict([section]) == f"{SEV_RED} react: aquasd — check it"
+
+
+def test_verdict_red_outranks_amber():
+    # A vendor with both a WARN (amber) and a PING-DUE (red) verdicts red.
+    section = build_cohort_section(
+        [entry(slug="aquasd", runs=window(8)), entry(slug="poto", runs=window(2))], [], now=NOW
+    )
+    verdict = build_verdict([section])
+    assert verdict.startswith(SEV_RED)
+
+
+def test_inactive_vendor_renders_green_paused_line():
+    section = build_cohort_section([entry(active=False, runs=[])], [], now=NOW)
+    assert section == (
+        f"{SEV_GREEN} aquasd: paused (not currently tracking) — unpause when you want it back"
+    )
+    # A deliberate pause must not drive the verdict.
+    assert build_verdict([section]) == f"{SEV_GREEN} all healthy — no action"
+
+
+def test_oos_tail_is_bulleted_desc_with_zeros_dropped():
+    # tidal_gardens (0) dropped; remaining sorted biggest-spike-first; one
+    # bullet line per vendor under a 🟢 no-action header.
+    section = build_cohort_section(
+        [entry()], [("poto", 4), ("aquasd", 12), ("tidal_gardens", 0)], now=NOW
+    )
+    tail = section.splitlines()[-3:]
+    assert tail == [
+        f"{SEV_GREEN} Sold out / delisted in the last 24h — routine (corals sold or pulled); "
+        "worth a look only if one vendor is unusually high:",
+        "  • aquasd — 12",
+        "  • poto — 4",
+    ]
+
+
+def test_oos_tail_all_zero_single_line():
+    section = build_cohort_section([entry()], [("aquasd", 0), ("poto", 0)], now=NOW)
+    assert section.splitlines()[-1] == f"{SEV_GREEN} nothing sold or delisted in the last 24h"
+    assert "•" not in section
+
+
+def test_oos_empty_list_renders_no_tail():
+    # No OOS-tracking vendors in this digest -> no tail line at all (distinct
+    # from the all-zero case, which does report "nothing ...").
+    section = build_cohort_section([entry()], [], now=NOW)
+    assert "sold or delisted" not in section
+    assert "•" not in section
+
+
+def test_build_digest_verdict_first_then_header():
+    section = build_cohort_section([entry(runs=window(8))], [], now=NOW)
+    message = build_digest(NOW, [section])
     lines = message.splitlines()
-    assert lines[0] == "coralticker health digest — 2026-06-04"
-    assert lines[1:] == ["section one", "section two"]
+    assert lines[0] == f"{SEV_RED} react: /montipora/ empty 7 days"
+    assert lines[1] == "coralticker health digest — 2026-06-04"
+    assert lines[2].startswith(SEV_GREEN)  # vendor summary follows
+
+
+def test_build_digest_drops_empty_sections():
+    message = build_digest(NOW, ["section one", "", "section two"])
+    lines = message.splitlines()
+    assert lines[0].startswith(SEV_GREEN)  # verdict: no red/amber in the strings
+    assert lines[1] == "coralticker health digest — 2026-06-04"
+    assert lines[2:] == ["section one", "section two"]
+
+
+def test_no_operator_jargon_in_a_full_digest():
+    # End-to-end plain-English guard: a digest carrying every line type must
+    # contain none of the retired operator nouns (CTK-221 deliverable #4).
+    section = build_cohort_section(
+        [entry(slug="aquasd", runs=window(8)), entry(slug="poto", runs=window(2))],
+        [("aquasd", 39), ("poto", 8)],
+        now=NOW,
+    )
+    message = build_digest(NOW, [section])
+    for jargon in (
+        "curator-empty",
+        "cohort-OOS",
+        "PING-DUE",
+        "[WARN]",
+        "[INACTIVE]",
+        "0x",
+        "threshold crossed",
+        "broken-detection",
+    ):
+        assert jargon not in message, jargon
 
 
 def test_slot_for_boundaries():
-    # 09:51 run -> 10:11 slot; a run exactly on :11 belongs to its own slot.
+    # slot_for is untouched (classify still uses it); pin it stays correct.
     assert slot_for(datetime(2026, 6, 4, 9, 51, tzinfo=UTC)) == datetime(2026, 6, 4, 10, 11, tzinfo=UTC)
     assert slot_for(datetime(2026, 6, 4, 10, 11, tzinfo=UTC)) == datetime(2026, 6, 4, 10, 11, tzinfo=UTC)
     assert slot_for(datetime(2026, 6, 4, 10, 12, tzinfo=UTC)) == datetime(2026, 6, 4, 11, 11, tzinfo=UTC)
@@ -209,20 +321,30 @@ def test_slot_for_boundaries():
 
 def main() -> None:
     tests = [
-        test_healthy_collapse_to_count_no_itemized_lines,
+        test_healthy_buckets,
         test_curator_empty_labeled_not_warned,
-        test_sparse_not_warned,
-        test_below_threshold_streak_renders_warn_line,
-        test_pinged_cross_reference_with_threshold_slot,
-        test_pinged_line_does_not_assert_a_ping_fired,
-        test_pinged_streak_5_threshold_slot_points_at_completing_run,
-        test_saturate_state_renders_broken_detection_wording,
-        test_saturate_exact_line_and_streak_7_8_boundary,
-        test_trend_marker_only_past_50pct_deviation,
-        test_inactive_vendor_renders_inactive_line,
-        test_no_runs_renders_no_runs_line,
-        test_cohort_oos_tail_line,
-        test_build_digest_header_and_empty_section_omitted,
+        test_pinged_bucket_keeps_streak_and_threshold_slot,
+        test_healthy_summary_is_green_and_plain_english,
+        test_warn_line_is_amber_and_counts_scrapes,
+        test_pinged_line_is_red_with_duration_in_days,
+        test_duration_measured_from_streak_start_not_threshold_slot,
+        test_render_no_longer_asserts_broken_or_leaks_stamps,
+        test_scraper_down_renders_red_line,
+        test_trend_line_kept_above_median_floor,
+        test_trend_noise_floor_suppresses_tiny_median,
+        test_verdict_green_when_all_healthy,
+        test_verdict_amber_counts_categories_worth_a_look,
+        test_verdict_amber_singular,
+        test_verdict_red_headlines_longest_empty_category,
+        test_verdict_red_falls_back_when_no_day_count,
+        test_verdict_red_outranks_amber,
+        test_inactive_vendor_renders_green_paused_line,
+        test_oos_tail_is_bulleted_desc_with_zeros_dropped,
+        test_oos_tail_all_zero_single_line,
+        test_oos_empty_list_renders_no_tail,
+        test_build_digest_verdict_first_then_header,
+        test_build_digest_drops_empty_sections,
+        test_no_operator_jargon_in_a_full_digest,
         test_slot_for_boundaries,
     ]
     failures = []
