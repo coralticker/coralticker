@@ -20,13 +20,14 @@ from __future__ import annotations
 
 import sys
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from scrapers.common.cohort_signal import DEFAULT_THRESHOLDS
 from scrapers.common.health_digest import (
     SEV_AMBER,
     SEV_GREEN,
     SEV_RED,
+    _humanize_empty_duration,
     build_cohort_section,
     build_digest,
     build_verdict,
@@ -59,6 +60,15 @@ def classify(runs):
 
 def render(slug, runs, buckets=None):
     return render_vendor_lines(slug, runs, buckets or classify(runs), DEFAULT_THRESHOLDS, now=NOW)
+
+
+def make_hourly_runs(counts_newest_first, newest_start=datetime(2026, 6, 4, 16, 11, tzinfo=UTC)):
+    """Like make_runs, but hourly-cadence spacing — a 14-run window spans ~14h,
+    the case where a day-only duration reading would collapse to '0 days'."""
+    return [
+        {"id": 731 - i, "started_at": newest_start - timedelta(hours=i), "per_category_counts": c}
+        for i, c in enumerate(counts_newest_first)
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +146,25 @@ def test_duration_measured_from_streak_start_not_threshold_slot():
     line = [ln for ln in render("aquasd", window(8)) if ln.startswith(SEV_RED)][0]
     assert "no cards for 7 days" in line
     assert "5 days" not in line
+
+
+def test_humanize_empty_duration_units():
+    # Daily fixtures read in days (unchanged); sub-daily falls through to hours.
+    assert _humanize_empty_duration(timedelta(days=7, hours=5)) == "7 days"
+    assert _humanize_empty_duration(timedelta(days=1)) == "1 day"
+    assert _humanize_empty_duration(timedelta(hours=3)) == "3 hours"
+    assert _humanize_empty_duration(timedelta(hours=1)) == "1 hour"
+    assert _humanize_empty_duration(timedelta(minutes=40)) == "under an hour"
+
+
+def test_react_line_reads_hours_for_subdaily_vendor():
+    # Hourly vendor, 3-scrape streak spanning ~3h: the react line must read
+    # "3 hours", not the old cadence-blind "0 days" (CTK-221 /code-review fold).
+    counts = [baseline_counts(**{"/montipora/": 0})] * 3 + [baseline_counts()] * 11
+    runs = make_hourly_runs(counts)
+    line = [ln for ln in render("aquasd", runs) if ln.startswith(SEV_RED)][0]
+    assert "no cards for 3 hours" in line
+    assert "0 days" not in line
 
 
 def test_render_no_longer_asserts_broken_or_leaks_stamps():
@@ -327,6 +356,8 @@ def main() -> None:
         test_healthy_summary_is_green_and_plain_english,
         test_warn_line_is_amber_and_counts_scrapes,
         test_pinged_line_is_red_with_duration_in_days,
+        test_humanize_empty_duration_units,
+        test_react_line_reads_hours_for_subdaily_vendor,
         test_duration_measured_from_streak_start_not_threshold_slot,
         test_render_no_longer_asserts_broken_or_leaks_stamps,
         test_scraper_down_renders_red_line,

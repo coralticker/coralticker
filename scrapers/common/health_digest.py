@@ -122,8 +122,8 @@ def classify_for_digest(runs: list[dict], thresholds: dict, expected_min: int) -
     threshold_slot)], "trend": [(path, current, median)]} — the "pinged"
     bucket holds paths at or past the real-time ping threshold (it does NOT
     assert a ping fired; see render_vendor_lines / slot_for). It includes
-    saturate-state paths (streak >= three_days_running + 5), which render
-    the broken-detection wording.
+    saturate-state paths (streak >= three_days_running + 5), which are no
+    longer specially marked in the render layer (CTK-221).
     """
     days = thresholds["three_days_running"]
     buckets: dict = {"healthy": [], "sparse": [], "curator_empty": [], "warn": [], "pinged": [], "trend": []}
@@ -175,6 +175,23 @@ def _plural(n: int, noun: str = "") -> str:
     return f"{noun}{'' if n == 1 else 's'}"
 
 
+def _humanize_empty_duration(elapsed: timedelta) -> str:
+    """How long a category has been empty, in the largest sensible unit.
+
+    Cadence-independent (CTK-221 /code-review fold): a daily vendor's streak
+    reads in days, but an hourly vendor's 14-run window spans ~14 hours, so a
+    day-only reading collapses to a meaningless "0 days". Fall through to
+    hours, then "under an hour".
+    """
+    days = elapsed.days
+    if days >= 1:
+        return f"{days} {_plural(days, 'day')}"
+    hours = elapsed.seconds // 3600
+    if hours >= 1:
+        return f"{hours} {_plural(hours, 'hour')}"
+    return "under an hour"
+
+
 def render_vendor_lines(
     slug: str, runs: list[dict], buckets: dict, thresholds: dict, now: datetime | None = None
 ) -> list[str]:
@@ -217,9 +234,9 @@ def render_vendor_lines(
     # digest no longer asserts "broken"; a zero streak is usually a sellout,
     # and the sellout-vs-break probe is a separate CTK.
     for path, streak, _threshold_slot in buckets["pinged"]:
-        empty_days = (now - runs[streak - 1]["started_at"]).days
+        empty = _humanize_empty_duration(now - runs[streak - 1]["started_at"])
         lines.append(
-            f"{SEV_RED} {path} ({slug}): no cards for {empty_days} {_plural(empty_days, 'day')} "
+            f"{SEV_RED} {path} ({slug}): no cards for {empty} "
             f"({streak} {_plural(streak, 'scrape')}) — could be a sellout or the scraper's category "
             "mapping broke; check the page"
         )
