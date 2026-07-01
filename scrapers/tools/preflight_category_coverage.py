@@ -49,10 +49,20 @@ will use):
   python -m scrapers.tools.preflight_category_coverage <slug> --threshold 10
   python -m scrapers.tools.preflight_category_coverage <slug> --list-null
   python -m scrapers.tools.preflight_category_coverage <slug> --include-auctions
+  python -m scrapers.tools.preflight_category_coverage <slug> --all-auctions
 
-Exit codes: 0 = ratio at/under threshold (coverage OK to go live) OR no
-browse-eligible rows (pure-auction vendor, N/A); 1 = ratio over threshold (add
-terms first); 2 = pull/config error.
+PURE-AUCTION GUARD (CTK-143 close-review fold): if the browse-eligible set is
+empty, the gate CANNOT be evaluated and returns 2 by default — because an empty
+browse set is far more likely an over-broad auction_detection (mis-classifying
+the whole catalog as auctions, masking a real coverage miss) than a genuinely
+all-auction vendor. Pass --all-auctions to opt in for a vendor that truly has no
+standing store; only then does browse=0 return 0 (N/A). The N/A message prints
+the auction-detected count so browse=0, excluded=all is legible either way.
+
+Exit codes: 0 = ratio at/under threshold (coverage OK to go live) OR browse=0
+with --all-auctions (genuinely all-auction, N/A); 1 = ratio over threshold (add
+terms first); 2 = pull/config error OR browse=0 without --all-auctions (can't
+evaluate — check auction_detection).
 """
 
 from __future__ import annotations
@@ -88,6 +98,10 @@ def main() -> int:
     ap.add_argument("--include-auctions", action="store_true",
                     help="gate on the FULL catalog incl. auctions (diagnostics); default "
                          "gates on the browse-eligible is_auction=false set")
+    ap.add_argument("--all-auctions", action="store_true",
+                    help="opt-in for a genuinely all-auction vendor: browse-eligible=0 "
+                         "returns 0 (N/A) instead of 2 (can't-evaluate). Without this, an "
+                         "empty browse set is treated as a likely over-broad auction_detection")
     args = ap.parse_args()
 
     if args.threshold <= 0:
@@ -142,10 +156,19 @@ def main() -> int:
     else:
         gated, gate_label = browse_eligible, "browse-eligible (is_auction=false)"
 
-    # Pure-auction vendor: no browse rows to vanish — coverage is N/A, not a FAIL.
+    # Empty browse-eligible set (CTK-143 fold): can't evaluate coverage. Far more
+    # likely an over-broad auction_detection than a genuinely all-auction vendor,
+    # so return 2 (can't-evaluate) by default; --all-auctions opts in to N/A (0).
     if not args.include_auctions and len(browse_eligible) == 0:
-        print(f"\n0 browse-eligible — coverage N/A ({total} items parsed, all auctions).")
-        return 0
+        detail = f"browse=0, excluded=all ({m_auctions} of {total} detected as auctions)"
+        if args.all_auctions:
+            print(f"\n{detail} — coverage N/A (--all-auctions; genuinely all-auction vendor).")
+            return 0
+        print(f"\nCANNOT EVALUATE: {detail}. If this vendor is genuinely all-auction, re-run "
+              f"with --all-auctions; otherwise auction_detection is likely over-broad (it "
+              f"swept the whole catalog) — check the tag-set before first live scrape.",
+              file=sys.stderr)
+        return 2
 
     gated_total = len(gated)
     null_items = [it for it in gated if it.get("category") is None]

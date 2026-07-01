@@ -125,6 +125,17 @@ auction_detection:
     - auction2
     - auction3
     - auction4
+    # CTK-143 close-review fold: enumerate auction5-8 as a STOPGAP for a future
+    # round-only row that carries a higher round tag without the `auctions` class
+    # tag (the orphan class, at rounds the walk didn't observe). The walk saw
+    # auction1-4 live; 5-8 are forward-insurance. The robust fix — a prefix/glob
+    # match on `auction*` in shared _is_auction — is a separate follow-up CTK (NOT
+    # done here: an over-broad prefix match risks fleet-wide false-auction on any
+    # vendor tag starting "auction").
+    - auction5
+    - auction6
+    - auction7
+    - auction8
 
 # ── category_filter — DELIBERATELY NO product_type_allowlist AND NO
 # tag_allowlist (CTK-143 Q1 ruling; same no-allowlist posture as Coral Stop

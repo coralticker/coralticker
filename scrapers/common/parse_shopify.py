@@ -588,11 +588,16 @@ def _is_auction(product: dict, auction_detection: dict) -> bool:
     but keeps the URL pattern) without false-deny. Returns True iff tag-match
     fires; suffix-only matches log a warning and return False so a tag-shape
     regression surfaces in observability without silently re-pricing auctions.
-    """
-    auction_tags = set(auction_detection.get("tags") or [])
+
+    CTK-143 close-review fold: the tag-set match is _normalize_tag-folded on
+    BOTH sides (mirroring the tag_denylist path), so a vendor re-casing its
+    auction tag (auctions -> Auctions) can NOT silently un-null live bids — a
+    fleet-wide 1B trust-floor guarantee. Symmetric normalization: every tag that
+    matched exact before still matches (same transform both sides)."""
+    auction_tags = {_normalize_tag(t) for t in (auction_detection.get("tags") or [])}
     slug_suffix = auction_detection.get("slug_suffix")
     product_tags = product.get("tags") or []
-    tag_match = bool(auction_tags & set(product_tags))
+    tag_match = bool(auction_tags & {_normalize_tag(t) for t in product_tags})
     handle = product.get("handle", "")
     suffix_match = bool(slug_suffix and handle.endswith(slug_suffix))
     if suffix_match and not tag_match:

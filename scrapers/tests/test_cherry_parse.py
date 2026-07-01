@@ -74,11 +74,14 @@ CHERRY_CATEGORY_FILTER = {
     ],
 }
 
-# Cherry's five-tag auction family (CTK-143). auctions = class tag; auction1-4 =
-# per-round markers that catch the one orphan row carrying a round tag without
-# `auctions` (see THE LOAD-BEARING REGRESSION in the module docstring).
+# Cherry's auction family (CTK-143). auctions = class tag; auction1-4 = per-round
+# markers observed live (they catch the one orphan row carrying a round tag
+# without `auctions` — see THE LOAD-BEARING REGRESSION in the module docstring).
+# auction5-8 are the close-review-fold forward-insurance stopgap for a future
+# higher-round orphan (the robust prefix-match fix is a separate follow-up CTK).
 CHERRY_AUCTION_DETECTION = {
-    "tags": ["auctions", "auction1", "auction2", "auction3", "auction4"],
+    "tags": ["auctions", "auction1", "auction2", "auction3", "auction4",
+             "auction5", "auction6", "auction7", "auction8"],
 }
 
 CONFIG = VendorParseConfig(
@@ -252,6 +255,18 @@ def test_auction_orphan_round_tag_detected(products):
     assert _is_auction(p, {"tags": ["auctions"]}) is False
 
 
+# Test 7b (CLOSE-REVIEW FOLD 1): _is_auction case-normalizes the tag match
+def test_auction_tag_case_insensitive(products):
+    """Fold 1 (fleet-wide 1B trust-floor): _is_auction folds both sides through
+    _normalize_tag, so a vendor re-casing its auction tag can't silently un-null
+    live bids. An uppercased/mixed-case auction tag still detects; a non-auction
+    tag still doesn't."""
+    assert _is_auction({"title": "x", "tags": ["Auctions"]}, CHERRY_AUCTION_DETECTION) is True
+    assert _is_auction({"title": "x", "tags": ["AUCTION4"]}, CHERRY_AUCTION_DETECTION) is True
+    assert _is_auction({"title": "x", "tags": ["auctions"]}, CHERRY_AUCTION_DETECTION) is True  # exact still matches
+    assert _is_auction({"title": "x", "tags": ["Fresh Cherries"]}, CHERRY_AUCTION_DETECTION) is False
+
+
 # Test 8 (THE GUARANTEE): live auction lands current_price=NULL + is_auction=true
 def test_live_auction_price_nulled_and_flagged(products):
     """The live-auction anchor carries a real $88.88 bid that must NEVER write
@@ -387,6 +402,7 @@ def main() -> int:
             test_no_category_tag_auction_corals_survive,
             test_no_allowlist_feed_relabel_survives,
             test_auction_detected_on_auctions_tag,
+            test_auction_tag_case_insensitive,
             test_auction_orphan_round_tag_detected,
             test_live_auction_price_nulled_and_flagged,
             test_oos_auction_kept_flagged_nulled,

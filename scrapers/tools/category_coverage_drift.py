@@ -72,10 +72,19 @@ def main() -> int:
     try:
         with db.get_conn() as conn:
             with conn.cursor() as cur:
+                # CTK-143 close-review fold: exclude auctions (is_auction) — they
+                # are CTK-042-gated off every browse/type surface, so their NULL
+                # category can't vanish a coral and must not count against the
+                # drift ratio. This mirrors the preflight_category_coverage.py
+                # browse-eligible denominator and de-noises all three arms at once
+                # (fleet ratio + classifier-gap residual + per-vendor ratio all
+                # derive from this row set). IS NOT TRUE keeps NULL/false rows
+                # (null == non-auction, matching the preflight `not is_auction`).
                 cur.execute(
                     "SELECT v.slug, vl.raw_title, vl.category "
                     "FROM vendor_listings vl JOIN vendors v ON v.id = vl.vendor_id "
-                    "WHERE vl.in_stock AND v.slug NOT LIKE '\\_%'"
+                    "WHERE vl.in_stock AND vl.is_auction IS NOT TRUE "
+                    "AND v.slug NOT LIKE '\\_%'"
                 )
                 rows = cur.fetchall()
     except Exception as e:  # noqa: BLE001 — loud
