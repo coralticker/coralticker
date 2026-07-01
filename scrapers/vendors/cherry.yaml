@@ -1,0 +1,188 @@
+# Cherry Corals scraper config (CTK-143 Session 1).
+#
+# Authoritative platform/method fields live on the vendors row (migration
+# 0072_add_cherry_vendor.sql). YAML carries scrape-tuning per arch §2.3 —
+# values that may change without a code edit (delay, page size, max pages, hash
+# anchor, originator prefix, category filter, auction detection, cohort-OOS).
+# DB row wins on conflict.
+#
+# Pure config clone of the Shopify fleet: parse_shopify carries the whole
+# fetch/parse/normalize path. NO shared-code (parser) edit. The one shared TEST
+# edit this CTK lands is additive — scrapers/tests/vendor_parse_harness.py grew a
+# make_keep_with_auction wrapper + an auction_detection mirror-parity branch so
+# an AUCTION vendor can adopt the CTK-208 harness (Cherry is the first; the
+# make_keep tripwire named this wiring). No production behavior changes.
+#
+# SHAPE: Coral Stop (CTK-209), NOT Cornbred (CTK-142). Cherry is an
+# empty-product_type auction house — taxonomy lives in tags, product_type is
+# blank store-wide, and ~75% of the catalog is auction inventory. The template
+# is coralstop.yaml (no-allowlist / title_denylist-only), with Cornbred's
+# auction_detection block layered on.
+
+slug: cherry
+platform: shopify
+base_url: https://cherrycorals.com
+
+# Standard Shopify endpoint. The index returns BOTH Shopify (/collections/...)
+# and WooCommerce (/product-category/...) URL shapes — a Woo->Shopify migration
+# with stale indexed Woo URLs (CTK-143 plan Gate 3). Live confirms Shopify;
+# treat the /product-category/ URLs as dead residue.
+#
+# Five-signal Shopify confirmation (feedback_five_signal_vendor_preflight),
+# re-confirmed live at build 2026-07-01:
+#   (1) window.Shopify / cdn.shopify.com references in the storefront head.
+#   (2) Shopify robots.txt; /products.json not disallowed (User-agent: * Allow: /).
+#   (3) no platform-deviation headers (standard Shopify storefront).
+#   (4) /products.json HTTP 200 + application/json + canonical products array
+#       with the 13-key first-product shape (body_html / created_at / handle /
+#       id / images / options / product_type / published_at / tags / title /
+#       updated_at / variants / vendor) matching the Shopify-fleet anchor.
+#   (5) read-only catalog crawl of /products.json only; never cart/checkout
+#       (arch §2.5, no new ToS risk vs. the rest of the fleet).
+products_path: /products.json
+
+# Page size at Shopify's max (250). Full-catalog walk 2026-07-01: 1,272 products
+# across 6 pages (250/250/250/250/250/22; page 6 = 22 under-full -> short-page
+# terminator). vendor field uniformly "Cherry Corals". Composition (walk):
+#   - 958 auction rows (auctions / auction1-4 tags) — ~75% of the catalog, the
+#     live-sale engine. 877 already OOS (ended rounds), 81 live at the walk.
+#   - 314 non-auction rows — the standing store (Fresh Cherries + coral-category
+#     tags: Zoanthids / Acropora Frags / Chalices / Favia / Goniopora /
+#     Acanthastrea / Blastomussa / Montipora Frags / Mushrooms and Ricordea /
+#     Ultra Euphyllia and Elegance / Ultra Encrusting Corals).
+#   - non-coral tail = 3 rows (2 Auction-Shipping service SKUs + 1 Gift Card),
+#     dropped by title_denylist.
+page_size: 250
+
+# Inherits the fleet empirical request_delay_sec=2 lock. 1,272 products / 250
+# per page = 6 pages x 2s = ~12s of inter-page delay; trivial fetch time. Bump
+# to 3-4s per arch §2.4 retry-policy outcome only if 429s appear.
+request_delay_sec: 2
+
+# Deep catalog (1,272 rows / 6 pages) -> 10-cap. Above Coral Stop's 8-cap
+# (939/4pp) and below AAF's 15-cap (2300/10pp). 6 pages today; 10 leaves
+# headroom to ~2500 rows before a re-tune and absorbs an auction-round drop-spike
+# without truncating the walk (auction inventory swings by hundreds per round).
+max_pages: 10
+
+# Arch §2.6 Shopify variant: hash sorted key set of first product object. Same
+# hash_anchor + same 13-key empirical anchor as the rest of the Shopify fleet
+# (parse_shopify.py shape stability). Empirical anchor (Session 1 walk
+# 2026-07-01): 13 keys = body_html, created_at, handle, id, images, options,
+# product_type, published_at, tags, title, updated_at, variants, vendor.
+hash_anchor: first_product_keys
+
+# originator_prefix=null per the no-allowlist fleet precedent (Reef Chasers /
+# Cornbred / Williamson's / Reef Regeneration / AAF / RUTR / Coral Stop). Cherry
+# IS a named-coral originator house ("CC ..." house lineages: CC Disney Junior,
+# CC Yellowjacket, CC Blu Tip Torch), but the seed-list
+# (.claude/research/named-coral-seed-list.md) has ZERO Cherry-attributed
+# canonical entries (grep 2026-07-01), so matcher §3.4 stage-3 synthesis would
+# be a no-op. null is the correct config; flip only on a future seed-list
+# expansion that attributes canonicals to Cherry.
+originator_prefix: null
+
+# cohort_oos_at_persist: true — trust-floor parity (CTK-105 D-4 lineage) + the
+# fleet-wide default. Load-bearing here for the auction OOS lifecycle: an ended
+# auction round flips OOS via the available:false -> in_stock mapping in
+# _normalize_product (the PRIMARY path; 877 of the 958 auctions are already
+# available:false at the walk), and cohort_oos_at_persist is the BACKSTOP for
+# fully-delisted rows (round removed entirely -> cohort absent-pass). Net-new
+# vendor, zero prior vendor_listings (migration 0072 lands the row in the same
+# CTK), so the first scrape has no prior cohort -> zero would-flip rows; the OOS
+# rows persist as new+OOS, not flips. First-scrape C2 check is Δ catalog
+# (0 -> 1269 kept) ≈ listings_new (1269).
+cohort_oos_at_persist: true
+
+# ── INV-05 auction detection (arch decisions #84 + #70) ──────────────────────
+# Cherry is an AUCTION HOUSE — this block is load-bearing, not an edge case.
+# ~75% of the catalog (958 rows) carries a live bid in variants[0].price
+# (88.88 / 283.00 / 106.00 ...). Decision #84: is_auction is a PARALLEL
+# discriminator; these are END-TIME-LESS pseudo-auctions (Shopify /products.json
+# exposes no auction close timestamp), so auction_end_time stays NULL (POTO
+# CTK-085 Shopify-auction precedent, poto.yaml). is_auction=true +
+# current_price nulled at parse (_normalize_product L645-648) drives every
+# downstream gate. Decision #70 obligation #1 (the load-bearing one):
+# _normalize_product nulls the live bid so it NEVER writes through as a buy-price
+# — the 1B trust hazard if it did. The shared _is_auction reads its tag-set from
+# this block (parse_shopify.py L592); no per-vendor code.
+#
+# Tag-set = the FULL five-tag family, not just `auctions`:
+#   auctions   = the class tag (957 rows at the walk).
+#   auction1-4 = per-round markers (233/239/238/248). All also carry `auctions`
+#                EXCEPT one walk row — "OG Colorado Sunburst Anemone #2" carries
+#                ['auction2', 'Fresh Cherries'] and NOT `auctions`. Detecting on
+#                `auctions` alone would MISS that row and write its $250 bid
+#                through as a buy-price (obligation #1 breach). The four round
+#                tags close that gap and future round-only rows. This is pinned
+#                by test_cherry_parse.test_auction_orphan_round_tag_detected.
+# No slug_suffix: auction handles are inconsistent (bhauction-*, tcauction4-*,
+# and plain slugs), so tag-detection is the sole signal.
+auction_detection:
+  tags:
+    - auctions
+    - auction1
+    - auction2
+    - auction3
+    - auction4
+
+# ── category_filter — DELIBERATELY NO product_type_allowlist AND NO
+# tag_allowlist (CTK-143 Q1 ruling; same no-allowlist posture as Coral Stop
+# CTK-209 / RUTR CTK-207 / AAF CTK-149). This absence is a DECISION, not an
+# omission. Grounded in the full-catalog walk 2026-07-01:
+#   - product_type is BLANK store-wide (1270/1272 ''; 2 stray 'coral'). NOT a
+#     coral taxonomy and NOT a coral/non-coral discriminator. An allowlist here
+#     is meaningless and risks a catalog-wide silent drop the moment a feed app
+#     stamps a Google-merchant product_type (the AAF feed-relabel class).
+#   - ALL 958 auction corals carry NO coral-category tag (only auctions/auctionN).
+#     A tag_allowlist keyed on the category tags would silently DROP the entire
+#     auction inventory — 75% of the catalog and Cherry's signature stock. So NO
+#     tag_allowlist (the exact Coral Stop DOOR-BUSTER lesson at 20x the scale).
+#   - Even 13 of the 314 non-auction rows carry no category tag (custom holds:
+#     "Xander's Pack", "Red Hornet for Todd") — a tag_allowlist would drop those
+#     corals too.
+#   - Failure asymmetry (CTK-148 #1 logic): with no allowlist, novel non-coral
+#     junk leaks VISIBLY (caught by eyeball / catalog-count drift watch,
+#     denylisted on sighting). With an allowlist, novel coral drops INVISIBLY.
+#     Visible-junk-in beats invisible-coral-out for a coverage-moat product.
+#
+# So the only gate is a title_denylist from the full-catalog non-coral sweep.
+# Non-coral tail = exactly 3 rows (2 Auction-Shipping service SKUs + 1 Gift
+# Card). Kept on the locked 2026-07-01 fixture = 1269 (1272 - 3).
+#
+# COVERAGE OVERRIDE (CTK-143 plan.md — sanctioned, NOT a silently-lowered gate):
+# full-catalog NULL-category is 43.74% (555/1269), but 545 of those NULLs are
+# auction corals with fanciful morph names ("Frozen Armageddon", "Miami Vice")
+# and NO genus/tag/product_type/body signal anywhere in the feed — absence of
+# signal, structurally un-classifiable, NOT a missing-genera miss (so the
+# CTK-194 add-terms remedy does not apply). Auctions are CTK-042-gated out of
+# every browse/type surface (is_auction=true), so their NULL category never
+# reaches a filtered surface. The gate is therefore measured over the
+# CLASSIFIABLE non-auction set: 10/311 = 3.22% NULL, well under the 10%
+# threshold. Pinned by test_cherry_parse.test_category_coverage_floor_non_auction.
+category_filter:
+  # title_denylist: case-insensitive substring per CTK-096 D-1. The 3-row
+  # non-coral tail from the 2026-07-01 full-catalog sweep, plus the fleet-wide
+  # chaeto/macroalgae forward-bind. Entries kept narrow — the walk's token sweep
+  # confirmed most obvious non-coral words COLLIDE with Cherry morph names and
+  # are BANNED from the denylist: "light" hits Highlighter Hammer / Lightning
+  # Chalice / Green Light Montipora; "amino" hits "POTO El Camino"; "hat" hits
+  # "Haterades"; "mystery" hits "CC Mystery Coral"; "led" hits "Bejeweled
+  # Favia"; "kh" hits "KH Sunburst Zoanthids"; bare "test" hits "Greatest Show"
+  # zoanthids. So the denylist stays surgical (project_anchor_denylist tokens).
+  title_denylist:
+    - Shipping              # 2 "Cherry Corals Auction Shipping - FAR/NEAR States" service SKUs (no coral has "shipping")
+    - Gift Card             # "Cherry Corals Gift Card"
+    # Fleet-wide chaeto/macroalgae forward-bind (CTK-107 D-2-quater) — present on
+    # every Shopify config-clone; fires on 0 Cherry rows today (forward-insurance
+    # against routine frag-house macroalgae/cleanup stock landing NULL-category).
+    - Chaeto                # canonical + Chaetomorpha substring catch
+    - Cheato                # POTO-style misspelling forward-bind
+    - Macroalgae            # Dragon's Breath / Caulerpa / Gracilaria / etc.
+    - Macro Algae           # space-separated variant catch
+  # tag_denylist / product_type_allowlist / tag_allowlist: DELIBERATELY ABSENT
+  # (see the block comment above). The 2 dev test SKUs ('test' / 'TEST') are
+  # left as accepted transient NULL-category noise, NOT denied: bare "test"
+  # collides with "Greatest Show" zoanthids, and a tag_denylist axis for a
+  # single ephemeral 'TEST' row isn't worth the drift surface. They ride in the
+  # sanctioned non-auction NULL set (10 rows) and Cherry will remove them.

@@ -1,0 +1,89 @@
+name: cherry
+
+on:
+  schedule:
+    # CTK-143 cadence lock per arch §2.7 decision #15 + open-items.md off-minute
+    # discipline.
+    #
+    # 51 * * * * UTC = every hour at :51 past — off-minute lock per the
+    # top-of-hour degradation discipline (:00 cron slots silently degrade under
+    # GH Actions free-tier scheduled-workflow load peaks; empirical evidence in
+    # open-items.md). :51 is a clean singleton — free across the fleet
+    # (taken minutes: :07/:11/:13/:17/:19/:21/:25/:29/:33/:37/:41/:43/:47/:49/
+    # :53/:57), 2-minute spread from :49 and :53 neighbors, mid-hour and well
+    # clear of the top-of-hour cluster.
+    #
+    # Hourly cadence: Cherry is an auction house — auction rounds (auction1-4)
+    # churn stock fast within drop windows, and ended rounds must flip OOS
+    # promptly to avoid the availability-staleness trust-floor
+    # (feedback_aggregator_staleness_tier_floor). Hourly is the fleet default and
+    # the floor Cherry's live-sale cadence needs.
+    - cron: '51 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Concurrency: queue (don't cancel) per the fleet shape. An operator-trigger
+# landing during an in-flight cron fire queues behind the running fire;
+# cancelling would risk truncating a running Phase B mirror loop mid-write
+# (vendor_listings / price_history / R2 image-mirror double-write avoidance).
+# The explicit group also converts GH-Actions-default silent-drop on
+# workflow_dispatch overlap into queue-with-pending-replacement. Hourly cadence
+# at Cherry's ~1,272-product catalog scale means queue depth never
+# meaningfully accumulates.
+concurrency:
+  group: cherry-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    # 60-min cap inherits the Shopify-fleet carve-out. Cherry's ~1,272-product
+    # catalog at ~500-600ms per mirror = ~11-13 min Phase B max on the first
+    # cold-start run; steady-state hourly fires finish in a couple minutes.
+    # Substantial headroom inside the 60-min ceiling; first-run image mirror
+    # absorbed cleanly inside a single fire at Cherry scale.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: scrapers/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r scrapers/requirements.txt
+
+      - name: Preflight NEON_DATABASE_URL
+        uses: ./.github/actions/preflight-neon-secret
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+      - name: Run Cherry Corals scraper
+        id: scrape
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: python -m scrapers.common.run cherry
+
+      - name: Cleanup stale running rows
+        if: always()
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: python -m scrapers.common.run cherry --cleanup
+
+      - name: Slack alert on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            --data "{\"text\": \"cherry scraper failed: ${RUN_URL}\"}" \
+            "${SLACK_WEBHOOK_URL}"

@@ -34,6 +34,12 @@ consolidated in CTK-208 — use the shared pieces; do NOT copy a sibling file.
    - Run pre-flight category coverage (`preflight_category_coverage.py`, 10% NULL
      threshold) so new-vendor corals don't fall to NULL and vanish from the type
      filters.
+     - Coverage is measured over the browse-eligible (`is_auction=false`)
+       population; auction NULLs are absence-of-signal per the CTK-042 read-gate
+       (Shopify-effective — `is_auction` is a parse_shopify concept; on
+       BigCommerce/magento the exclusion no-ops to full-catalog). Configure +
+       confirm `auction_detection` in the YAML BEFORE running this, or true
+       auctions carry `is_auction=false` and inflate the count.
 
 4. **Migration** — add the SQL as `supabase/migrations/00NN_<name>.sql` and apply it
    with the shared runner. **Do NOT clone `apply_migration_00NN.py`** (those one-offs

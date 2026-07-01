@@ -1,0 +1,61 @@
+-- CTK-143 Session 1 — Cherry Corals vendors row (Phase 2 vendor wave,
+-- demand-mine candidate #2; the second post-launch demand-mine scraper).
+--
+-- Closes the data-side prerequisite for the Cherry scraper landing in the same
+-- CTK: scrapers/common/run.py db.fetch_vendor() reads this row at stage 1
+-- (Config) of the arch §2.1 lifecycle, then merges with
+-- scrapers/vendors/cherry.yaml per arch §2.3 (DB row wins on conflict). Without
+-- this row the scraper fails fast at stage 1 — the right shape; loud-failure-
+-- not-silent-skip.
+--
+-- id disposition: NO explicit id (CTK-143 directive — "vendor id = next
+-- sequence value"). The smallserial default assigns nextval(vendors_id_seq).
+-- Live sequence state 2026-07-01: MAX(real id)=65, last_value=168 (test rows
+-- hold the sequence above the real-vendor block), so this INSERT takes the next
+-- serial value (169) — a stable, sequence-assigned id, not a hand-picked low
+-- gap. This departs from the earlier explicit-low-id convention (Cornbred=12,
+-- Williamson's=33, Coral Stop=37, Biota=65) per the directive; the real-vendor
+-- id block is no longer strictly contiguous, which is fine — FK joins on
+-- vendor_listings.vendor_id = vendors.id are id-value-agnostic. Any literal
+-- hardcode of Cherry's id in matcher/notifier/analytics fires the open-items.md
+-- L25 vendor-ID stability watch and graduates to INV-03 if a second consumer
+-- pattern lands.
+--
+-- Slug canon (CTK-044 / CTK-095): public URLs kebab; DB / YAML / R2 paths snake.
+-- Cherry is a single-token vendor, so slug 'cherry' is unambiguous (no
+-- kebab->snake normalization needed). The slug matches scrapers/vendors/
+-- cherry.yaml `slug:` + the .github/workflows/cherry.yml `python -m
+-- scrapers.common.run cherry` CLI arg in lock-step.
+--
+-- vendors-row columns (per supabase/migrations/0001_init.sql schema):
+--   - id                    smallserial; sequence-assigned (see id disposition).
+--   - slug = 'cherry'       matches cherry.yaml slug + cherry.yml workflow CLI arg.
+--   - display_name = 'Cherry Corals'  Livonia MI auction house; demand-mine
+--                                      candidate #2 (2026-06-11 acronym-mine).
+--   - base_url = 'https://cherrycorals.com'  canonical public domain (five-
+--                                            signal pre-flight 2026-07-01;
+--                                            Shopify confirmed, the indexed
+--                                            /product-category/ Woo URLs are
+--                                            stale migration residue).
+--   - platform = 'shopify'          five-signal pre-flight 2026-07-01.
+--   - scrape_method = 'products_json'  canonical Shopify endpoint shape.
+--   - cadence_label = 'hourly'      CTK-143 cadence lock (51 * * * * UTC, off-
+--                                   minute per open-items.md discipline). Hourly
+--                                   is load-bearing for the auction OOS lifecycle
+--                                   (ended rounds must flip OOS promptly —
+--                                   availability-staleness trust-floor).
+--   - image_strategy = 'mirror'     default per arch §1.3 + CTK-019 #52;
+--                                   runtime-flippable to 'hotlink' via UPDATE.
+--   - active = true                 workflow_dispatch fires immediately; first
+--                                   scheduled cron at the next :51 boundary.
+--
+-- Idempotent re-application: ON CONFLICT (slug) DO NOTHING preserves the row
+-- across migration re-runs + supabase db reset cycles.
+--
+-- seed.sql parity note: supabase/seed.sql carries Phase 1 vendors 1-4 only per
+-- CTK-028 D3 sub-option (a); this migration is the canonical add-path for Cherry.
+
+INSERT INTO vendors (slug, display_name, base_url, platform, scrape_method, cadence_label, image_strategy, active)
+VALUES
+  ('cherry', 'Cherry Corals', 'https://cherrycorals.com', 'shopify', 'products_json', 'hourly', 'mirror', true)
+ON CONFLICT (slug) DO NOTHING;

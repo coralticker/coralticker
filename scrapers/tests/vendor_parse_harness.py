@@ -41,6 +41,7 @@ from scrapers.common.parse_shopify import (
     _normalize_product,
     _normalize_tag,
     _should_keep,
+    _should_keep_with_auction_override,
 )
 
 
@@ -103,6 +104,31 @@ def make_keep(config: VendorParseConfig) -> Callable[[dict], bool]:
     def _keep(p: dict) -> bool:
         return _should_keep(p, config.category_filter, config.in_stock_only,
                             tag_denylist_norm(config))
+    return _keep
+
+
+def make_keep_with_auction(config: VendorParseConfig) -> Callable[[dict], bool]:
+    """Return the _keep wrapper for an AUCTION vendor — models
+    `_should_keep_with_auction_override` (the CTK-160 path parse_shopify's
+    fetch_and_parse actually calls when auction_detection is set), not the plain
+    `_should_keep` make_keep models.
+
+    This is the wiring the make_keep tripwire named: an auction vendor keeps a row
+    the normal gate REJECTS iff it is an auction AND clears the gate with the
+    coral-gate allowlists skipped. make_keep asserts auction_detection is None
+    precisely so a would-be auction vendor lands here instead of silently
+    diverging from production. Cherry (CTK-143) is the first adopter; any future
+    auction vendor uses this wrapper + sets expect_auction_detection_none=False."""
+    assert config.auction_detection is not None, (
+        "make_keep_with_auction models the auction-override path — use plain "
+        "make_keep for a non-auction vendor (config.auction_detection is None)."
+    )
+
+    def _keep(p: dict) -> bool:
+        return _should_keep_with_auction_override(
+            p, config.category_filter, config.auction_detection,
+            config.in_stock_only, tag_denylist_norm(config),
+        )
     return _keep
 
 
@@ -177,6 +203,14 @@ def check_yaml_mirror_parity(config: VendorParseConfig) -> None:
         assert cfg.get("auction_detection") is None, (
             f"{config.yaml_path.name} grew an auction_detection block — INV-05 disposition "
             f"changed; re-confirm the walk + update the CONFIG"
+        )
+    elif config.auction_detection is not None:
+        # Auction vendor (Cherry CTK-143): the YAML auction_detection block must
+        # equal the CONFIG mirror byte-exact — a tag added/removed here silently
+        # re-scopes which rows get price-nulled (the INV-05 obligation #1 hazard).
+        assert cfg.get("auction_detection") == config.auction_detection, (
+            f"{config.yaml_path.name} auction_detection drift vs the CONFIG mirror — "
+            f"YAML={cfg.get('auction_detection')} vs CONFIG={config.auction_detection}"
         )
 
 

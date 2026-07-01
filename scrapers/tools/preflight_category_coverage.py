@@ -14,6 +14,33 @@ This is the sixth signal in the vendor pre-flight sequence
 /products.json status, now + classifier coverage). Its durable process home is
 the vendor-onboarding pre-flight doc (proposed to /reef-lead), not a CTK.
 
+BROWSE-ELIGIBLE GATE (CTK-143): the ratio that gates PASS/FAIL is measured over
+the BROWSE-ELIGIBLE population — items with is_auction=false — not the full
+catalog. Rationale: auction rows are CTK-042-gated out of every browse/type
+surface (is_auction=true excludes them), so their NULL category can never make a
+coral vanish from a filtered surface. On an auction house (Cherry, ~75% auction)
+the full-catalog NULL ratio is dominated by fanciful auction morph-names with no
+genus/tag/product_type signal anywhere in the feed — absence-of-signal, NOT the
+missing-genera miss this gate exists to catch (the CTK-194 add-terms remedy does
+not apply to them). Measuring over browse-eligible rows targets exactly the rows
+whose NULL category is a real coverage loss. `--include-auctions` gates on the
+full catalog for diagnostics.
+
+ORDERING DEPENDENCY (load-bearing): auction_detection must be configured AND
+confirmed in the vendor YAML BEFORE this pre-flight runs. is_auction is set by
+_normalize_product off auction_detection — if the block is missing or its tag-set
+is wrong, true-auction rows carry is_auction=false, fall into the browse-eligible
+set, and inflate the counted NULL ratio (or, worse, mask a real miss). The
+printed "browse-eligible: N (excluded M auctions)" line makes a mis/unconfigured
+auction_detection visible as M=0.
+
+SCOPE — Shopify-effective only. is_auction is a Shopify (parse_shopify) concept;
+parse_bigcommerce does not emit it and magento has no auction path, so on those
+platforms the exclusion no-ops and the gate falls back to the full catalog. This
+tool does NOT claim cross-platform auction exclusion; generalizing it to
+BigCommerce is a separate trigger-gated follow-up (it also touches the DB
+read-gate).
+
 Usage — the vendor's YAML config must already exist in scrapers/vendors/ (the
 pre-flight runs against the live catalog through the same parser the scraper
 will use):
@@ -21,9 +48,11 @@ will use):
   python -m scrapers.tools.preflight_category_coverage <slug>
   python -m scrapers.tools.preflight_category_coverage <slug> --threshold 10
   python -m scrapers.tools.preflight_category_coverage <slug> --list-null
+  python -m scrapers.tools.preflight_category_coverage <slug> --include-auctions
 
-Exit codes: 0 = ratio at/under threshold (coverage OK to go live); 1 = ratio
-over threshold (add terms first); 2 = pull/config error.
+Exit codes: 0 = ratio at/under threshold (coverage OK to go live) OR no
+browse-eligible rows (pure-auction vendor, N/A); 1 = ratio over threshold (add
+terms first); 2 = pull/config error.
 """
 
 from __future__ import annotations
@@ -56,6 +85,9 @@ def main() -> int:
                     help=f"max acceptable NULL-category %% (default {DEFAULT_THRESHOLD_PCT})")
     ap.add_argument("--list-null", action="store_true",
                     help="print the NULL-category titles (the terms to add)")
+    ap.add_argument("--include-auctions", action="store_true",
+                    help="gate on the FULL catalog incl. auctions (diagnostics); default "
+                         "gates on the browse-eligible is_auction=false set")
     args = ap.parse_args()
 
     if args.threshold <= 0:
@@ -86,27 +118,56 @@ def main() -> int:
         print(f"{args.slug}: 0 items parsed — nothing to check (verify the config/selectors)")
         return 2
 
-    null_items = [it for it in items if it.get("category") is None]
-    null_n = len(null_items)
-    ratio = null_n / total * 100
-    by_cat = Counter(it.get("category") for it in items)
+    # Browse-eligible = is_auction=false (CTK-143). Auctions are CTK-042-gated out
+    # of every browse/type surface, so their NULL category can't vanish a coral
+    # from a filtered surface — they're excluded from the gated set. NB: is_auction
+    # is a Shopify (parse_shopify) concept; on parse_bigcommerce/magento items carry
+    # no is_auction key, so .get() is falsy for all and browse_eligible == items
+    # (the exclusion no-ops, gate falls back to full-catalog — Shopify-effective).
+    auction_items = [it for it in items if it.get("is_auction")]
+    browse_eligible = [it for it in items if not it.get("is_auction")]
+    m_auctions = len(auction_items)
+
+    full_null = [it for it in items if it.get("category") is None]
+    full_ratio = len(full_null) / total * 100
 
     print(f"=== pre-flight classifier coverage: {args.slug} ({platform}) ===")
     print(f"  parsed items: {total}")
-    print(f"  NULL-category: {null_n}  ({ratio:.1f}%)   threshold: {args.threshold:.1f}%")
+    print(f"  full-catalog NULL-category: {len(full_null)}  ({full_ratio:.1f}%)")
+    print(f"  browse-eligible: {len(browse_eligible)}  (excluded {m_auctions} auctions)")
+
+    # Gate population: browse-eligible by default; full catalog with --include-auctions.
+    if args.include_auctions:
+        gated, gate_label = items, "full-catalog (--include-auctions)"
+    else:
+        gated, gate_label = browse_eligible, "browse-eligible (is_auction=false)"
+
+    # Pure-auction vendor: no browse rows to vanish — coverage is N/A, not a FAIL.
+    if not args.include_auctions and len(browse_eligible) == 0:
+        print(f"\n0 browse-eligible — coverage N/A ({total} items parsed, all auctions).")
+        return 0
+
+    gated_total = len(gated)
+    null_items = [it for it in gated if it.get("category") is None]
+    null_n = len(null_items)
+    ratio = null_n / gated_total * 100
+    by_cat = Counter(it.get("category") for it in gated)
+
+    print(f"  gate population: {gate_label} — {gated_total}")
+    print(f"  gated NULL-category: {null_n}  ({ratio:.1f}%)   threshold: {args.threshold:.1f}%")
     print(f"  category breakdown: {dict(sorted((str(k), v) for k, v in by_cat.items()))}")
 
     if args.list_null:
-        print("  -- NULL-category titles (add the genera/common-names below) --")
+        print("  -- NULL-category titles in the gated set (add the genera/common-names below) --")
         for it in null_items:
             print(f"    {(it.get('raw_title') or it.get('title') or '')[:72]!r}")
 
     if ratio > args.threshold:
-        print(f"\nFAIL: {ratio:.1f}% > {args.threshold:.1f}% — add this vendor's terms to "
-              f"normalize._CATEGORY_PATTERNS before first live scrape (re-run with "
-              f"--list-null to see the misses).")
+        print(f"\nFAIL: {ratio:.1f}% > {args.threshold:.1f}% over {gate_label} — add this "
+              f"vendor's terms to normalize._CATEGORY_PATTERNS before first live scrape "
+              f"(re-run with --list-null to see the misses).")
         return 1
-    print(f"\nPASS: {ratio:.1f}% <= {args.threshold:.1f}% — coverage OK to go live.")
+    print(f"\nPASS: {ratio:.1f}% <= {args.threshold:.1f}% over {gate_label} — coverage OK to go live.")
     return 0
 
 

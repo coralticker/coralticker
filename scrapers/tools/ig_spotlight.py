@@ -174,6 +174,17 @@ VENDOR_IG: dict[str, VendorIG] = {
     # to (the disambiguator). Shorthand "Biota". Canon row in branding-guide.md
     # §Usage-rules IG-handle table (pending /brand-manager). No branded hashtag.
     "biota":           VendorIG("Biota",          "@biotaaquariums",              None),
+    # CTK-143 — cherry active. Handle confirmed canon 2026-07-01 (/brand-manager):
+    # @cherrycorals. NOT a forward-link confirm — cherrycorals.com's own IG links are
+    # misconfigured (they redirect to the vendor's Facebook, not IG), and the bio's
+    # outbound link couldn't be read. Confirmed instead by a distinctive positioning +
+    # cross-platform match: @cherrycorals (Livonia, MI — the farm's location) carries
+    # the site's own "if it's not HOT, it's not here" WYSIWYG-indoor-farm positioning,
+    # and mirrors the vendor's YouTube (@CherryCorals) + TikTok (cherrycorals) — not a
+    # bare-domain guess. Same path as Reef Regen/AAF, used here because the site's
+    # forward-link is broken. Shorthand "Cherry Corals" (CC reads generic in plain
+    # prose). Canon row in branding-guide.md §Usage-rules IG-handle table. No hashtag.
+    "cherry":          VendorIG("Cherry Corals",  "@cherrycorals",                None),
 }
 
 # Lead-event arm -> canon event verb (rev4 L45-48; cross-channel verb canon).
