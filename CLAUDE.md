@@ -180,6 +180,32 @@ Neon Postgres auth is the credential embedded in `NEON_DATABASE_URL`; rotation i
 
 Never run commands that dump secret VALUES to stdout — `supabase projects api-keys`, `cat .env`, `gh secret list --json` with values, `aws secretsmanager get-secret-value`, etc. Bash/PowerShell tool output lands in the conversation transcript; secrets in transcript = leak per architecture-v1.md §6.3 rotate-on-suspected-leak. To stash a new secret to GitHub Actions or similar: have Jon run `gh secret set --body "<value>"` in his own terminal so the value never crosses the agent surface; verify via timestamp on `gh secret list` (no values shown). See `feedback_secret_stash_jon_terminal.md` memory for the full discipline.
 
+## Vercel access (deploy + cron logs)
+
+The `vercel` CLI is installed and authenticated as account `coralticker` (project `coraltickers-projects/coralticker`). The project link lives in `.vercel/`, which is **gitignored** — per-clone, so re-link with `vercel link --yes` if `.vercel/project.json` is absent. Auth is machine-global (a stored token); no per-session login needed.
+
+Agent-usable read commands (no secret values cross the transcript):
+
+- `vercel ls` — recent deployments (age, status, env, URL).
+- `vercel env ls production` — prints env var **NAMES + environments + timestamps only, never values** — safe, and the canonical way to confirm a prod secret is *set* (e.g. `RESEND_API_KEY`, `CRON_SECRET`, `NEON_DATABASE_URL`).
+- `vercel logs <deployment-url>` — tails **LIVE** runtime logs only. It does **not** retrieve a past invocation (a cron that ran an hour ago won't appear). For past cron runs use the dashboard (below).
+
+What the CLI can't do: past cron run-history + per-invocation function logs. Those are dashboard-only — **Vercel → project → Crons tab** (last-run time + status code per cron) and **Observability / Logs** (the function invocation body). A 401 on a cron route returns before the route's try/catch, so it produces **no Slack alert** — a silently-skipped cron looks identical to "didn't fire" except in the Crons tab.
+
+### Cron topology (both at `0 13 * * *` UTC, defined in `vercel.json`)
+
+- `/api/cron/discord-digest` — **relay**: the Vercel cron hits the route, which `workflow_dispatch`-es `.github/workflows/discord-digest.yml` → `scripts/discord-digest.ts` (its own `fetchRows` mirror; posts to public Discord `#drops`; runs on GitHub Actions). Do NOT add a `schedule:` block to that workflow — two triggers double-post.
+- `/api/cron/email-digest` — **in-route**: no GH workflow; the route calls `runEmailDigest()` in `lib/email/digest.ts` (query → render → send via Resend, gated on confirmed `email_signups`). Failures alert Slack + return 500; `no-events` / `no-recipients` return 200 silently.
+- `/api/cron/ig-spotlight` — see `.github/workflows/ig-spotlight.yml`.
+
+### Manual re-fire / eyeball (creds load from `.env` via `--env-file`, never echoed)
+
+- Email digest REAL send (all confirmed recipients, no idempotency guard — one run = one send + onboarding stamp): `node --env-file=.env --experimental-strip-types scripts/run_email_digest.ts` (`--dry` = counts only, no send).
+- Email single-recipient eyeball: `scripts/send_test_digest.ts <addr>` — bypasses the list, no stamp. **Known gap:** it does NOT render the onboarding "now tracking" block (passes no onboarding arg), so absence of new-vendors-on-top there is a harness limitation, not a bug.
+- Discord digest: `workflow_dispatch` on `discord-digest.yml` (has a `dry_run` input).
+
+To **set/change** a prod env var, Jon runs `vercel env add <NAME> production` in his own terminal so the value never crosses the agent surface (same discipline as the secret-handling section above). `vercel env ls` (names only) is the agent-safe verify.
+
 ## Memory index hygiene
 
 The persistent memory lives outside this repo (harness path); each fact is one topic file, indexed by a one-line pointer in `MEMORY.md`. `MEMORY.md` is loaded whole into context every session, so it has a size ceiling — keep it lean or entries silently stop reaching context.
