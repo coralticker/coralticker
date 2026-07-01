@@ -70,7 +70,22 @@ def _build_prod_connect_guard(real_connect):
     A connect with no DSN string (all keyword host=/dbname=… params) resolves to
     None and passes through — the bypass class this closes is always a positional
     DSN (`psycopg.connect(os.environ["NEON_DATABASE_URL"])`), and _dsn_targets_same_db
-    is the only equality we trust (bare == misses Neon pooler-vs-direct forms)."""
+    is the only equality we trust (bare == misses Neon pooler-vs-direct forms).
+
+    Two residual windows are covered by the static pre-push hook
+    (scripts/ctk219_verify_no_prod_conn.py), NOT by this runtime patch — same
+    belt-and-suspenders split D2 runs for get_conn (CTK-222 /code-review [1]/[2]):
+      - NEON_DATABASE_URL unset: fail-open here (no prod referent to compare
+        against — fail-closed would block get_test_conn's own branch connect when
+        prod creds aren't in the local env). The canonical env-var bypass already
+        fails closed on unset (KeyError on os.environ["NEON_DATABASE_URL"]); the
+        only gap is a HARDCODED literal prod DSN, which the static hook flags on
+        push regardless of DSN.
+      - `from psycopg import connect; connect(prod)`: a module-attribute patch can't
+        rebind an already-imported local `connect` name (identical to why the D2
+        get_conn monkeypatch can't catch `from ...db import get_conn`). The static
+        hook's import-gated Name arm is the net.
+    Both windows are local-run-only; neither survives `git push`."""
 
     def _guarded_connect(*args, **kwargs):
         prod_url = os.environ.get("NEON_DATABASE_URL")

@@ -180,6 +180,23 @@ def test_static_still_flags_get_conn():
     assert hits == [2, 3], f"expected both get_conn calls still flagged; got {hits}"
 
 
+def test_allow_lists_stay_in_lockstep():
+    """CTK-222 /code-review [4]: the static _ALLOWED_FILES (scripts) and the runtime
+    _PROD_CONN_ALLOWED_MODULES (conftest) are hand-synced frozensets. A drift silently
+    re-opens a gap — a module allow-listed at runtime but not at push-time fails the
+    pre-push hook on an intentionally-mocked call, or vice-versa. Pin them equal,
+    normalizing the `.py` suffix the static (filename-keyed) set carries."""
+    from scrapers.tests.conftest import _PROD_CONN_ALLOWED_MODULES
+    from scripts.ctk219_verify_no_prod_conn import _ALLOWED_FILES
+
+    static_modules = {n[:-3] if n.endswith(".py") else n for n in _ALLOWED_FILES}
+    assert static_modules == set(_PROD_CONN_ALLOWED_MODULES), (
+        f"prod-conn allow-lists drifted: static={sorted(static_modules)} "
+        f"runtime={sorted(_PROD_CONN_ALLOWED_MODULES)} — keep _ALLOWED_FILES and "
+        f"_PROD_CONN_ALLOWED_MODULES in lockstep"
+    )
+
+
 # --- Test runner ----------------------------------------------------------------
 TESTS = [
     test_raw_prod_connect_raises,
@@ -194,6 +211,7 @@ TESTS = [
     test_static_ignores_bare_connect_without_import,
     test_static_ignores_mock_patch_string,
     test_static_still_flags_get_conn,
+    test_allow_lists_stay_in_lockstep,
 ]
 
 

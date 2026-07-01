@@ -12,7 +12,15 @@ CTK-213/CTK-215 closed. Two call classes:
   - psycopg.connect()   — `psycopg.connect(...)` / `psycopg2.connect(...)` (Attribute), or
                           a bare `connect(...)` (Name) ONLY in a module that actually did
                           `from psycopg[2] import connect`. The CTK-222 raw-bypass class
-                          (connects to prod without touching db.get_conn).
+                          (connects to a DB without touching db.get_conn).
+
+Deliberately DSN-BLIND — this static pass runs at lint time with no live env, so it can't
+tell a prod DSN from a branch DSN. It therefore forbids a raw psycopg.connect() in a test
+file OUTRIGHT: every live-DB test must go through get_test_conn() (which lives in
+scrapers/common/db.py, outside this scan, so its own psycopg.connect is never flagged). The
+DSN-aware half is the RUNTIME guard (conftest._build_prod_connect_guard), which lets
+get_test_conn's branch connect through and raises only on prod — the two halves differ on
+purpose (CTK-222 /code-review [3]).
 
 The bare-`connect(` Name arm is gated on a real import because — unlike the distinctive
 get_conn — a bare `connect(` collides with mock sockets, asyncio, and unrelated APIs; we
@@ -107,15 +115,17 @@ def main() -> int:
             offenders.append(f"{path.relative_to(TESTS_DIR.parent.parent)}:{lineno}")
 
     if offenders:
-        print("CTK-219 D2 / CTK-222 FAILED: prod-connection call(s) found under scrapers/tests/:")
+        print("CTK-219 D2 / CTK-222 FAILED: forbidden DB-connection call(s) under scrapers/tests/:")
         for o in offenders:
             print(f"  - {o}")
         print(
-            "\nLive-DB tests must use get_test_conn() (TEST_DATABASE_URL branch), never the\n"
-            "prod path — neither db.get_conn() nor a raw psycopg.connect() to the prod DSN.\n"
-            "If a call is intentional (psycopg.connect mocked, no real connection),\n"
-            "allow-list the file in _ALLOWED_FILES here AND in\n"
-            "conftest._PROD_CONN_ALLOWED_MODULES."
+            "\nLive-DB tests must go through get_test_conn() (TEST_DATABASE_URL branch) — never\n"
+            "db.get_conn() and never a raw psycopg.connect(). This static check is DSN-blind at\n"
+            "lint time, so it forbids BOTH in test files even when a raw connect targets the\n"
+            "branch (the runtime guard is the DSN-aware half — it lets get_test_conn's own\n"
+            "branch connect through and raises only on prod). If a flagged call is intentional\n"
+            "(psycopg.connect mocked, no real connection), allow-list the file in _ALLOWED_FILES\n"
+            "here AND in conftest._PROD_CONN_ALLOWED_MODULES."
         )
         return 1
 
