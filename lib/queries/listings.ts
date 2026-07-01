@@ -654,6 +654,42 @@ export async function getVendorInventoryTotal(
   )();
 }
 
+// /vendor/[slug] scope-note gate (CTK-223). Auctions are gated out of
+// getVendorInventory / getVendorInventoryTotal (is_auction = false, CTK-042), so
+// the vendor page shows only fixed-price rows. This bare EXISTS probe tells the
+// page whether the vendor HAS gated auctions in the SAME 14-day window, so it can
+// render a one-line note explaining the omission — fired exactly when a recent
+// gated auction is the thing a visitor might have wondered about. No JOINs, no row
+// shape: the boolean is the whole payload. Deliberately NOT filtered by
+// EXCLUDED_CATEGORIES (unlike the inventory queries) — the note explains the
+// auction-gating class generically, not a coral-category-scoped count.
+export async function getVendorHasGatedAuctions(vendorId: number): Promise<boolean> {
+  return unstable_cache(
+    async () => {
+      const sql = getNeonSql();
+      const fourteenDaysAgo = new Date(Date.now() - VENDOR_RECENCY_DAYS * MS_PER_DAY).toISOString();
+      const rows = (await sql`
+        SELECT EXISTS (
+          SELECT 1
+          FROM vendor_listings vl
+          WHERE vl.vendor_id = ${vendorId}
+            AND vl.is_auction = true
+            AND vl.last_seen_at > ${fourteenDaysAgo}
+        ) AS has_auctions
+      `) as unknown as { has_auctions: boolean }[];
+      return rows[0]?.has_auctions ?? false;
+    },
+    // No prefix history: the returned shape is a bare boolean, so there's no
+    // shape-widen or set-narrow class to guard against — V1 stands unless the
+    // predicate window/flag changes.
+    ['getVendorHasGatedAuctionsV1', String(vendorId)],
+    {
+      revalidate: 300,
+      tags: [`vendor-${vendorId}-has-gated-auctions`],
+    },
+  )();
+}
+
 // /deals union feed. Backed by get_recent_price_drops(p_window_days) — two-arm
 // union: CT-observed drops (price_history LAG window) ∪ active vendor markdowns
 // whose attested onset (vendor_listings.markdown_started_at) falls in-window.

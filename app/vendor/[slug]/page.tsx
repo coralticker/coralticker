@@ -2,8 +2,11 @@
 // query — row stays in `vendors` but the page renders a back-link instead of
 // inventory.
 //
-// Auction listings (currentPrice = null) reach <VendorInventoryRow> and render
-// "price on request".
+// Auction listings are gated out of getVendorInventory / getVendorInventoryTotal
+// entirely (is_auction = false, CTK-042) — /vendor/[slug] shows only fixed-price
+// rows. When a vendor has gated auctions in the same 14-day window, a one-line
+// scope note renders below the "Visit {vendor}" link explaining the omission
+// (getVendorHasGatedAuctions; CTK-223).
 
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -17,6 +20,7 @@ import {
 import {
   getVendorInventory,
   getVendorInventoryTotal,
+  getVendorHasGatedAuctions,
   type ListingCategory,
   type ListingSort,
 } from '@/lib/queries/listings';
@@ -200,9 +204,10 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
   const category = parseCategory(sp.category);
   const includeOOS = parseIncludeOOS(sp['include-oos']);
   const rawPage = parsePage(sp.page);
-  const [total, latestScrapeAt] = await Promise.all([
+  const [total, latestScrapeAt, hasGatedAuctions] = await Promise.all([
     getVendorInventoryTotal(vendor.id, category, includeOOS),
     getLatestScrapeFinishedAt(vendor.id),
+    getVendorHasGatedAuctions(vendor.id),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / 50));
   const page = Math.min(rawPage, totalPages);
@@ -256,6 +261,17 @@ export default async function VendorPage({ params, searchParams }: PageProps) {
           Visit {vendor.display_name} &rarr;
         </a>
       </p>
+
+      {/* Auction-gating scope note (CTK-223). Fires when the vendor has gated
+          auctions in-window, independent of stock state and of whether any
+          fixed-price rows exist — on an all-auction vendor it sits above the
+          empty-state and explains it. */}
+      {hasGatedAuctions && (
+        <p className="text-sm leading-relaxed mb-2">
+          I don&apos;t track the auctions at {vendor.display_name} &mdash; just
+          their fixed-price corals.
+        </p>
+      )}
 
       <div className="mt-10">
         <SortFilterBar
