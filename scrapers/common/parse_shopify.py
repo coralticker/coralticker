@@ -33,6 +33,7 @@ FILTER_AXES = (
     "tag_denylist",
     "title_denylist",
     "title_denylist_prefix",
+    "title_denylist_exact",  # CTK-225: whole-title exact match (strip+lower); denies dev SKUs ('test'/'TEST') without the substring collision the bare title_denylist would hit ("Greatest Show")
     "sku_denylist_suffix",  # CTK-181: variant-SKU anchored-suffix axis (TSA -twcheap test data)
 )
 
@@ -170,6 +171,14 @@ def fetch_and_parse(config: dict) -> ParseResult:
     title_denylist_prefix_lower = tuple(
         e.lower() for e in ((category_filter or {}).get("title_denylist_prefix") or [])
     )
+    # CTK-225: hoist the whole-title EXACT denylist as a set of stripped-lower
+    # entries, matched against raw_title.strip().lower() == entry. Mirrors the
+    # title_denylist hoist shape; shares skipped_title_denylist (same title-axis
+    # bucket as the substring + prefix axes). Anchored-exact so 'test' denies the
+    # dev SKUs WITHOUT the "Greatest Show" (grea-TEST-) substring collision.
+    title_denylist_exact_lower = {
+        e.strip().lower() for e in ((category_filter or {}).get("title_denylist_exact") or [])
+    }
     # CTK-181: hoist the SKU-suffix denylist entries for the gate + the call-site
     # attribution. SKUs are case-sensitive identifiers (vendor test-data signature
     # '-twcheap'), so NO lowercasing — matched as emitted, unlike the title axes.
@@ -295,6 +304,14 @@ def fetch_and_parse(config: dict) -> ParseResult:
                         # (substring before prefix) so a dual-hit attributes
                         # to the substring branch above, same as the gate.
                         skipped_title_denylist += 1
+                    elif title_denylist_exact_lower and (
+                        (p.get("title") or "").strip().lower() in title_denylist_exact_lower
+                    ):
+                        # CTK-225: whole-title exact axis fires after the substring
+                        # + prefix title axes in _should_keep's order; shares the
+                        # title-axis counter (like the prefix axis). A dual-hit
+                        # attributes to the substring branch above, same as the gate.
+                        skipped_title_denylist += 1
                     elif _sku_hits_denylist(p, sku_denylist_suffix):
                         # CTK-181: SKU-suffix axis fires LAST in _should_keep's
                         # order, so attribution mirrors that (after the title
@@ -412,7 +429,7 @@ def _should_keep(
     class membership stays declared once, here next to the axis logic, instead of
     a hardcoded strip-set elsewhere.
 
-    Seven filter axes, AND-semantics when more than one is configured:
+    Eight filter axes, AND-semantics when more than one is configured:
       - in_stock_only (CTK-088) — when True, drop any product with no buyable
         variant (`not any(v.available ...)`). Opt-in per-vendor (default False
         = fleet behavior). For vendors whose catalog is a permanent archive of
@@ -452,6 +469,15 @@ def _should_keep(
         pattern could collide word-final inside coral names — substring
         `ws - ` would false-kill "Rainbows - ..." / "Jaws - ..."; the
         anchor kills exactly the title-initial class.
+      - title_denylist_exact (CTK-225) — raw_title, stripped + lowercased, may
+        not EQUAL any entry (also stripped + lowercased). The whole-title anchor
+        of the title axis: use for junk whose exact title collides as a substring
+        or prefix with real coral names. The motivating case is Cherry's dev SKUs
+        titled exactly 'test' / 'TEST' — a substring 'test' entry false-kills
+        "Greatest Show" zoanthids (grea-TEST-) and a prefix 'test' entry false-
+        kills any "test..."-initial coral, but an exact match touches only the
+        rows that ARE 'test'. Prefer this over title_denylist when the junk title
+        is a common word/fragment of real coral titles.
       - sku_denylist_suffix (CTK-181) — no variant SKU may END WITH an entry,
         tolerating one trailing '-<digits>' numbered-variant tail (so '-twcheap'
         catches both '…-twcheap' and '…-twcheap-<n>'; review-fold 2026-06-22),
@@ -484,6 +510,7 @@ def _should_keep(
         tag_denylist_norm = {_normalize_tag(e) for e in (category_filter.get("tag_denylist") or [])}
     title_denylist = category_filter.get("title_denylist") or []
     title_denylist_prefix = category_filter.get("title_denylist_prefix") or []  # CTK-119: anchored variant
+    title_denylist_exact = category_filter.get("title_denylist_exact") or []  # CTK-225: whole-title exact
     sku_denylist_suffix = tuple(category_filter.get("sku_denylist_suffix") or [])  # CTK-181: variant-SKU anchored suffix
     product_type = product.get("product_type") or ""  # CTK-037 Session 5.5: normalize None/absent to "" so allowlist entry "" matches both shapes
     tags = product.get("tags") or []
@@ -542,6 +569,17 @@ def _should_keep(
         title_lower = (product.get("title") or "").lower()
         if title_lower.startswith(tuple(e.lower() for e in title_denylist_prefix)):
             return False
+    # CTK-225: 8th axis. WHOLE-TITLE exact match (raw_title.strip().lower() ==
+    # entry.strip().lower()). Denies dev/test SKUs whose exact title is junk
+    # ('test' / 'TEST') WITHOUT the substring collision the bare title_denylist
+    # would carry — substring 'test' false-kills "Greatest Show" zoanthids, prefix
+    # 'test' false-kills any title that merely STARTS "test..." Exact anchoring
+    # touches only titles that ARE the denied string. Case-insensitive + stripped
+    # both sides per the CTK-096 title-axis convention.
+    if title_denylist_exact:
+        title_exact = (product.get("title") or "").strip().lower()
+        if any(title_exact == e.strip().lower() for e in title_denylist_exact):
+            return False
     # CTK-181 D-1: 7th axis. Variant SKU suffix — the only structural
     # discriminator for cross-vendor test-data rows that carry REAL coral titles
     # (TSA '…-twcheap', famous names at $1–$15 → title/tag axes blind). Case-
@@ -550,6 +588,19 @@ def _should_keep(
     if _sku_hits_denylist(product, sku_denylist_suffix):
         return False
     return True
+
+
+# CTK-224: anchored, digit-bounded auction-round-tag family. Matches `auction`,
+# `auctions`, and `auction<N>` for any N (the round-tag scheme), so _is_auction
+# needs no per-vendor enumeration of round tags. Anchored (^...$) + digit-only
+# suffix so a near-miss like `auction-shipping` or a coral tag containing
+# "auction" does NOT match — a bare `auction*` glob would flip real fixed-price
+# corals to hidden auctions. Applied against the raw tag stripped+lowercased.
+_AUCTION_FAMILY_RE = re.compile(r"^auctions?$|^auction\d+$")
+
+# CTK-224 (/code-review fold): the numbered-round shape used to GATE the family
+# auto-match to vendors that actually run the auction<N> scheme (see _is_auction).
+_AUCTION_ROUND_RE = re.compile(r"^auction\d+$")
 
 
 def _should_keep_with_auction_override(
@@ -593,11 +644,37 @@ def _is_auction(product: dict, auction_detection: dict) -> bool:
     BOTH sides (mirroring the tag_denylist path), so a vendor re-casing its
     auction tag (auctions -> Auctions) can NOT silently un-null live bids — a
     fleet-wide 1B trust-floor guarantee. Symmetric normalization: every tag that
-    matched exact before still matches (same transform both sides)."""
+    matched exact before still matches (same transform both sides).
+
+    CTK-224: for a vendor that runs the auction<N> round scheme, a product tag
+    matching the anchored auction-family pattern (_AUCTION_FAMILY_RE: `auction`,
+    `auctions`, or `auction<N>` for any N) is detected WITHOUT the config
+    enumerating every round tag. This replaces the Cherry auction5-8 stopgap
+    enumeration — a 9th+ round tag the config never listed no longer writes its
+    live bid through as a buy-price (INV-05 obligation #1 breach). Anchored +
+    digit-bounded, NOT a bare `auction*` glob: 'auction12' matches,
+    'auction-shipping' / 'great-auction-zoa' / a coral named "...auction" do NOT.
+
+    /code-review fold — the family auto-match is GATED on the vendor declaring the
+    numbered-round scheme (any configured tag matches _AUCTION_ROUND_RE, i.e.
+    auction<N>). Cherry declares auction1-4, so it opts in and gets auction5+ for
+    free. WWC (`Auction` / `active_bidding` / `on_auction`) and Cornbred
+    (`wk_end_auction`) do NOT declare a numbered round, so the family pattern
+    stays OFF for them and their behavior is byte-identical to pre-CTK-224 — a
+    stray literal 'auctions'/'auctionN' tag used for non-auction store nav can't
+    flip one of their fixed-price corals to a price-nulled hidden auction (the
+    inverse trust hazard). The config tag-set match stays the primary signal for
+    every vendor. Matched against the raw tag stripped+lowercased (independent of
+    _normalize_tag's hyphen-collapse, so 'auction-5' -> 'auction 5' stays a
+    non-match, not a round). Reached only when auction_detection is configured."""
     auction_tags = {_normalize_tag(t) for t in (auction_detection.get("tags") or [])}
     slug_suffix = auction_detection.get("slug_suffix")
     product_tags = product.get("tags") or []
-    tag_match = bool(auction_tags & {_normalize_tag(t) for t in product_tags})
+    declares_round_scheme = any(_AUCTION_ROUND_RE.match(t) for t in auction_tags)
+    tag_match = bool(auction_tags & {_normalize_tag(t) for t in product_tags}) or (
+        declares_round_scheme
+        and any(_AUCTION_FAMILY_RE.match(t.strip().lower()) for t in product_tags)
+    )
     handle = product.get("handle", "")
     suffix_match = bool(slug_suffix and handle.endswith(slug_suffix))
     if suffix_match and not tag_match:

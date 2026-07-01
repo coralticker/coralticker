@@ -16,8 +16,10 @@ lands on the auction wrapper instead of silently diverging from production.
 
 Parse-only — no DB, no network. Validates:
   - html_hash sentinel (13-key fleet shape).
-  - The NO-ALLOWLIST title_denylist-only gate (a tag_allowlist would drop all 958
-    auction corals — the Coral Stop DOOR-BUSTER lesson at 20x scale).
+  - The NO-ALLOWLIST title_denylist gate (a tag_allowlist would drop all 958
+    auction corals — the Coral Stop DOOR-BUSTER lesson at 20x scale), plus the
+    CTK-225 title_denylist_exact axis denying the 'test'/'TEST' dev SKUs by
+    whole-title match (a substring 'test' would false-kill "Greatest Show").
   - The INV-05 writer contract (decisions #84 + #70): auction rows detected off
     the FIVE-tag family, current_price nulled + is_auction=true through the real
     _normalize_product call (deleting the null branch FAILS the test — the
@@ -66,22 +68,25 @@ from scrapers.tests.vendor_parse_harness import (
 # with the YAML; yaml_mirror_parity asserts the equality so a YAML amendment that
 # isn't mirrored here fails loudly (CTK-115 drift class). NOTE the deliberate
 # ABSENCE of product_type_allowlist AND tag_allowlist — Cherry is a no-allowlist
-# vendor (CTK-143 Q1 ruling). Only the 3-row non-coral tail + the fleet chaeto
-# forward-bind are denied, all by title.
+# vendor (CTK-143 Q1 ruling). Denied: the 3-row non-coral tail + the fleet chaeto
+# forward-bind (all by title substring) + the 2 dev SKUs 'test'/'TEST' (CTK-225,
+# whole-title exact — a substring 'test' would false-kill "Greatest Show").
 CHERRY_CATEGORY_FILTER = {
     "title_denylist": [
         "Shipping", "Gift Card", "Chaeto", "Cheato", "Macroalgae", "Macro Algae",
     ],
+    "title_denylist_exact": ["test"],  # CTK-225: matches 'test' AND 'TEST', keeps "Greatest Show"
 }
 
-# Cherry's auction family (CTK-143). auctions = class tag; auction1-4 = per-round
-# markers observed live (they catch the one orphan row carrying a round tag
-# without `auctions` — see THE LOAD-BEARING REGRESSION in the module docstring).
-# auction5-8 are the close-review-fold forward-insurance stopgap for a future
-# higher-round orphan (the robust prefix-match fix is a separate follow-up CTK).
+# Cherry's auction family (CTK-143 + CTK-224). auctions = class tag; auction1-4 =
+# per-round markers observed live (they catch the one orphan row carrying a round
+# tag without `auctions` — see THE LOAD-BEARING REGRESSION in the module
+# docstring). CTK-224 removed the auction5-8 forward-insurance stopgap: shared
+# _is_auction now matches the anchored auction-round family (^auctions?$ |
+# ^auction\d+$) for ANY N, so a future higher round is detected without
+# enumeration. This list documents the OBSERVED scheme, not the detection ceiling.
 CHERRY_AUCTION_DETECTION = {
-    "tags": ["auctions", "auction1", "auction2", "auction3", "auction4",
-             "auction5", "auction6", "auction7", "auction8"],
+    "tags": ["auctions", "auction1", "auction2", "auction3", "auction4"],
 }
 
 CONFIG = VendorParseConfig(
@@ -99,7 +104,7 @@ CONFIG = VendorParseConfig(
         "variants", "vendor",
     ],
     html_hash_sentinel="c94c512f27be051326728462bfaf34b4b4cb3f2595a3eafbe44ba45a672aad70",
-    expected_filter_keys=frozenset({"title_denylist"}),
+    expected_filter_keys=frozenset({"title_denylist", "title_denylist_exact"}),
     expected_absent_axes=frozenset({"product_type_allowlist", "tag_allowlist"}),
     expect_in_stock_only_absent=True,
     expect_auction_detection_none=False,          # auction vendor — the parity branch asserts the block matches
@@ -110,36 +115,41 @@ _keep = make_keep_with_auction(CONFIG)
 _normalize = make_normalize(CONFIG)
 
 
-# Expected keep/drop on the LOCKED 2026-07-01 fixture (1,272 rows). Exactly 3
-# rows drop (the non-coral tail); every coral — incl. all 958 auction corals —
-# survives. Any allowlist regression that drops auction coral, or a denylist that
-# false-fires on a coral morph name, moves these counts.
+# Expected keep/drop on the LOCKED 2026-07-01 fixture (1,272 rows). Exactly 5
+# rows drop: the 3-row non-coral tail (title_denylist) + the 2 dev SKUs 'test' /
+# 'TEST' (title_denylist_exact, CTK-225). Every coral — incl. all 958 auction
+# corals — survives. Any allowlist regression that drops auction coral, or a
+# denylist that false-fires on a coral morph name, moves these counts.
 EXPECTED_TOTAL = 1272
-EXPECTED_KEPT = 1269
-EXPECTED_DROPPED = EXPECTED_TOTAL - EXPECTED_KEPT  # 3; derived so a re-pin can't desync it
+EXPECTED_KEPT = 1267
+EXPECTED_DROPPED = EXPECTED_TOTAL - EXPECTED_KEPT  # 5; derived so a re-pin can't desync it
 
-# The exact 3-row non-coral tail (the only drops on the locked fixture): 2
-# Auction-Shipping service SKUs + 1 Gift Card. The 2 dev test SKUs ('test' /
-# 'TEST') are NOT dropped — bare "test" collides with "Greatest Show" zoanthids
-# (project_anchor_denylist tokens), so they ride as sanctioned NULL noise.
+# The exact 5-row drop set on the locked fixture: 2 Auction-Shipping service SKUs
+# + 1 Gift Card (title_denylist substring) + the 2 dev SKUs titled exactly 'test'
+# / 'TEST' (title_denylist_exact, CTK-225). The exact axis is why bare "test"
+# doesn't false-kill "Greatest Show Zoanthids" (grea-TEST-) — see
+# test_title_denylist_exact_denies_dev_skus_keeps_greatest_show.
 DROPPED_TITLES = {
     "Cherry Corals Auction Shipping - FAR States Only - Your corals arrive the NEXT day!",
     "Cherry Corals Auction Shipping - NEAR States Only - Your corals arrive the NEXT day!",
     "Cherry Corals Gift Card",
+    "TEST",
+    "test",
 }
 
 # Coverage decision (CTK-143 Q1 ruling): the gate is measured over the
 # BROWSE-ELIGIBLE (non-auction) set — auctions are CTK-042-gated off every browse
-# surface, so their NULL category can't vanish a coral. Non-auction kept = 311,
-# NULL = 10 = 3.22% < 10% threshold. The full-catalog 43.74% NULL is sanctioned
-# (545 genus-less auction morphs = absence-of-signal, not a missing-genera miss).
+# surface, so their NULL category can't vanish a coral. Non-auction kept = 309,
+# NULL = 8 = 2.59% < 10% threshold (CTK-225 denied the 2 NULL dev SKUs). The
+# full-catalog 43.65% NULL is sanctioned (~545 genus-less auction morphs =
+# absence-of-signal, not a missing-genera miss).
 COVERAGE_NULL_THRESHOLD_PCT = 10.0
-EXPECTED_NON_AUCTION_KEPT = 311
-EXPECTED_NON_AUCTION_NULL = 10
+EXPECTED_NON_AUCTION_KEPT = 309   # CTK-225: 311 - the 2 dev SKUs now denied by title_denylist_exact
+EXPECTED_NON_AUCTION_NULL = 8    # CTK-225: 10 - 'test'/'TEST' (both were NULL-category)
 EXPECTED_NON_AUCTION_NULL_TITLES = {
     "Brian's CC Disney Jr", "Chris's SC OP", "Grace's JF Solar Flare Add On",
     "Jeff's Coral Pack", "Mike And Terra's Frag pack", "Red Hornet for Todd",
-    "TEST", "WWC King Fiji #2", "Xander's Pack", "test",
+    "WWC King Fiji #2", "Xander's Pack",
 }
 EXPECTED_AUCTION_KEPT = 958
 
@@ -170,12 +180,13 @@ def test_html_hash_first_product_keys(products):
     check_html_hash_first_product_keys(products, CONFIG)
 
 
-# Test 2: total kept = 1269 (1272 - the 3-row non-coral tail)
-def test_total_kept_is_1269(products):
-    """Full-catalog keep count on the locked 1,272-row fixture: 1269 kept, 3
-    dropped. With no allowlist and a title_denylist hitting only the non-coral
-    tail, the entire coral catalog — all 958 auction corals — survives. Uses the
-    production auction-override keep path (make_keep_with_auction)."""
+# Test 2: total kept = 1267 (1272 - the 3-row non-coral tail - the 2 dev SKUs)
+def test_total_kept_is_1267(products):
+    """Full-catalog keep count on the locked 1,272-row fixture: 1267 kept, 5
+    dropped (3-row non-coral tail via title_denylist + 2 dev SKUs via
+    title_denylist_exact, CTK-225). With no allowlist, the entire coral catalog —
+    all 958 auction corals — survives. Uses the production auction-override keep
+    path (make_keep_with_auction)."""
     assert len(products) == EXPECTED_TOTAL, f"fixture drifted: expected {EXPECTED_TOTAL} rows, got {len(products)}"
     kept = sum(1 for p in products if _keep(p))
     assert kept == EXPECTED_KEPT, f"expected {EXPECTED_KEPT} kept, got {kept}"
@@ -251,7 +262,11 @@ def test_auction_orphan_round_tag_detected(products):
     # And it is nulled through the real normalize path (obligation #1).
     assert p["variants"][0]["price"] == "250.00", "fixture drift — expected the $250 orphan bid"
     assert _normalize(p)["current_price"] is None
-    # Control: dropping auction2 from the detection set would re-expose the bid.
+    # The orphan is caught by the REAL config because auction2 IS enumerated
+    # (auction1-4). Control: a config listing ONLY the class tag `auctions`
+    # declares no numbered round, so the CTK-224 family auto-match is GATED OFF
+    # (see test_auction_family_pattern_matches_unenumerated_round) and `auction2`
+    # is missed — which is exactly WHY Cherry enumerates auction1-4.
     assert _is_auction(p, {"tags": ["auctions"]}) is False
 
 
@@ -336,6 +351,71 @@ def test_denylist_collision_tokens_do_not_fire(products):
         assert _keep({"title": coral, "product_type": "", "tags": ["Fresh Cherries", "Zoanthids", "auctions"]}) is True, coral
 
 
+# Test 11b (CTK-225 — THE GUARANTEE): the whole-title exact axis denies the dev
+# SKUs both directions and keeps the substring-colliding real coral.
+def test_title_denylist_exact_denies_dev_skus_keeps_greatest_show(products):
+    """CTK-225: 'test' / 'TEST' render on live traffic (NULL category does NOT
+    hide them — the INV-07 exclusion form keeps category IS NULL rows). The
+    title_denylist_exact axis denies them by WHOLE-TITLE match while a substring
+    'test' would false-kill "Greatest Show Zoanthids" (grea-TEST-).
+
+    EXERCISES THE GUARANTEE (feedback_review_results_test_exercises_guarantee):
+    if the title_denylist_exact gate in _should_keep is deleted, 'test'/'TEST'
+    pass every other axis (no substring/tag/allowlist hit) and are KEPT — these
+    False assertions then FAIL. The KEEP assertions guard the inverse: a
+    maintainer "fixing" this with a substring 'test' entry re-kills the corals."""
+    # The two real fixture dev SKUs drop (both non-auction, NULL-category).
+    assert _keep(_by_title(products, "TEST")) is False, "dev SKU 'TEST' leaked — exact axis not firing"
+    assert _keep(_by_title(products, "test")) is False, "dev SKU 'test' leaked — exact axis not firing"
+    # Case-insensitive + whitespace-tolerant, synthetic isolation of the axis.
+    assert _keep({"title": "test", "product_type": "", "tags": []}) is False
+    assert _keep({"title": "TEST", "product_type": "", "tags": []}) is False
+    assert _keep({"title": "  Test  ", "product_type": "", "tags": []}) is False, "strip+lower not applied"
+    # The substring-collision coral (and any 'test'-fragment title) SURVIVES —
+    # exact match touches only titles that ARE 'test'.
+    for coral in ["Greatest Show Zoanthids", "Test Tube Acan", "Latest Batch Chalice", "Contest Winner Zoa"]:
+        assert _keep({"title": coral, "product_type": "", "tags": ["Fresh Cherries"]}) is True, coral
+
+
+# Test 11c (CTK-224 — THE GUARANTEE): the anchored auction-family pattern detects
+# any round tag without enumeration, and rejects non-round near-miss tags.
+def test_auction_family_pattern_matches_unenumerated_round(products):
+    """CTK-224: shared _is_auction matches the anchored auction-round family
+    (^auctions?$ | ^auction\\d+$) so a round tag the vendor config never
+    enumerated (auction5+, auction12, ...) is still detected — its live bid can't
+    write through as a buy-price (INV-05 obligation #1). NOT a bare `auction*`
+    glob: a near-miss tag (auction-shipping, a coral tag containing "auction")
+    must NOT match, or a real fixed-price coral flips to a hidden auction.
+
+    EXERCISES THE GUARANTEE: CHERRY_AUCTION_DETECTION lists only auctions +
+    auction1-4. auction12 / auction99 are NOT enumerated — so if _is_auction were
+    reverted to the pure enumeration these True assertions FAIL. The False
+    assertions fail if the pattern coarsens to a bare `auction*` prefix/glob."""
+    d = CHERRY_AUCTION_DETECTION  # declares auction1-4 → the numbered-round scheme → family auto-match ON
+    # Matches any round N without enumeration (auction5-8 stopgap removed).
+    for tag in ["auction5", "auction8", "auction9", "auction12", "auction99", "auctions", "auction"]:
+        assert _is_auction({"title": "x", "tags": [tag]}, d) is True, f"unenumerated round tag {tag!r} not detected"
+    # Rejects non-round near-miss tags (anchored + digit-bounded, not a glob).
+    for tag in ["auction-shipping", "great-auction-zoa", "auctionable", "auction-5", "preauction", "Fresh Cherries"]:
+        assert _is_auction({"title": "x", "tags": [tag]}, d) is False, f"near-miss tag {tag!r} wrongly matched (bare glob?)"
+    # A coral whose TITLE mentions auction but carries no auction-family tag is not an auction.
+    assert _is_auction({"title": "Auction House Acro", "tags": ["Fresh Cherries", "Acropora Frags"]}, d) is False
+
+    # /code-review fold (finding #2 — fleet-wide over-detection guard): the family
+    # auto-match is GATED on the vendor declaring the numbered-round scheme. A
+    # config that enumerates NO auction<N> tag (WWC-shape: Auction / active_bidding
+    # / on_auction; or a bare class-tag-only config) does NOT get the auto-match, so
+    # a stray literal 'auctions'/'auction12' tag on one of its fixed-price corals is
+    # NOT flipped to a price-nulled hidden auction. Fails if the gate is removed
+    # (i.e. if the family regex is applied unconditionally fleet-wide).
+    wwc_shape = {"tags": ["Auction", "active_bidding", "on_auction"]}
+    assert _is_auction({"title": "x", "tags": ["auctions"]}, wwc_shape) is False, "gate off: plural 'auctions' auto-matched a non-round-scheme vendor"
+    assert _is_auction({"title": "x", "tags": ["auction12"]}, wwc_shape) is False, "gate off: 'auction12' auto-matched a non-round-scheme vendor"
+    # ...but WWC's own enumerated tags still detect via the config tag-set match.
+    assert _is_auction({"title": "x", "tags": ["active_bidding"]}, wwc_shape) is True
+    assert _is_auction({"title": "x", "tags": ["Auction"]}, wwc_shape) is True  # config-set match (normalized), not the family gate
+
+
 # Test 12: fleet-wide chaeto/macroalgae forward-bind
 def test_chaeto_macroalgae_forward_bind(products):
     """The fleet-wide chaeto/macroalgae title_denylist (CTK-107 D-2-quater).
@@ -364,9 +444,9 @@ def test_normalize_output_shape(products):
 def test_category_coverage_floor_non_auction(products):
     """CTK-143 Q1 coverage ruling: the gate is measured over the browse-eligible
     (non-auction) set, NOT the full catalog. Auctions are CTK-042-gated off every
-    browse surface, so their NULL category is harmless. Over the 311 non-auction
-    kept rows, infer_category leaves exactly 10 NULL (3.22% < 10%). The
-    full-catalog 43.74% NULL is sanctioned absence-of-signal (genus-less auction
+    browse surface, so their NULL category is harmless. Over the 309 non-auction
+    kept rows, infer_category leaves exactly 8 NULL (2.59% < 10%). The
+    full-catalog 43.65% NULL is sanctioned absence-of-signal (genus-less auction
     morphs). Pins the decision + the exact non-auction NULL set."""
     kept = [p for p in products if _keep(p)]
     non_auction = [p for p in kept if not _is_auc(p)]
@@ -397,7 +477,7 @@ def main() -> int:
         CONFIG,
         tests=[
             test_html_hash_first_product_keys,
-            test_total_kept_is_1269,
+            test_total_kept_is_1267,
             test_exact_drop_set,
             test_no_category_tag_auction_corals_survive,
             test_no_allowlist_feed_relabel_survives,
@@ -408,6 +488,8 @@ def main() -> int:
             test_oos_auction_kept_flagged_nulled,
             test_non_auction_coral_keeps_price,
             test_denylist_collision_tokens_do_not_fire,
+            test_title_denylist_exact_denies_dev_skus_keeps_greatest_show,
+            test_auction_family_pattern_matches_unenumerated_round,
             test_chaeto_macroalgae_forward_bind,
             test_normalize_output_shape,
             test_category_coverage_floor_non_auction,

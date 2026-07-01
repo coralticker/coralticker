@@ -51,7 +51,8 @@ products_path: /products.json
 #     Acanthastrea / Blastomussa / Montipora Frags / Mushrooms and Ricordea /
 #     Ultra Euphyllia and Elegance / Ultra Encrusting Corals).
 #   - non-coral tail = 3 rows (2 Auction-Shipping service SKUs + 1 Gift Card),
-#     dropped by title_denylist.
+#     dropped by title_denylist; + 2 dev SKUs titled exactly 'test'/'TEST'
+#     dropped by title_denylist_exact (CTK-225). 5 dropped total, 1267 kept.
 page_size: 250
 
 # Inherits the fleet empirical request_delay_sec=2 lock. 1,272 products / 250
@@ -91,7 +92,7 @@ originator_prefix: null
 # vendor, zero prior vendor_listings (migration 0072 lands the row in the same
 # CTK), so the first scrape has no prior cohort -> zero would-flip rows; the OOS
 # rows persist as new+OOS, not flips. First-scrape C2 check is Δ catalog
-# (0 -> 1269 kept) ≈ listings_new (1269).
+# (0 -> 1267 kept) ≈ listings_new (1267).
 cohort_oos_at_persist: true
 
 # ── INV-05 auction detection (arch decisions #84 + #70) ──────────────────────
@@ -119,23 +120,24 @@ cohort_oos_at_persist: true
 # No slug_suffix: auction handles are inconsistent (bhauction-*, tcauction4-*,
 # and plain slugs), so tag-detection is the sole signal.
 auction_detection:
+  # CTK-224: the enumerated tags below are the rounds OBSERVED live at the
+  # 2026-07-01 walk (auctions class tag + auction1-4). They are NOT the detection
+  # ceiling: because this config DECLARES the numbered-round scheme (auction1-4
+  # match ^auction\d+$), shared _is_auction extends detection to the anchored
+  # auction-round family (^auctions?$ | ^auction\d+$) for ANY round N — so a future
+  # auction5+/auction12/... round-only tag is detected WITHOUT enumeration and its
+  # live bid can't write through as a buy-price (INV-05 obligation #1). The
+  # auction5-8 forward-insurance stopgap is removed (CTK-224 closes /code-review
+  # [2] at CTK-143). KEEP at least one auction<N> tag here: it is what opts Cherry
+  # into the family auto-match (the /code-review fold gates the auto-match to
+  # vendors that declare the numbered-round scheme, so a stray literal auction tag
+  # on a non-round vendor can't false-flip a fixed-price coral to a hidden auction).
   tags:
     - auctions
     - auction1
     - auction2
     - auction3
     - auction4
-    # CTK-143 close-review fold: enumerate auction5-8 as a STOPGAP for a future
-    # round-only row that carries a higher round tag without the `auctions` class
-    # tag (the orphan class, at rounds the walk didn't observe). The walk saw
-    # auction1-4 live; 5-8 are forward-insurance. The robust fix — a prefix/glob
-    # match on `auction*` in shared _is_auction — is a separate follow-up CTK (NOT
-    # done here: an over-broad prefix match risks fleet-wide false-auction on any
-    # vendor tag starting "auction").
-    - auction5
-    - auction6
-    - auction7
-    - auction8
 
 # ── category_filter — DELIBERATELY NO product_type_allowlist AND NO
 # tag_allowlist (CTK-143 Q1 ruling; same no-allowlist posture as Coral Stop
@@ -157,19 +159,20 @@ auction_detection:
 #     denylisted on sighting). With an allowlist, novel coral drops INVISIBLY.
 #     Visible-junk-in beats invisible-coral-out for a coverage-moat product.
 #
-# So the only gate is a title_denylist from the full-catalog non-coral sweep.
-# Non-coral tail = exactly 3 rows (2 Auction-Shipping service SKUs + 1 Gift
-# Card). Kept on the locked 2026-07-01 fixture = 1269 (1272 - 3).
+# So the gate is a title_denylist (non-coral tail) + a title_denylist_exact (dev
+# SKUs, CTK-225) from the full-catalog non-coral sweep. Non-coral tail = 3 rows
+# (2 Auction-Shipping service SKUs + 1 Gift Card) + 2 dev SKUs ('test'/'TEST').
+# Kept on the locked 2026-07-01 fixture = 1267 (1272 - 5).
 #
 # COVERAGE OVERRIDE (CTK-143 plan.md — sanctioned, NOT a silently-lowered gate):
-# full-catalog NULL-category is 43.74% (555/1269), but 545 of those NULLs are
+# full-catalog NULL-category is 43.65% (553/1267), but ~545 of those NULLs are
 # auction corals with fanciful morph names ("Frozen Armageddon", "Miami Vice")
 # and NO genus/tag/product_type/body signal anywhere in the feed — absence of
 # signal, structurally un-classifiable, NOT a missing-genera miss (so the
 # CTK-194 add-terms remedy does not apply). Auctions are CTK-042-gated out of
 # every browse/type surface (is_auction=true), so their NULL category never
 # reaches a filtered surface. The gate is therefore measured over the
-# CLASSIFIABLE non-auction set: 10/311 = 3.22% NULL, well under the 10%
+# CLASSIFIABLE non-auction set: 8/309 = 2.59% NULL, well under the 10%
 # threshold. Pinned by test_cherry_parse.test_category_coverage_floor_non_auction.
 category_filter:
   # title_denylist: case-insensitive substring per CTK-096 D-1. The 3-row
@@ -191,9 +194,15 @@ category_filter:
     - Cheato                # POTO-style misspelling forward-bind
     - Macroalgae            # Dragon's Breath / Caulerpa / Gracilaria / etc.
     - Macro Algae           # space-separated variant catch
+  # CTK-225: whole-title EXACT denylist. The 2 dev SKUs titled exactly 'test' /
+  # 'TEST' (id=245461 / 245469) render on live traffic — NULL category does NOT
+  # hide them (the CTK-212 INV-07 exclusion form keeps category IS NULL rows;
+  # NULL is mostly real un-classifiable coral). The CTK-143 D3 "leave them as
+  # accepted NULL noise" premise was backwards. Bare 'test' in title_denylist
+  # (substring) false-kills "Greatest Show" zoanthids (grea-TEST-); the exact
+  # axis matches ONLY titles that ARE 'test' — blast radius = exactly the 2 dev
+  # rows, zero coral collateral (verified 2026-07-01).
+  title_denylist_exact:
+    - test                  # matches 'test' AND 'TEST' (case-insensitive, whole-title); keeps "Greatest Show Zoanthids"
   # tag_denylist / product_type_allowlist / tag_allowlist: DELIBERATELY ABSENT
-  # (see the block comment above). The 2 dev test SKUs ('test' / 'TEST') are
-  # left as accepted transient NULL-category noise, NOT denied: bare "test"
-  # collides with "Greatest Show" zoanthids, and a tag_denylist axis for a
-  # single ephemeral 'TEST' row isn't worth the drift surface. They ride in the
-  # sanctioned non-auction NULL set (10 rows) and Cherry will remove them.
+  # (see the block comment above).
