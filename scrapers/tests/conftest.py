@@ -39,27 +39,69 @@ from __future__ import annotations
 
 import os
 
+import psycopg
 import pytest
 
 from scrapers.common import db
 
 
-# CTK-219 D2 — modules allowed to call db.get_conn (the PROD path) during a test.
+# CTK-219 D2 / CTK-222 — modules allowed to reach the PROD connection path during a
+# test: both db.get_conn (D2) and a raw psycopg.connect to the prod DSN (CTK-222).
 # test_db_conn_scrub deliberately drives the get_conn() re-raise/scrub path with
 # psycopg.connect mocked, so it never opens a real connection — its call must reach
 # the real wrapper. Matched on the bare module name (rsplit) so it holds whether
 # pytest collects the module as `test_db_conn_scrub` or `scrapers.tests.test_db_conn_scrub`.
+# Kept in lockstep with scripts/ctk219_verify_no_prod_conn.py:_ALLOWED_FILES.
 _PROD_CONN_ALLOWED_MODULES = frozenset({"test_db_conn_scrub"})
+
+
+def _build_prod_connect_guard(real_connect):
+    """CTK-222 — build the raw-psycopg.connect guard that fails closed on a connect
+    resolving to the prod database, while letting every other connect (branch/test
+    DSN, keyword-arg connects, or any connect when NEON_DATABASE_URL is unset) pass
+    through to `real_connect`.
+
+    Factored out of the autouse fixture so the guarantee is directly unit-testable
+    (test_raw_prod_connect_guard drives THIS function with a sentinel real_connect —
+    no live connection, no fixture, fails if the raise below is removed).
+
+    DSN resolution mirrors the two connect call shapes we care about: the first
+    positional arg (psycopg 3 `conninfo=`, psycopg 2 `dsn=`) or the matching kwarg.
+    A connect with no DSN string (all keyword host=/dbname=… params) resolves to
+    None and passes through — the bypass class this closes is always a positional
+    DSN (`psycopg.connect(os.environ["NEON_DATABASE_URL"])`), and _dsn_targets_same_db
+    is the only equality we trust (bare == misses Neon pooler-vs-direct forms)."""
+
+    def _guarded_connect(*args, **kwargs):
+        prod_url = os.environ.get("NEON_DATABASE_URL")
+        if not prod_url:
+            # Fail-open when prod URL is unset — mirrors get_test_conn (db.py:247).
+            # Nothing to collide against, so a bare-conn test is unaffected.
+            return real_connect(*args, **kwargs)
+        dsn = args[0] if args else (kwargs.get("conninfo") or kwargs.get("dsn"))
+        if not isinstance(dsn, str) or not db._dsn_targets_same_db(dsn, prod_url):
+            return real_connect(*args, **kwargs)
+        raise RuntimeError(
+            "CTK-222: raw psycopg.connect() to the prod database (NEON_DATABASE_URL) "
+            "called during a test. Live-DB tests must use get_test_conn() "
+            "(TEST_DATABASE_URL branch), never a raw connect to prod. If a call is "
+            "intentional and never opens a real connection (psycopg.connect mocked), "
+            "allow-list the module in conftest._PROD_CONN_ALLOWED_MODULES."
+        )
+
+    return _guarded_connect
 
 
 @pytest.fixture(autouse=True)
 def _forbid_prod_get_conn(request, monkeypatch):
-    """CTK-219 D2 — non-bypassable prod-path guard. Every test runs with
-    scrapers.common.db.get_conn (the PROD connection) swapped for a raising stub,
+    """CTK-219 D2 — prod-path guard (covers the db.get_conn path). Every test runs
+    with scrapers.common.db.get_conn (the PROD connection) swapped for a raising stub,
     so a test that reaches for prod fails loud instead of reading/writing the live
     catalog (the CTK-213 corruption class that motivated CTK-215). Tests use
     get_test_conn (the TEST_DATABASE_URL branch) via the `conn` fixture; that path
-    is untouched.
+    is untouched. The sibling raw-connect bypass (a test that calls psycopg.connect
+    on the prod DSN without touching get_conn) is closed by _forbid_raw_prod_connect
+    (CTK-222).
 
     Allow-listed modules (_PROD_CONN_ALLOWED_MODULES) legitimately call get_conn
     with psycopg.connect mocked and never open a real connection. The static
@@ -78,6 +120,30 @@ def _forbid_prod_get_conn(request, monkeypatch):
         )
 
     monkeypatch.setattr(db, "get_conn", _raise)
+
+
+@pytest.fixture(autouse=True)
+def _forbid_raw_prod_connect(request, monkeypatch):
+    """CTK-222 — extend the D2 prod-path guard to the raw-connect bypass class.
+    _forbid_prod_get_conn covers db.get_conn; this covers `psycopg.connect(prod_dsn)`
+    straight to the live catalog without touching db.get_conn (how the onboarding test
+    still wrote to prod under D2 — CTK-219 follow-on). Every test runs with
+    psycopg.connect swapped for a guard that raises on a connect resolving to the prod
+    DSN and passes every other connect through untouched.
+
+    get_test_conn (the TEST_DATABASE_URL branch) goes through this same patched
+    psycopg.connect — its branch DSN is not prod, so it passes the predicate and
+    connects normally. That is the live proof the guard doesn't false-block a
+    legitimate test connection.
+
+    Allow-listed modules (_PROD_CONN_ALLOWED_MODULES) mock psycopg.connect themselves
+    and never open a real connection, so they skip the patch — kept in lockstep with
+    _forbid_prod_get_conn and the static pre-push grep."""
+    if request.module.__name__.rsplit(".", 1)[-1] in _PROD_CONN_ALLOWED_MODULES:
+        return
+    # Capture the real impl at patch time (autouse runs before other fixtures of this
+    # scope, so this is the genuine psycopg.connect, not another test's mock).
+    monkeypatch.setattr(psycopg, "connect", _build_prod_connect_guard(psycopg.connect))
 
 
 def _have_test_db() -> bool:
